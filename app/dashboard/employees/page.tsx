@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 
 type Employee = {
@@ -25,7 +24,7 @@ export default function EmployeesPage() {
     setTimeout(() => {
       setEmployees([
         {
-          id: 'emp-001',
+          id: 'EMP001',
           employeeNumber: 'EMP001',
           firstName: 'Sarah',
           lastName: 'Johnson',
@@ -38,7 +37,7 @@ export default function EmployeesPage() {
           autoEnrollmentStatus: 'eligible'
         },
         {
-          id: 'emp-002',
+          id: 'EMP002',
           employeeNumber: 'EMP002',
           firstName: 'James',
           lastName: 'Wilson',
@@ -51,7 +50,7 @@ export default function EmployeesPage() {
           autoEnrollmentStatus: 'eligible'
         },
         {
-          id: 'emp-003',
+          id: 'EMP003',
           employeeNumber: 'EMP003',
           firstName: 'Emma',
           lastName: 'Brown',
@@ -64,7 +63,7 @@ export default function EmployeesPage() {
           autoEnrollmentStatus: 'eligible'
         },
         {
-          id: 'emp-004',
+          id: 'EMP004',
           employeeNumber: 'EMP004',
           firstName: 'Michael',
           lastName: 'Davis',
@@ -77,7 +76,7 @@ export default function EmployeesPage() {
           autoEnrollmentStatus: 'eligible'
         },
         {
-          id: 'emp-005',
+          id: 'EMP005',
           employeeNumber: 'EMP005',
           firstName: 'Lisa',
           lastName: 'Taylor',
@@ -120,11 +119,11 @@ export default function EmployeesPage() {
   };
 
   const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    const date = new Date(dateString);
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    return `${dd}-${mm}-${yyyy}`;
   };
 
   if (loading) {
@@ -160,7 +159,7 @@ export default function EmployeesPage() {
         maxWidth: '1200px',
         margin: '0 auto'
       }}>
-        
+                
         {/* Navigation Header */}
         <div style={{
           backgroundColor: 'white',
@@ -227,7 +226,7 @@ export default function EmployeesPage() {
           gap: '24px',
           marginBottom: '40px'
         }}>
-          
+                    
           <div style={{
             backgroundColor: 'white',
             padding: '24px',
@@ -564,8 +563,8 @@ export default function EmployeesPage() {
                         color: '#0369a1',
                         border: '1px solid #bae6fd'
                       }}>
-                        {employee.autoEnrollmentStatus === 'eligible' ? 'Auto-Enrolled' : 
-                         employee.autoEnrollmentStatus === 'entitled' ? 'Entitled' : 'Non-Eligible'}
+                        {employee.autoEnrollmentStatus === 'eligible' ? 'Auto-Enrolled' :
+                          employee.autoEnrollmentStatus === 'entitled' ? 'Entitled' : 'Non-Eligible'}
                       </span>
                     </td>
                     <td style={{ padding: '16px' }}>
@@ -640,7 +639,6 @@ export default function EmployeesPage() {
             </a>
           </div>
         )}
-
       </div>
     </div>
   );
