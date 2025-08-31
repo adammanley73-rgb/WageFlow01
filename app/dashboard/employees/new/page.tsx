@@ -175,10 +175,9 @@ export default function AddEmployeePage() {
     }
   };
 
-  const formatCurrency = (amount: number): string =>
-    new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount || 0);
-
-  return (
+const formatCurrency = (amount: number): string =>
+  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount || 0);
+return (
     <div
       style={{
         fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -311,7 +310,7 @@ export default function AddEmployeePage() {
                     style={{
                       width: '100%',
                       padding: '12px 16px',
-                      border: '1px solid '#d1d5db'",
+                      border: '1px solid #d1d5db',
                       borderRadius: '8px',
                       fontSize: '16px',
                     }}
