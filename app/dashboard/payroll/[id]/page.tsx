@@ -35,7 +35,7 @@ type PayrollEntry = {
 export default function PayrollRunDetailsPage() {
   const params = useParams<{ id: string }>();
   const payrollId = params?.id;
-
+  
   const [payrollRun, setPayrollRun] = useState<PayrollRun | null>(null);
   const [payrollEntries, setPayrollEntries] = useState<PayrollEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +47,7 @@ export default function PayrollRunDetailsPage() {
         {
           id: 'pr-001',
           name: 'Monthly Payroll - July 2025',
-          payPeriod: '01/07/2025 - 31/07/2025',
+          payPeriod: '01-07-2025 - 31-07-2025',
           status: 'completed',
           employeeCount: 5,
           grossPay: 18750.0,
@@ -63,7 +63,7 @@ export default function PayrollRunDetailsPage() {
         {
           id: 'pr-002',
           name: 'Monthly Payroll - June 2025',
-          payPeriod: '01/06/2025 - 30/06/2025',
+          payPeriod: '01-06-2025 - 30-06-2025',
           status: 'submitted',
           employeeCount: 5,
           grossPay: 18750.0,
@@ -149,7 +149,7 @@ export default function PayrollRunDetailsPage() {
     return () => clearTimeout(timer);
   }, [payrollId]);
 
-  // Currency always £
+  // UK Currency formatting - ALWAYS £
   const formatCurrency = (amount: number): string =>
     new Intl.NumberFormat('en-GB', {
       style: 'currency',
@@ -158,7 +158,7 @@ export default function PayrollRunDetailsPage() {
       maximumFractionDigits: 2,
     }).format(amount);
 
-  // Dates as dd-mm-yyyy
+  // UK Date formatting - DD-MM-YYYY
   const formatDate = (dateString: string): string => {
     const d = new Date(dateString);
     const dd = String(d.getDate()).padStart(2, '0');
@@ -167,8 +167,6 @@ export default function PayrollRunDetailsPage() {
     return `${dd}-${mm}-${yyyy}`;
   };
 
-  // Normalise a pay period string like "01/07/2025 - 31/07/2025" -> "01-07-2025 - 31-07-2025"
-  const normalizePayPeriod = (period: string): string => period.replace(/\//g, '-');
   if (loading) {
     return (
       <div
@@ -286,10 +284,10 @@ export default function PayrollRunDetailsPage() {
                 margin: '0 0 8px 0',
               }}
             >
-              £ {payrollRun.name}
+              {payrollRun.name}
             </h1>
             <p style={{ color: '#6b7280', margin: '0' }}>
-              {normalizePayPeriod(payrollRun.payPeriod)} • Pay Date: {formatDate(payrollRun.payDate)}
+              {payrollRun.payPeriod} • Pay Date: {formatDate(payrollRun.payDate)}
             </p>
           </div>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>

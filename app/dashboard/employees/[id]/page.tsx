@@ -25,14 +25,13 @@ type Employee = {
 export default function EmployeeDetailsPage() {
   const params = useParams<{ id: string }>();
   const employeeId = params?.id;
-
+  
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [autoEnrollmentStatus, setAutoEnrollmentStatus] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      // Demo employee data - matches your employee list
       const demoEmployees: Employee[] = [
         {
           id: 'EMP001',
@@ -46,7 +45,7 @@ export default function EmployeeDetailsPage() {
           annualSalary: 35000,
           hireDate: '2020-03-15',
           status: 'Active',
-          address: { line1: '123 Oak Street', city: 'Manchester', postcode: 'M1 2AB' },
+          address: { line1: '123 Oak Street', city: 'Manchester', postcode: 'M1 2AB' }
         },
         {
           id: 'EMP002',
@@ -60,7 +59,7 @@ export default function EmployeeDetailsPage() {
           annualSalary: 28000,
           hireDate: '2021-07-10',
           status: 'Active',
-          address: { line1: '456 Pine Road', city: 'Birmingham', postcode: 'B2 3CD' },
+          address: { line1: '456 Pine Road', city: 'Birmingham', postcode: 'B2 3CD' }
         },
         {
           id: 'EMP003',
@@ -74,7 +73,7 @@ export default function EmployeeDetailsPage() {
           annualSalary: 45000,
           hireDate: '2019-11-20',
           status: 'Active',
-          address: { line1: '789 Elm Avenue', city: 'Leeds', postcode: 'LS1 4EF' },
+          address: { line1: '789 Elm Avenue', city: 'Leeds', postcode: 'LS1 4EF' }
         },
         {
           id: 'EMP004',
@@ -88,7 +87,7 @@ export default function EmployeeDetailsPage() {
           annualSalary: 32000,
           hireDate: '2022-02-01',
           status: 'Active',
-          address: { line1: '321 Maple Close', city: 'Liverpool', postcode: 'L3 5GH' },
+          address: { line1: '321 Maple Close', city: 'Liverpool', postcode: 'L3 5GH' }
         },
         {
           id: 'EMP005',
@@ -102,20 +101,20 @@ export default function EmployeeDetailsPage() {
           annualSalary: 38000,
           hireDate: '2020-09-14',
           status: 'Active',
-          address: { line1: '654 Cedar Lane', city: 'Bristol', postcode: 'BS4 6IJ' },
-        },
+          address: { line1: '654 Cedar Lane', city: 'Bristol', postcode: 'BS4 6IJ' }
+        }
       ];
-
-      const foundEmployee = demoEmployees.find((emp) => emp.id === employeeId);
+      
+      const foundEmployee = demoEmployees.find(emp => emp.id === employeeId);
       setEmployee(foundEmployee || null);
-
+      
       if (foundEmployee) {
         calculateAutoEnrollmentStatus(foundEmployee);
       }
-
+      
       setLoading(false);
     }, 800);
-
+    
     return () => clearTimeout(timer);
   }, [employeeId]);
 
@@ -132,7 +131,7 @@ export default function EmployeeDetailsPage() {
 
   const calculateAutoEnrollmentStatus = (emp: Employee) => {
     const age = calculateAge(emp.dateOfBirth);
-
+    
     if (age >= 22 && age < 75 && emp.annualSalary >= 10000) {
       setAutoEnrollmentStatus('✅ Eligible (Auto-enrolled into workplace pension)');
     } else if (age >= 16 && age < 75 && emp.annualSalary >= 6240) {
@@ -142,98 +141,102 @@ export default function EmployeeDetailsPage() {
     }
   };
 
-  const formatCurrency = (amount: number): string =>
-    new Intl.NumberFormat('en-GB', {
+  // UK Currency formatting - ALWAYS £
+  const formatCurrency = (amount: number): string => {
+    return new Intl.NumberFormat('en-GB', {
       style: 'currency',
       currency: 'GBP',
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 2
     }).format(amount);
+  };
 
-  const formatDate = (dateString: string): string =>
-    new Date(dateString).toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+  // UK Date formatting - DD-MM-YYYY
+  const formatDate = (dateString: string): string => {
+    const d = new Date(dateString);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}-${mm}-${yyyy}`;
+  };
 
   if (loading) {
-    return (
-      <div
-        style={{
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          backgroundColor: '#f8fafc',
-          minHeight: '100vh',
-          padding: '40px 20px',
-        }}
-      >
+      return (
         <div
           style={{
-            backgroundColor: 'white',
-            padding: '40px',
-            borderRadius: '12px',
-            textAlign: 'center',
-            maxWidth: '800px',
-            margin: '0 auto',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            backgroundColor: '#f8fafc',
+            minHeight: '100vh',
+            padding: '40px 20px',
           }}
         >
-          <h1 style={{ color: '#1f2937', margin: '0' }}>Loading Employee Details...</h1>
+          <div
+            style={{
+              backgroundColor: 'white',
+              padding: '40px',
+              borderRadius: '12px',
+              textAlign: 'center',
+              maxWidth: '800px',
+              margin: '0 auto',
+            }}
+          >
+            <h1 style={{ color: '#1f2937', margin: '0' }}>Loading Employee Details...</h1>
+          </div>
         </div>
-      </div>
-    );
-  }
-
-  if (!employee) {
-    return (
-      <div
-        style={{
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          backgroundColor: '#f8fafc',
-          minHeight: '100vh',
-          padding: '40px 20px',
-        }}
-      >
+      );
+    }
+  
+    if (!employee) {
+      return (
         <div
           style={{
-            backgroundColor: 'white',
-            padding: '40px',
-            borderRadius: '12px',
-            textAlign: 'center',
-            maxWidth: '800px',
-            margin: '0 auto',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            backgroundColor: '#f8fafc',
+            minHeight: '100vh',
+            padding: '40px 20px',
           }}
         >
-          <h1
+          <div
             style={{
-              fontSize: '24px',
-              fontWeight: 'bold',
-              color: '#dc2626',
-              margin: '0 0 16px 0',
+              backgroundColor: 'white',
+              padding: '40px',
+              borderRadius: '12px',
+              textAlign: 'center',
+              maxWidth: '800px',
+              margin: '0 auto',
             }}
           >
-            Employee Not Found
-          </h1>
-          <p style={{ color: '#6b7280', margin: '0 0 24px 0' }}>
-            The employee you're looking for could not be found.
-          </p>
-          <a
-            href="/dashboard/employees"
-            style={{
-              color: '#2563eb',
-              textDecoration: 'none',
-              fontWeight: '500',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: '1px solid #dbeafe',
-              backgroundColor: '#eff6ff',
-            }}
-          >
-            ← Back to Employees
-          </a>
+            <h1
+              style={{
+                fontSize: '24px',
+                fontWeight: 'bold',
+                color: '#dc2626',
+                margin: '0 0 16px 0',
+              }}
+            >
+              Employee Not Found
+            </h1>
+            <p style={{ color: '#6b7280', margin: '0 0 24px 0' }}>
+              The employee you're looking for could not be found.
+            </p>
+            <a 
+              href="/dashboard/employees"
+              style={{
+                color: '#2563eb',
+                textDecoration: 'none',
+                fontWeight: '500',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: '1px solid #dbeafe',
+                backgroundColor: '#eff6ff',
+              }}
+            >
+              ← Back to Employees
+            </a>
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
   return (
     <div
@@ -253,6 +256,7 @@ export default function EmployeeDetailsPage() {
           gap: '24px',
         }}
       >
+        
         {/* Header */}
         <div
           style={{
@@ -281,7 +285,7 @@ export default function EmployeeDetailsPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
-            <a
+            <a 
               href="/dashboard/employees"
               style={{
                 color: '#4b5563',
@@ -294,7 +298,7 @@ export default function EmployeeDetailsPage() {
             >
               ← Back to Employees
             </a>
-            <a
+            <a 
               href={`/dashboard/employees/${employee.id}/edit`}
               style={{
                 color: '#2563eb',
@@ -319,6 +323,7 @@ export default function EmployeeDetailsPage() {
             gap: '24px',
           }}
         >
+          
           {/* Personal Information */}
           <div
             style={{
@@ -340,7 +345,7 @@ export default function EmployeeDetailsPage() {
             >
               Personal Information
             </h2>
-
+            
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label
@@ -358,7 +363,7 @@ export default function EmployeeDetailsPage() {
                   {employee.email}
                 </p>
               </div>
-
+              
               <div>
                 <label
                   style={{
@@ -375,7 +380,7 @@ export default function EmployeeDetailsPage() {
                   {employee.phone || 'Not provided'}
                 </p>
               </div>
-
+              
               <div>
                 <label
                   style={{
@@ -389,11 +394,10 @@ export default function EmployeeDetailsPage() {
                   Date of Birth
                 </label>
                 <p style={{ color: '#1f2937', margin: '0', fontSize: '15px' }}>
-                  {formatDate(employee.dateOfBirth)} (Age {calculateAge(employee.dateOfBirth)}
-                  )
+                  {formatDate(employee.dateOfBirth)} (Age {calculateAge(employee.dateOfBirth)})
                 </p>
               </div>
-
+              
               <div>
                 <label
                   style={{
@@ -441,7 +445,7 @@ export default function EmployeeDetailsPage() {
             >
               Employment Information
             </h2>
-
+            
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label
@@ -466,7 +470,7 @@ export default function EmployeeDetailsPage() {
                   {employee.employeeNumber}
                 </p>
               </div>
-
+              
               <div>
                 <label
                   style={{
@@ -483,7 +487,7 @@ export default function EmployeeDetailsPage() {
                   {formatDate(employee.hireDate)}
                 </p>
               </div>
-
+              
               <div>
                 <label
                   style={{
@@ -510,7 +514,7 @@ export default function EmployeeDetailsPage() {
                   Monthly: {formatCurrency(employee.annualSalary / 12)}
                 </p>
               </div>
-
+              
               <div>
                 <label
                   style={{
@@ -562,7 +566,7 @@ export default function EmployeeDetailsPage() {
             >
               📍 Address Information
             </h2>
-
+            
             <div
               style={{
                 display: 'grid',
@@ -586,7 +590,7 @@ export default function EmployeeDetailsPage() {
                   {employee.address.line1}
                 </p>
               </div>
-
+              
               <div>
                 <label
                   style={{
@@ -603,7 +607,7 @@ export default function EmployeeDetailsPage() {
                   {employee.address.city}
                 </p>
               </div>
-
+              
               <div>
                 <label
                   style={{
@@ -651,7 +655,7 @@ export default function EmployeeDetailsPage() {
           >
             🎯 Auto-Enrollment Status
           </h2>
-
+          
           <div
             style={{
               backgroundColor: '#f9fafb',
@@ -671,7 +675,7 @@ export default function EmployeeDetailsPage() {
               {autoEnrollmentStatus}
             </p>
           </div>
-
+          
           <div
             style={{
               display: 'grid',
@@ -703,7 +707,7 @@ export default function EmployeeDetailsPage() {
                 {calculateAge(employee.dateOfBirth)} years old
               </p>
             </div>
-
+            
             <div>
               <label
                 style={{
@@ -728,7 +732,7 @@ export default function EmployeeDetailsPage() {
               </p>
             </div>
           </div>
-
+          
           <div
             style={{
               backgroundColor: '#f0f9ff',
@@ -752,6 +756,7 @@ export default function EmployeeDetailsPage() {
             </p>
           </div>
         </div>
+
       </div>
     </div>
   );
