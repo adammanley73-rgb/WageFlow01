@@ -169,7 +169,6 @@ export default function PayrollRunDetailsPage() {
 
   // Normalise a pay period string like "01/07/2025 - 31/07/2025" -> "01-07-2025 - 31-07-2025"
   const normalizePayPeriod = (period: string): string => period.replace(/\//g, '-');
-
   if (loading) {
     return (
       <div
