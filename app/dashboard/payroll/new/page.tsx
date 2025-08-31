@@ -118,18 +118,38 @@ export default function NewPayrollRunPage() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
+  e.preventDefault();
+  setSubmitting(true);
+  
+  try {
+    // Create new payroll run object
+    const newPayrollRun = {
+      id: `pr-${Date.now()}`,
+      name: formData.payrollName,
+      payPeriod: `${formData.payPeriodStart} - ${formData.payPeriodEnd}`,
+      status: 'draft',
+      employeeCount: calculations.length,
+      grossPay: totals.totalGross,
+      netPay: totals.totalNet,
+      totalTax: totals.totalTax,
+      totalNI: totals.totalNI,
+      createdDate: new Date().toISOString().split('T')[0],
+      payDate: formData.payDate
+    };
 
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-      router.push('/dashboard/payroll');
-    } catch (error) {
-      console.error('Failed to create payroll run:', error);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    // Save to localStorage
+    const existingRuns = JSON.parse(localStorage.getItem('payme-payroll-runs') || '[]');
+    const updatedRuns = [...existingRuns, newPayrollRun];
+    localStorage.setItem('payme-payroll-runs', JSON.stringify(updatedRuns));
+    
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    router.push('/dashboard/payroll');
+  } catch (error) {
+    console.error('Failed to create payroll run:', error);
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const totals = calculations.reduce(
     (acc, calc) => {
