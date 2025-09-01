@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.1",
     "@radix-ui/react-slot": "^1.0.2",
     "@supabase/supabase-js": "^2.56.1",
     "@types/node": "^20",
@@ -17,11 +18,13 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "lucide-react": "^0.294.0",
-    "next": "14.2.8",
+    "next": "^14.2.32",
     "react": "^18",
     "react-dom": "^18",
+    "react-hook-form": "^7.62.0",
     "tailwind-merge": "^1.14.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^4.1.5"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.21",

@@ -1,0 +1,5 @@
+[33mcc6b8d2[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m Add UK tax code management page with localisation features
+[33m45d00ef[m[33m ([m[1;31morigin/main[m[33m)[m Fix login page build error - replace template placeholders with proper inline CSS
+[33mf6eaab7[m Fix login page styling
+[33mf697d44[m Fix login page styling with proper Tailwind classes
+[33m76cb771[m Phase 3: Complete authentication system with login, dashboard protection, and sign-out
