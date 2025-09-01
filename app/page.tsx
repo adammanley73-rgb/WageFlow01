@@ -21,7 +21,7 @@ export default function LoginPage() {
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [isThrottled, setIsThrottled] = useState(false);
 
-  // redirect if already authed (supports legacy string token)
+  // Redirect if already authenticated
   useEffect(() => {
     try {
       const token = localStorage.getItem('payme-auth') || sessionStorage.getItem('payme-auth');
@@ -36,7 +36,7 @@ export default function LoginPage() {
     } catch {}
   }, [router]);
 
-  // throttle loader + refresh remaining time
+  // Throttle management
   useEffect(() => {
     const update = () => {
       try {
@@ -129,31 +129,32 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4 py-12">
-      {/* Card */}
-      <div className="w-full max-w-md">
-        {/* Logo above card */}
-        <div className="text-center mb-6">
-          <img
-            src="/NEWPAYMELOGO.PNG"
+    <div style=1176>
+      <div style=1177>
+        
+        {/* Logo Section */}
+        <div style=1178>
+          <img 
+            src="/NEWPAYMELOGO.PNG" 
             alt="PAY-ME Logo"
-            className="mx-auto h-20 w-20 rounded-2xl object-contain"
+            style=1179
           />
+          <h1 style=1180>
+            💼 PAY-ME
+          </h1>
+          <p style=1181>
+            UK Payroll Management System
+          </p>
+          <p style=1182>
+            2025/26 Tax Year Compliant • RTI Submissions • Auto-Enrollment
+          </p>
         </div>
 
-        <div className="bg-white border border-gray-200 shadow-xl rounded-2xl p-8">
-          {/* Heading */}
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">UK Payroll Management System</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              2025/26 Tax Year Compliant • RTI Submissions • Auto-Enrollment
-            </p>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+        {/* Login Form */}
+        <div style=1183>
+          <form onSubmit={handleSubmit}>
+            <div style= marginBottom: '40px' >
+              <label style=1184>
                 Username
               </label>
               <input
@@ -162,15 +163,15 @@ export default function LoginPage() {
                 required
                 value={formData.username}
                 onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors disabled:bg-gray-100"
+                style=1185
                 placeholder="Enter your username"
                 disabled={isThrottled}
                 autoComplete="username"
               />
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+            <div style= marginBottom: '40px' >
+              <label style=1184>
                 Password
               </label>
               <input
@@ -179,21 +180,21 @@ export default function LoginPage() {
                 required
                 value={formData.password}
                 onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors disabled:bg-gray-100"
+                style=1185
                 placeholder="Enter your password"
                 disabled={isThrottled}
                 autoComplete="current-password"
               />
             </div>
 
-            <div className="flex items-center">
-              <label htmlFor="rememberMe" className="flex items-center text-sm text-gray-700 cursor-pointer">
+            <div style=1186>
+              <label style=1187>
                 <input
                   id="rememberMe"
                   type="checkbox"
                   checked={formData.rememberMe}
                   onChange={(e) => setFormData(prev => ({ ...prev, rememberMe: e.target.checked }))}
-                  className="mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  style=1188
                   disabled={isThrottled}
                 />
                 Remember me for 30 days
@@ -201,7 +202,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm" role="alert">
+              <div style=1189>
                 {error}
               </div>
             )}
@@ -209,26 +210,27 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading || isThrottled}
-              className={`w-full py-3.5 rounded-lg text-base font-semibold text-white transition-colors ${
-                loading || isThrottled ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
+              style=1190
             >
               {loading ? 'Signing In...' : isThrottled ? 'Account Locked' : 'Sign In to PAY-ME'}
             </button>
           </form>
+        </div>
 
-          {/* Demo Access */}
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm font-medium text-blue-900 mb-1">Demo Access:</p>
-            <p className="text-sm text-blue-800">
-              Username: <strong>admin</strong>
-              <br />
-              Password: <strong>payme2025</strong>
-            </p>
-          </div>
+        {/* Demo Credentials */}
+        <div style=1191>
+          <p style=1192>
+            Demo Access:
+          </p>
+          <p style=1193>
+            Username: <strong>admin</strong><br/>
+            Password: <strong>payme2025</strong>
+          </p>
+        </div>
 
-          {/* Footer */}
-          <p className="mt-6 text-center text-xs text-gray-500">
+        {/* Footer */}
+        <div style=1194>
+          <p style=1195>
             Secure UK Payroll Management • RTI Compliant • GDPR Compliant
           </p>
         </div>
