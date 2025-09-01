@@ -13,14 +13,14 @@ const formatDateUK = (dateString: string): string => {
   return `${day}-${month}-${year}`;
 };
 
-// UK currency formatting helper – £ with 0 decimals
+// UK currency formatting helper – £ with 2 decimal places
 const formatCurrencyUK = (amount: number): string => {
-  if (typeof amount !== 'number' || isNaN(amount)) return '£0';
+  if (typeof amount !== 'number' || isNaN(amount)) return '£0.00';
   return new Intl.NumberFormat('en-GB', {
     style: 'currency',
     currency: 'GBP',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount);
 };
 
@@ -103,6 +103,15 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 600,
     border: '1px solid #bbf7d0',
     display: 'inline-block',
+  },
+  sectionTitle: {
+    fontSize: '18px',
+    fontWeight: 700,
+    color: '#111827',
+    margin: 0,
+  },
+  statusContainer: {
+    marginTop: '8px',
   },
 };
 
@@ -273,7 +282,7 @@ export default function EmployeeDetailsPage() {
           <div style={styles.grid2}>
             {/* Personal Information */}
             <div>
-              <h2 style={{ ...styles.title, fontSize: '18px' }}>Personal information</h2>
+              <h2 style={styles.sectionTitle}>Personal information</h2>
               <div style={styles.grid2}>
                 <div>
                   <p style={styles.label}>Full name</p>
@@ -304,7 +313,7 @@ export default function EmployeeDetailsPage() {
 
             {/* Employment Information */}
             <div>
-              <h2 style={{ ...styles.title, fontSize: '18px' }}>Employment information</h2>
+              <h2 style={styles.sectionTitle}>Employment information</h2>
               <div style={styles.grid2}>
                 <div>
                   <p style={styles.label}>Annual salary</p>
@@ -325,7 +334,7 @@ export default function EmployeeDetailsPage() {
             {/* Address */}
             {employee.address && (
               <div>
-                <h2 style={{ ...styles.title, fontSize: '18px' }}>Address</h2>
+                <h2 style={styles.sectionTitle}>Address</h2>
                 <p style={styles.value}>
                   {employee.address.line1}
                   <br />
@@ -340,11 +349,11 @@ export default function EmployeeDetailsPage() {
 
         {/* Auto-Enrolment – 2025-2026 */}
         <div style={styles.card}>
-          <h2 style={{ ...styles.title, fontSize: '18px' }}>
+          <h2 style={styles.sectionTitle}>
             UK auto-enrolment status (2025-2026)
           </h2>
           <p style={styles.valueEm}>{autoEnrollmentStatus}</p>
-          <div style={{ marginTop: '8px' }}>
+          <div style={styles.statusContainer}>
             <p style={styles.value}>• Eligible: Age 22-74 and earn £10,000+ per year</p>
             <p style={styles.value}>• Entitled: Age 16-74 and earn £6,240+ per year</p>
             <p style={styles.value}>• Not eligible: Below thresholds</p>
