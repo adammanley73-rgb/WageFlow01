@@ -28,3 +28,5 @@ export default function RootLayout({
     </html>
   );
 }
+// app/layout.tsx
+// Removed duplicate RootLayout definition to fix export conflict.
