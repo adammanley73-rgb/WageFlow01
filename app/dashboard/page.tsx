@@ -168,7 +168,7 @@ export default function Dashboard() {
         {/* Navigation Header */}
         <div style={navHeader}>
           <div>
-            <h1 style={h1Style}>💼 PAY-ME Dashboard</h1>
+            <h1 style={h1Style}>💼 WageFlow Dashboard</h1>
             <p style={{ ...smallMuted, marginTop: 8 }}>
               Today: {todayUK} · Tax year 2025-2026
             </p>
