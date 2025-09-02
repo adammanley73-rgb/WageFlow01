@@ -309,7 +309,7 @@ export default function TaxCodesPage() {
         ? {
             ...emp,
             currentTaxCode: newTaxCode,
-            taxCodeStatus: /^(BR|D0|D1|0T)$/i.test(newTaxCode) ? 'emergency' : 'normal',
+            taxCodeStatus: (/^(BR|D0|D1|0T)$/i.test(newTaxCode) ? 'emergency' : 'normal') as 'normal' | 'emergency',
             lastUpdated: effectiveDate
           }
         : emp
