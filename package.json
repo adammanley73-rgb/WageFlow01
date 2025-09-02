@@ -1,6 +1,7 @@
 {
-  "name": "payme-final",
-  "version": "0.1.0",
+  "name": "wageflow01",
+  "version": "1.0.0",
+  "description": "WageFlow - UK Payroll Management System",
   "private": true,
   "scripts": {
     "dev": "next dev",
