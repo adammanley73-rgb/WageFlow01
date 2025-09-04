@@ -1,13 +1,13 @@
 ﻿"use client";
 import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
-export default function DemoLoginPage() {
+export default function DemoPage() {
   const router = useRouter();
 
-  const handleDemoLogin = () => {
-    // Simulate login success
-    localStorage.setItem('demo-user', 'true');
-    router.push('/dashboard');
+  const handleDemoAccess = () => {
+    // Direct navigation to dashboard
+    window.location.href = '/dashboard';
   };
 
   return (
@@ -19,8 +19,9 @@ export default function DemoLoginPage() {
         alignItems: 'center',
         justifyContent: 'center',
         background: 'linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-        padding: '40px 20px'
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        padding: '40px 20px',
       }}
     >
       <div
@@ -32,9 +33,27 @@ export default function DemoLoginPage() {
           border: '1px solid rgba(255, 255, 255, 0.2)',
           maxWidth: '500px',
           width: '100%',
-          textAlign: 'center'
+          textAlign: 'center',
         }}
       >
+        <div style={{ marginBottom: '24px' }}>
+          <img
+            src="/WageFlowLogo.png"
+            alt="WageFlow"
+            style={{
+              width: '120px',
+              height: '120px',
+              objectFit: 'contain',
+              margin: '0 auto 16px auto',
+              display: 'block',
+            }}
+            onError={(e) => {
+              // Hide image if it doesn't exist
+              (e.currentTarget as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        </div>
+
         <h1
           style={{
             fontSize: '48px',
@@ -43,7 +62,7 @@ export default function DemoLoginPage() {
             background: 'linear-gradient(135deg, #10b981, #3b82f6)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text'
+            backgroundClip: 'text',
           }}
         >
           💼 WageFlow
@@ -54,10 +73,10 @@ export default function DemoLoginPage() {
             fontSize: '24px',
             fontWeight: 600,
             color: '#374151',
-            margin: '0 0 12px 0'
+            margin: '0 0 12px 0',
           }}
         >
-          UK Payroll Management System
+          UK Payroll Management Demo
         </h2>
 
         <p
@@ -65,74 +84,39 @@ export default function DemoLoginPage() {
             fontSize: '16px',
             color: '#6b7280',
             lineHeight: '1.6',
-            margin: '0 0 32px 0'
+            margin: '0 0 32px 0',
           }}
         >
-          Professional payroll system with employee management,
-          auto-enrollment compliance, and UK tax features.
+          Professional payroll system with employee management, auto-enrollment compliance, and UK tax
+          features.
         </p>
 
-        <div
+        <button
+          onClick={handleDemoAccess}
           style={{
-            backgroundColor: '#f0f9ff',
-            border: '2px solid #3b82f6',
+            backgroundColor: '#10b981',
+            color: '#000000',
+            fontWeight: 'bold',
+            padding: '20px 40px',
             borderRadius: '12px',
-            padding: '24px',
-            margin: '0 0 32px 0'
+            border: '1px solid #059669',
+            fontSize: '18px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            width: '100%',
+            marginBottom: '16px',
           }}
         >
-          <h3
-            style={{
-              fontSize: '18px',
-              fontWeight: 'bold',
-              color: '#1e40af',
-              margin: '0 0 16px 0'
-            }}
-          >
-            🎯 Live Demo Access
-          </h3>
-          <p
-            style={{
-              fontSize: '14px',
-              color: '#6b7280',
-              margin: '0 0 20px 0'
-            }}
-          >
-            Explore the complete system with demo data including:<br />
-            • Employee Management • Payroll Processing<br />
-            • Auto-Enrollment Dashboard • Tax Compliance
-          </p>
-          <button
-            onClick={handleDemoLogin}
-            style={{
-              backgroundColor: '#10b981',
-              color: '#000000',
-              fontWeight: 'bold',
-              padding: '16px 32px',
-              borderRadius: '12px',
-              border: '1px solid #059669',
-              fontSize: '16px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              width: '100%'
-            }}
-          >
-            🚀 Enter Demo (No Login Required)
-          </button>
-        </div>
+          🚀 View Live Demo System
+        </button>
 
         <div
           style={{
-            backgroundColor: '#f8fafc',
-            borderRadius: '12px',
-            padding: '20px',
             fontSize: '12px',
-            color: '#6b7280'
+            color: '#9ca3af',
           }}
         >
-          <strong>✨ Features:</strong> Employee CRUD • Payroll Calculations •
-          Auto-Enrollment Compliance • Tax Code Management •
-          Overtime Rates • Pay Elements • UK Formatting
+          Click above to explore the complete WageFlow system
         </div>
       </div>
     </div>
