@@ -1,22 +1,21 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { getEmployeeById, type Employee } from "../../../../lib/data/employees";
+import { getEmployeeById, type Employee } from "../../../lib/data/employees";
 
 export default function EmployeeDetailsPage() {
   const params = useParams<{ id: string }>();
-  const employeeId = params?.id as string;
+  const employeeId = (params?.id as string) ?? "";
 
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [autoEnrollmentStatus, setAutoEnrollmentStatus] = useState("");
 
   useEffect(() => {
-    console.log("Loading employee with ID:", employeeId);
+    if (!employeeId) return;
 
     const timer = setTimeout(() => {
       const foundEmployee = getEmployeeById(employeeId);
-      console.log("Found employee:", foundEmployee);
 
       if (foundEmployee) {
         setEmployee(foundEmployee);
@@ -38,7 +37,7 @@ export default function EmployeeDetailsPage() {
       }
 
       setLoading(false);
-    }, 1000);
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [employeeId]);
@@ -57,20 +56,17 @@ export default function EmployeeDetailsPage() {
     return age;
   };
 
-  const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat("en-GB", {
-      style: "currency",
-      currency: "GBP",
-    }).format(amount);
-  };
+  const formatCurrency = (amount: number): string =>
+    new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(
+      amount
+    );
 
-  const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleDateString("en-GB", {
+  const formatDate = (dateString: string): string =>
+    new Date(dateString).toLocaleDateString("en-GB", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
     });
-  };
 
   if (loading) {
     return (
@@ -84,9 +80,7 @@ export default function EmployeeDetailsPage() {
           padding: "40px 20px",
         }}
       >
-        <div
-          style={{ maxWidth: "800px", margin: "0 auto", textAlign: "center" }}
-        >
+        <div style={{ maxWidth: "800px", margin: "0 auto", textAlign: "center" }}>
           <h1 style={{ color: "#1f2937", margin: "0" }}>
             Loading Employee Details...
           </h1>
@@ -108,7 +102,6 @@ export default function EmployeeDetailsPage() {
         }}
       >
         <div style={{ maxWidth: "800px", margin: "0 auto" }}>
-          {/* Navigation Header */}
           <div
             style={{
               backgroundColor: "rgba(255, 255, 255, 0.95)",
@@ -210,6 +203,11 @@ export default function EmployeeDetailsPage() {
     );
   }
 
+  const isActive = employee.status === "active";
+  const statusBg = isActive ? "#dcfce7" : "#fee2e2";
+  const statusColor = isActive ? "#166534" : "#dc2626";
+  const statusLabel = isActive ? "Active" : "Inactive";
+
   return (
     <div
       style={{
@@ -251,8 +249,7 @@ export default function EmployeeDetailsPage() {
               Details
             </h1>
             <p style={{ color: "#6b7280", margin: "8px 0 0 0" }}>
-              {employee.firstName} {employee.lastName} (
-              {employee.employeeNumber})
+              {employee.firstName} {employee.lastName} ({employee.employeeNumber})
             </p>
           </div>
           <nav style={{ display: "flex", gap: "24px" }}>
@@ -536,18 +533,11 @@ export default function EmployeeDetailsPage() {
                     borderRadius: "12px",
                     fontSize: "12px",
                     fontWeight: "500",
-                    backgroundColor:
-                      // @ts-expect-error status shape depends on your Employee type
-                      employee.status === "active" ? "#dcfce7" : "#fee2e2",
-                    color:
-                      // @ts-expect-error status shape depends on your Employee type
-                      employee.status === "active" ? "#166534" : "#dc2626",
+                    backgroundColor: statusBg,
+                    color: statusColor,
                   }}
                 >
-                  {
-                    // @ts-expect-error status shape depends on your Employee type
-                    employee.status === "active" ? "Active" : "Inactive"
-                  }
+                  {statusLabel}
                 </span>
               </div>
             </div>
