@@ -1,18 +1,14 @@
 ﻿"use client";
-import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function HomePage() {
+export default function DemoLoginPage() {
   const router = useRouter();
 
-  useEffect(() => {
-    // Auto-redirect to dashboard after a brief moment
-    const timer = setTimeout(() => {
-      router.push('/dashboard');
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [router]);
+  const handleDemoLogin = () => {
+    // Simulate login success
+    localStorage.setItem('demo-user', 'true');
+    router.push('/dashboard');
+  };
 
   return (
     <div
@@ -24,8 +20,6 @@ export default function HomePage() {
         justifyContent: 'center',
         background: 'linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-        color: 'white',
-        textAlign: 'center',
         padding: '40px 20px'
       }}
     >
@@ -36,9 +30,9 @@ export default function HomePage() {
           padding: '60px 40px',
           boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)',
           border: '1px solid rgba(255, 255, 255, 0.2)',
-          maxWidth: '600px',
+          maxWidth: '500px',
           width: '100%',
-          color: '#1f2937'
+          textAlign: 'center'
         }}
       >
         <h1
@@ -60,10 +54,10 @@ export default function HomePage() {
             fontSize: '24px',
             fontWeight: 600,
             color: '#374151',
-            margin: '0 0 24px 0'
+            margin: '0 0 12px 0'
           }}
         >
-          Professional UK Payroll Management
+          UK Payroll Management System
         </h2>
 
         <p
@@ -74,77 +68,72 @@ export default function HomePage() {
             margin: '0 0 32px 0'
           }}
         >
-          Complete payroll system with employee management, auto-enrollment compliance,
-          tax code management, and UK regulatory features. Built for modern businesses.
+          Professional payroll system with employee management,
+          auto-enrollment compliance, and UK tax features.
         </p>
 
         <div
           style={{
-            display: 'flex',
-            gap: '16px',
-            justifyContent: 'center',
-            flexWrap: 'wrap'
+            backgroundColor: '#f0f9ff',
+            border: '2px solid #3b82f6',
+            borderRadius: '12px',
+            padding: '24px',
+            margin: '0 0 32px 0'
           }}
         >
-          <a
-            href="/dashboard"
+          <h3
+            style={{
+              fontSize: '18px',
+              fontWeight: 'bold',
+              color: '#1e40af',
+              margin: '0 0 16px 0'
+            }}
+          >
+            🎯 Live Demo Access
+          </h3>
+          <p
+            style={{
+              fontSize: '14px',
+              color: '#6b7280',
+              margin: '0 0 20px 0'
+            }}
+          >
+            Explore the complete system with demo data including:<br />
+            • Employee Management • Payroll Processing<br />
+            • Auto-Enrollment Dashboard • Tax Compliance
+          </p>
+          <button
+            onClick={handleDemoLogin}
             style={{
               backgroundColor: '#10b981',
               color: '#000000',
               fontWeight: 'bold',
               padding: '16px 32px',
               borderRadius: '12px',
-              textDecoration: 'none',
-              fontSize: '16px',
               border: '1px solid #059669',
-              transition: 'all 0.2s ease',
-              display: 'inline-block'
-            }}
-          >
-            🚀 Enter Dashboard
-          </a>
-
-          <a
-            href="/login"
-            style={{
-              backgroundColor: 'transparent',
-              color: '#374151',
-              fontWeight: 'bold',
-              padding: '16px 32px',
-              borderRadius: '12px',
-              textDecoration: 'none',
               fontSize: '16px',
-              border: '2px solid #e5e7eb',
+              cursor: 'pointer',
               transition: 'all 0.2s ease',
-              display: 'inline-block'
+              width: '100%'
             }}
           >
-            👤 Login
-          </a>
+            🚀 Enter Demo (No Login Required)
+          </button>
         </div>
 
         <div
           style={{
-            marginTop: '40px',
-            padding: '20px',
             backgroundColor: '#f8fafc',
             borderRadius: '12px',
-            fontSize: '14px',
+            padding: '20px',
+            fontSize: '12px',
             color: '#6b7280'
           }}
         >
-          <strong>✨ Features:</strong> Employee Management • Payroll Processing • Auto-Enrollment • Tax Compliance • UK Formatting
+          <strong>✨ Features:</strong> Employee CRUD • Payroll Calculations •
+          Auto-Enrollment Compliance • Tax Code Management •
+          Overtime Rates • Pay Elements • UK Formatting
         </div>
-
-        <p
-          style={{
-            fontSize: '14px',
-            color: '#9ca3af',
-            margin: '24px 0 0 0'
-          }}
-        >
-          Redirecting to dashboard automatically...
-        </p>
       </div>
     </div>
   );
