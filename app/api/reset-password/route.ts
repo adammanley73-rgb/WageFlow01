@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createResetToken } from '../../../lib/reset-store';
-import { sendResetEmail } from '../../../lib/mailer';
 
 export async function POST(req: Request) {
   try {
@@ -14,8 +13,8 @@ export async function POST(req: Request) {
     const token = createResetToken(email.toLowerCase().trim());
     const link = `${appUrl}/reset-password/confirm?token=${encodeURIComponent(token)}`;
 
-    // Fire and forget. Swallow send errors to avoid leaking info.
-    try { await sendResetEmail(email, link); } catch {}
+    // TODO: Implement email sending when needed
+    console.log(`Reset link for ${email}: ${link}`);
 
     return NextResponse.json({ ok: true });
   } catch (e) {
