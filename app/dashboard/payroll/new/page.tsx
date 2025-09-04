@@ -1,635 +1,907 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { getEmployeeById, type Employee } from "../../../../../lib/data/employees";
+import { useRouter } from "next/navigation";
+import { DEMO_EMPLOYEES } from "../../../lib/data/employees";
 
-type EmploymentType = "full_time" | "part_time" | "contract" | "temporary" | "apprentice";
+type Employee = {
+  id: string;
+  employeeNumber: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  annualSalary: number;
+  status: string;
+  selected?: boolean;
+};
 
-export default function EmployeeEditPage() {
+type PayrollCalculation = {
+  employeeId: string;
+  employeeName: string;
+  grossPay: number;
+  taxDeduction: number;
+  niDeduction: number;
+  pensionDeduction: number;
+  netPay: number;
+};
+
+export default function NewPayrollRunPage() {
   const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const employeeId = params?.id as string;
-
-  const [employee, setEmployee] = useState<Employee | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [autoEnrollmentStatus, setAutoEnrollmentStatus] = useState("");
+  const [calculating, setCalculating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [calculations, setCalculations] = useState<PayrollCalculation[]>([]);
 
-  const [formData, setFormData] = useState<{
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    dateOfBirth: string;
-    nationalInsurance: string;
-    hireDate: string;
-    employmentType: EmploymentType;
-    annualSalary: number;
-    address: {
-      line1: string;
-      line2: string;
-      city: string;
-      county: string;
-      postcode: string;
-    };
-  }>({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    dateOfBirth: "",
-    nationalInsurance: "",
-    hireDate: "",
-    employmentType: "full_time",
-    annualSalary: 0,
-    address: {
-      line1: "",
-      line2: "",
-      city: "",
-      county: "",
-      postcode: "",
-    },
+  const [formData, setFormData] = useState({
+    payrollName: "",
+    payPeriodStart: "",
+    payPeriodEnd: "",
+    payDate: "",
+    payFrequency: "monthly",
   });
 
-  const employmentTypes: { value: EmploymentType; label: string }[] = [
-    { value: "full_time", label: "Full Time" },
-    { value: "part_time", label: "Part Time" },
-    { value: "contract", label: "Contract" },
-    { value: "temporary", label: "Temporary" },
-    { value: "apprentice", label: "Apprentice" },
-  ];
-
-  // Styles
-  const S = {
-    page: {
-      fontFamily:
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      background:
-        "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
-      minHeight: "100vh",
-      padding: "40px 20px",
-    } as const,
-    smallCenter: { maxWidth: "800px", margin: "0 auto", textAlign: "center" } as const,
-    container: { maxWidth: "800px", margin: "0 auto" } as const,
-    headerCard: {
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(20px)",
-      padding: "20px 40px",
-      borderRadius: "12px",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1)",
-      marginBottom: "30px",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      border: "1px solid rgba(255,255,255,0.2)",
-    } as const,
-    headerTitle: {
-      fontSize: "28px",
-      fontWeight: "bold",
-      color: "#1f2937",
-      margin: "0",
-    } as const,
-    headerSubtitle: { color: "#6b7280", margin: "8px 0 0 0" } as const,
-    nav: { display: "flex", gap: "24px" } as const,
-    navLink: {
-      color: "#000000",
-      textDecoration: "none",
-      fontWeight: "bold",
-      padding: "8px 16px",
-      borderRadius: "6px",
-      backgroundColor: "#10b981",
-      border: "1px solid #059669",
-    } as const,
-    card: {
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(20px)",
-      borderRadius: "12px",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1)",
-      border: "1px solid rgba(255,255,255,0.2)",
-      padding: "40px",
-    } as const,
-    sectionTitle: {
-      fontSize: "20px",
-      fontWeight: "bold",
-      color: "#1f2937",
-      margin: "0 0 24px 0",
-      borderBottom: "2px solid #f3f4f6",
-      paddingBottom: "8px",
-    } as const,
-    grid: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-      gap: "20px",
-    } as const,
-    label: {
-      display: "block",
-      fontSize: "14px",
-      fontWeight: "500",
-      color: "#374151",
-      marginBottom: "6px",
-    } as const,
-    input: {
-      width: "100%",
-      padding: "12px 16px",
-      border: "2px solid #e5e7eb",
-      borderRadius: "8px",
-      fontSize: "16px",
-      outline: "none",
-      transition: "border-color 0.2s",
-      boxSizing: "border-box",
-    } as const,
-    salaryHint: { fontSize: "14px", color: "#10b981", margin: "8px 0 0 0" } as const,
-    aeBox: {
-      backgroundColor: "#f0f9ff",
-      border: "1px solid #0ea5e9",
-      borderRadius: "8px",
-      padding: "16px",
-      marginBottom: "32px",
-    } as const,
-    aeTitle: {
-      fontSize: "16px",
-      fontWeight: "600",
-      color: "#0f172a",
-      margin: "0 0 8px 0",
-    } as const,
-    aeText: { fontSize: "14px", color: "#1e293b", margin: "0" } as const,
-    actions: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingTop: "32px",
-      borderTop: "1px solid #e5e7eb",
-    } as const,
-    cancel: { color: "#6b7280", textDecoration: "none", fontWeight: "500" } as const,
-    submit: {
-      backgroundColor: "#10b981",
-      color: "#000000",
-      border: "none",
-      borderRadius: "8px",
-      padding: "14px 28px",
-      fontSize: "16px",
-      fontWeight: "600",
-      cursor: "pointer",
-      transition: "background-color 0.2s",
-    } as const,
-    helpCard: {
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(20px)",
-      borderRadius: "12px",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1)",
-      border: "1px solid rgba(255,255,255,0.2)",
-      padding: "24px",
-      marginTop: "24px",
-    } as const,
-    helpTitle: {
-      fontSize: "18px",
-      fontWeight: "600",
-      color: "#1f2937",
-      margin: "0 0 16px 0",
-    } as const,
-    helpGrid: { display: "grid", gridTemplateColumns: "1fr", gap: "8px" } as const,
-    helpP: { fontSize: "14px", color: "#4b5563", margin: "0" } as const,
-  };
-
   useEffect(() => {
-    console.log("Loading employee for edit with ID:", employeeId);
+    console.log("Loading employees for payroll run...");
 
     const timer = setTimeout(() => {
-      const foundEmployee = getEmployeeById(employeeId);
-      console.log("Found employee for edit:", foundEmployee);
+      // Convert shared employee data for payroll use
+      const payrollEmployees = DEMO_EMPLOYEES.map((emp) => ({
+        id: emp.id,
+        employeeNumber: emp.employeeNumber,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        email: emp.email,
+        annualSalary: emp.annualSalary,
+        status: emp.status,
+        selected: true, // Default to selected for payroll
+      }));
 
-      if (foundEmployee) {
-        setEmployee(foundEmployee);
-        setFormData({
-          firstName: foundEmployee.firstName,
-          lastName: foundEmployee.lastName,
-          email: foundEmployee.email,
-          phone: foundEmployee.phone || "",
-          dateOfBirth: foundEmployee.dateOfBirth,
-          nationalInsurance: foundEmployee.nationalInsurance || "",
-          hireDate: foundEmployee.hireDate,
-          employmentType: (foundEmployee as any).employmentType ?? "full_time",
-          annualSalary: foundEmployee.annualSalary,
-          address: {
-            line1: foundEmployee.address?.line1 || "",
-            line2: (foundEmployee.address as any)?.line2 || "",
-            city: foundEmployee.address?.city || "",
-            county: (foundEmployee.address as any)?.county || "",
-            postcode: foundEmployee.address?.postcode || "",
-          },
-        });
-        updateAutoEnrollmentStatus(
-          foundEmployee.dateOfBirth,
-          foundEmployee.annualSalary
-        );
-      }
+      console.log("Loaded employees for payroll:", payrollEmployees);
+      setEmployees(payrollEmployees);
+
+      // Auto-generate payroll details
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.toLocaleDateString("en-GB", { month: "long" });
+      setFormData((prev) => ({
+        ...prev,
+        payrollName: `Monthly Payroll - ${month} ${year}`,
+        payPeriodStart: new Date(year, now.getMonth(), 1)
+          .toISOString()
+          .split("T")[0],
+        payPeriodEnd: new Date(year, now.getMonth() + 1, 0)
+          .toISOString()
+          .split("T")[0],
+        payDate: new Date(year, now.getMonth() + 1, 0)
+          .toISOString()
+          .split("T")[0],
+      }));
+
       setLoading(false);
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [employeeId]);
+  }, []);
 
-  const calculateAge = (dateOfBirth: string): number => {
-    const today = new Date();
-    const birthDate = new Date(dateOfBirth);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age;
-  };
+  const calculatePayroll = async () => {
+    setCalculating(true);
+    console.log("Starting payroll calculation...");
 
-  const updateAutoEnrollmentStatus = (dateOfBirth: string, annualSalary: number) => {
-    if (dateOfBirth && annualSalary > 0) {
-      const age = calculateAge(dateOfBirth);
+    const selectedEmployees = employees.filter((emp) => emp.selected);
+    console.log("Selected employees for calculation:", selectedEmployees);
 
-      if (age >= 22 && age < 75 && annualSalary >= 10000) {
-        setAutoEnrollmentStatus(
-          "✅ Eligible (Auto-enrolled into workplace pension)"
+    // Simulate calculation delay
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const calculatedPayroll: PayrollCalculation[] = selectedEmployees.map(
+      (employee) => {
+        const monthlyGross = employee.annualSalary / 12;
+        const personalAllowance = 12570; // 2025/26 tax year
+        const taxableIncome = Math.max(
+          0,
+          employee.annualSalary - personalAllowance
         );
-      } else if (age >= 16 && age < 75 && annualSalary >= 6240) {
-        setAutoEnrollmentStatus("⚪ Entitled (Can opt-in to workplace pension)");
-      } else {
-        setAutoEnrollmentStatus(
-          "❌ Not Eligible (Below age or salary thresholds)"
-        );
+        const monthlyTaxableIncome = taxableIncome / 12;
+        const taxDeduction = monthlyTaxableIncome * 0.2; // Basic rate 20%
+
+        const niThreshold = 12570; // Lower earnings limit
+        const niableIncome = Math.max(0, employee.annualSalary - niThreshold);
+        const monthlyNiableIncome = niableIncome / 12;
+        const niDeduction = monthlyNiableIncome * 0.12; // Employee NI rate 12%
+
+        const pensionDeduction = monthlyGross * 0.05; // 5% auto-enrollment
+        const netPay =
+          monthlyGross - taxDeduction - niDeduction - pensionDeduction;
+
+        return {
+          employeeId: employee.id,
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+          grossPay: Math.round(monthlyGross * 100) / 100,
+          taxDeduction: Math.round(taxDeduction * 100) / 100,
+          niDeduction: Math.round(niDeduction * 100) / 100,
+          pensionDeduction: Math.round(pensionDeduction * 100) / 100,
+          netPay: Math.round(netPay * 100) / 100,
+        };
       }
-    } else {
-      setAutoEnrollmentStatus("");
-    }
+    );
+
+    console.log("Payroll calculations completed:", calculatedPayroll);
+    setCalculations(calculatedPayroll);
+    setCalculating(false);
   };
 
-  const handleInputChange = (field: string, value: string | number) => {
-    if (field.startsWith("address.")) {
-      const addressField = field.split(".")[1] as keyof typeof formData.address;
-      setFormData((prev) => ({
-        ...prev,
-        address: {
-          ...prev.address,
-          [addressField]: value as string,
-        },
-      }));
-    } else {
-      setFormData((prev) => ({
-        ...prev,
-        [field]: value as never,
-      }));
-
-      if (field === "dateOfBirth" || field === "annualSalary") {
-        setTimeout(
-          () =>
-            updateAutoEnrollmentStatus(
-              field === "dateOfBirth" ? (value as string) : formData.dateOfBirth,
-              field === "annualSalary" ? (value as number) : formData.annualSalary
-            ),
-          100
-        );
-      }
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
+  const submitPayrollRun = async () => {
+    setSubmitting(true);
+    console.log("Submitting payroll run...");
 
     try {
-      console.log("Saving employee changes:", formData);
+      const payrollData = {
+        ...formData,
+        calculations,
+        selectedEmployees: employees.filter((emp) => emp.selected).length,
+        totalGross: calculations.reduce((sum, calc) => sum + calc.grossPay, 0),
+        totalNet: calculations.reduce((sum, calc) => sum + calc.netPay, 0),
+      };
 
+      console.log("Payroll run data:", payrollData);
+
+      // Simulate API submission
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      console.log("Employee updated successfully");
-      alert("Employee updated successfully!");
+      console.log("Payroll run created successfully");
+      alert("Payroll run created successfully!");
 
-      router.push(`/dashboard/employees/${employeeId}`);
+      // Success - redirect to payroll dashboard
+      router.push("/dashboard/payroll");
     } catch (error) {
-      console.error("Failed to update employee:", error);
-      alert("Failed to update employee. Please try again.");
+      console.error("Failed to create payroll run:", error);
+      alert("Failed to create payroll run. Please try again.");
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
-  const formatCurrency = (amount: number): string =>
-    new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(
-      amount
+  const formatCurrency = (amount: number): string => {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: "GBP",
+    }).format(amount);
+  };
+
+  const getTotals = () => {
+    return calculations.reduce(
+      (acc, calc) => ({
+        grossPay: acc.grossPay + calc.grossPay,
+        taxDeduction: acc.taxDeduction + calc.taxDeduction,
+        niDeduction: acc.niDeduction + calc.niDeduction,
+        pensionDeduction: acc.pensionDeduction + calc.pensionDeduction,
+        netPay: acc.netPay + calc.netPay,
+      }),
+      {
+        grossPay: 0,
+        taxDeduction: 0,
+        niDeduction: 0,
+        pensionDeduction: 0,
+        netPay: 0,
+      }
     );
+  };
+
+  const selectedCount = employees.filter((emp) => emp.selected).length;
+  const totals = getTotals();
 
   if (loading) {
     return (
-      <div style={S.page}>
-        <div style={S.smallCenter}>
-          <h1 style={{ color: "#1f2937", margin: "0" }}>Loading Employee...</h1>
-        </div>
-      </div>
-    );
-  }
-
-  if (!employee) {
-    return (
-      <div style={S.page}>
-        <div style={S.smallCenter}>
-          <h1 style={{ color: "#1f2937", margin: "0" }}>Employee Not Found</h1>
-          <p style={{ color: "#6b7280" }}>
-            The employee you're trying to edit could not be found.
-          </p>
-          <a href="/dashboard/employees" style={S.navLink}>
-            ← Back to Employees
-          </a>
+      <div
+        style={{
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          background:
+            "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
+          minHeight: "100vh",
+          padding: "40px 20px",
+        }}
+      >
+        <div style={{ textAlign: "center", marginTop: "50px" }}>
+          <h1 style={{ color: "#1f2937", margin: "0" }}>
+            Loading New Payroll Run...
+          </h1>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={S.page}>
-      <div style={S.container}>
+    <div
+      style={{
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        background:
+          "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
+        minHeight: "100vh",
+        padding: "40px 20px",
+      }}
+    >
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         {/* Navigation Header */}
-        <div style={S.headerCard}>
+        <div
+          style={{
+            backgroundColor: "rgba(255, 255, 255, 0.95)",
+            backdropFilter: "blur(20px)",
+            padding: "20px 40px",
+            borderRadius: "12px",
+            boxShadow:
+              "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+            marginBottom: "30px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+          }}
+        >
           <div>
-            <h1 style={S.headerTitle}>
-              💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Edit Employee
+            <h1
+              style={{
+                fontSize: "28px",
+                fontWeight: "bold",
+                color: "#1f2937",
+                margin: "0",
+              }}
+            >
+              💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> New Payroll
+              Run
             </h1>
-            <p style={S.headerSubtitle}>
-              Update employee details for {employee.firstName} {employee.lastName} (
-              {employee.employeeNumber})
+            <p
+              style={{
+                fontSize: "14px",
+                color: "#6b7280",
+                margin: "8px 0 0 0",
+              }}
+            >
+              Set up and process payroll for your employees
             </p>
           </div>
-          <nav style={S.nav}>
-            <a href="/dashboard" style={S.navLink}>
+          <nav style={{ display: "flex", gap: "24px" }}>
+            <a
+              href="/dashboard"
+              style={{
+                color: "#000000",
+                textDecoration: "none",
+                fontWeight: "bold",
+                padding: "8px 16px",
+                borderRadius: "6px",
+                backgroundColor: "#10b981",
+                border: "1px solid #059669",
+              }}
+            >
               Dashboard
             </a>
-            <a href="/dashboard/employees" style={S.navLink}>
-              Employees
-            </a>
-            <a href={`/dashboard/employees/${employee.id}`} style={S.navLink}>
-              ← Back to Details
+            <a
+              href="/dashboard/payroll"
+              style={{
+                color: "#000000",
+                textDecoration: "none",
+                fontWeight: "bold",
+                padding: "8px 16px",
+                borderRadius: "6px",
+                backgroundColor: "#10b981",
+                border: "1px solid #059669",
+              }}
+            >
+              ← Back to Payroll
             </a>
           </nav>
         </div>
 
-        {/* Main Form Card */}
-        <div style={S.card}>
-          <form onSubmit={handleSubmit}>
-            {/* Personal Information Section */}
-            <div style={{ marginBottom: "40px" }}>
-              <h2 style={S.sectionTitle}>Personal Information</h2>
+        {/* Payroll Details Form */}
+        <div
+          style={{
+            backgroundColor: "rgba(255, 255, 255, 0.95)",
+            backdropFilter: "blur(20px)",
+            borderRadius: "12px",
+            boxShadow:
+              "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            padding: "32px",
+            marginBottom: "30px",
+          }}
+        >
+          <h2
+            style={{
+              fontSize: "20px",
+              fontWeight: 600,
+              color: "#1f2937",
+              margin: "0 0 24px 0",
+            }}
+          >
+            Payroll Details
+          </h2>
 
-              <div style={S.grid}>
-                <div>
-                  <label style={S.label}>First Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.firstName}
-                    onChange={(e) => handleInputChange("firstName", e.target.value)}
-                    style={S.input}
-                  />
-                </div>
-
-                <div>
-                  <label style={S.label}>Last Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.lastName}
-                    onChange={(e) => handleInputChange("lastName", e.target.value)}
-                    style={S.input}
-                  />
-                </div>
-
-                <div>
-                  <label style={S.label}>Email Address *</label>
-                  <input
-                    type="email"
-                    required
-                    value={formData.email}
-                    onChange={(e) => handleInputChange("email", e.target.value)}
-                    style={S.input}
-                  />
-                </div>
-
-                <div>
-                  <label style={S.label}>Phone Number</label>
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => handleInputChange("phone", e.target.value)}
-                    placeholder="+44 7700 900123"
-                    style={S.input}
-                  />
-                </div>
-
-                <div>
-                  <label style={S.label}>Date of Birth *</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.dateOfBirth}
-                    onChange={(e) =>
-                      handleInputChange("dateOfBirth", e.target.value)
-                    }
-                    style={S.input}
-                  />
-                </div>
-
-                <div>
-                  <label style={S.label}>National Insurance Number</label>
-                  <input
-                    type="text"
-                    value={formData.nationalInsurance}
-                    onChange={(e) =>
-                      handleInputChange("nationalInsurance", e.target.value)
-                    }
-                    placeholder="AB123456C"
-                    style={S.input}
-                  />
-                </div>
-              </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+              gap: "24px",
+            }}
+          >
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  color: "#374151",
+                  marginBottom: "8px",
+                }}
+              >
+                Payroll Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.payrollName}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    payrollName: e.target.value,
+                  }))
+                }
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  border: "2px solid #e5e7eb",
+                  borderRadius: "8px",
+                  fontSize: "16px",
+                  outline: "none",
+                  transition: "border-color 0.2s",
+                }}
+              />
             </div>
 
-            {/* Employment Information Section */}
-            <div style={{ marginBottom: "40px" }}>
-              <h2 style={S.sectionTitle}>Employment Information</h2>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  color: "#374151",
+                  marginBottom: "8px",
+                }}
+              >
+                Pay Frequency
+              </label>
+              <select
+                value={formData.payFrequency}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    payFrequency: e.target.value,
+                  }))
+                }
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  border: "2px solid #e5e7eb",
+                  borderRadius: "8px",
+                  fontSize: "16px",
+                  outline: "none",
+                  transition: "border-color 0.2s",
+                }}
+              >
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+              </select>
+            </div>
 
-              <div style={S.grid}>
-                <div>
-                  <label style={S.label}>Employment Type *</label>
-                  <select
-                    value={formData.employmentType}
-                    onChange={(e) =>
-                      handleInputChange(
-                        "employmentType",
-                        e.target.value as EmploymentType
-                      )
-                    }
-                    style={S.input as React.CSSProperties}
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  color: "#374151",
+                  marginBottom: "8px",
+                }}
+              >
+                Pay Period Start *
+              </label>
+              <input
+                type="date"
+                required
+                value={formData.payPeriodStart}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    payPeriodStart: e.target.value,
+                  }))
+                }
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  border: "2px solid #e5e7eb",
+                  borderRadius: "8px",
+                  fontSize: "16px",
+                  outline: "none",
+                  transition: "border-color 0.2s",
+                }}
+              />
+            </div>
+
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  color: "#374151",
+                  marginBottom: "8px",
+                }}
+              >
+                Pay Period End *
+              </label>
+              <input
+                type="date"
+                required
+                value={formData.payPeriodEnd}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    payPeriodEnd: e.target.value,
+                  }))
+                }
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  border: "2px solid #e5e7eb",
+                  borderRadius: "8px",
+                  fontSize: "16px",
+                  outline: "none",
+                  transition: "border-color 0.2s",
+                }}
+              />
+            </div>
+
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: "14px",
+                  fontWeight: 500,
+                  color: "#374151",
+                  marginBottom: "8px",
+                }}
+              >
+                Pay Date *
+              </label>
+              <input
+                type="date"
+                required
+                value={formData.payDate}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, payDate: e.target.value }))
+                }
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  border: "2px solid #e5e7eb",
+                  borderRadius: "8px",
+                  fontSize: "16px",
+                  outline: "none",
+                  transition: "border-color 0.2s",
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Employee Selection */}
+        <div
+          style={{
+            backgroundColor: "rgba(255, 255, 255, 0.95)",
+            backdropFilter: "blur(20px)",
+            borderRadius: "12px",
+            boxShadow:
+              "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            padding: "32px",
+            marginBottom: "30px",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "24px",
+            }}
+          >
+            <h2
+              style={{
+                fontSize: "20px",
+                fontWeight: 600,
+                color: "#1f2937",
+                margin: "0",
+              }}
+            >
+              Select Employees ({selectedCount} selected)
+            </h2>
+            <button
+              type="button"
+              onClick={calculatePayroll}
+              disabled={selectedCount === 0 || calculating}
+              style={{
+                backgroundColor:
+                  selectedCount === 0 || calculating ? "#9ca3af" : "#10b981",
+                color: "#000000",
+                fontWeight: "bold",
+                padding: "12px 24px",
+                borderRadius: "8px",
+                border: "none",
+                fontSize: "16px",
+                cursor:
+                  selectedCount === 0 || calculating
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+            >
+              {calculating ? "Calculating..." : "£ Calculate Payroll"}
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+              gap: "16px",
+            }}
+          >
+            {employees.map((employee) => (
+              <div
+                key={employee.id}
+                style={{
+                  backgroundColor: "#f8fafc",
+                  border: "2px solid #e5e7eb",
+                  borderRadius: "8px",
+                  padding: "16px",
+                }}
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={employee.selected || false}
+                    onChange={(e) => {
+                      console.log(
+                        `Toggling employee ${employee.id} selection:`,
+                        e.target.checked
+                      );
+                      setEmployees((prev) =>
+                        prev.map((emp) =>
+                          emp.id === employee.id
+                            ? { ...emp, selected: e.target.checked }
+                            : emp
+                        )
+                      );
+                    }}
+                    style={{
+                      width: "16px",
+                      height: "16px",
+                      marginTop: "2px",
+                    }}
+                  />
+                  <div>
+                    <div
+                      style={{ fontWeight: 600, color: "#1f2937" }}
+                    >{`${employee.firstName} ${employee.lastName}`}</div>
+                    <div style={{ fontSize: "14px", color: "#6b7280" }}>
+                      {employee.employeeNumber} •{" "}
+                      {formatCurrency(employee.annualSalary)} annually
+                    </div>
+                  </div>
+                </label>
+              </div>
+            ))}
+          </div>
+
+          {employees.length === 0 && (
+            <div style={{ textAlign: "center", padding: "40px" }}>
+              <p style={{ fontSize: "16px", color: "#6b7280" }}>
+                No employees found. Please add employees before creating a
+                payroll run.
+              </p>
+              <a
+                href="/dashboard/employees/new"
+                style={{
+                  backgroundColor: "#3b82f6",
+                  color: "#ffffff",
+                  fontWeight: "bold",
+                  padding: "12px 24px",
+                  borderRadius: "8px",
+                  textDecoration: "none",
+                  fontSize: "16px",
+                }}
+              >
+                👤 Add Employee
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* Payroll Calculations */}
+        {calculations.length > 0 && (
+          <div
+            style={{
+              backgroundColor: "rgba(255, 255, 255, 0.95)",
+              backdropFilter: "blur(20px)",
+              borderRadius: "12px",
+              boxShadow:
+                "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+              border: "1px solid rgba(255, 255, 255, 0.2)",
+              padding: "32px",
+              marginBottom: "30px",
+            }}
+          >
+            <h2
+              style={{
+                fontSize: "20px",
+                fontWeight: 600,
+                color: "#1f2937",
+                margin: "0 0 24px 0",
+              }}
+            >
+              Payroll Calculations
+            </h2>
+
+            <div style={{ overflowX: "auto" }}>
+              <table
+                style={{ width: "100%", borderCollapse: "collapse" }}
+              >
+                <thead>
+                  <tr>
+                    <th
+                      style={{
+                        padding: "16px",
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#374151",
+                        borderBottom: "2px solid #f3f4f6",
+                      }}
+                    >
+                      Employee
+                    </th>
+                    <th
+                      style={{
+                        padding: "16px",
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#374151",
+                        borderBottom: "2px solid #f3f4f6",
+                      }}
+                    >
+                      Gross Pay
+                    </th>
+                    <th
+                      style={{
+                        padding: "16px",
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#374151",
+                        borderBottom: "2px solid #f3f4f6",
+                      }}
+                    >
+                      Tax
+                    </th>
+                    <th
+                      style={{
+                        padding: "16px",
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#374151",
+                        borderBottom: "2px solid #f3f4f6",
+                      }}
+                    >
+                      National Insurance
+                    </th>
+                    <th
+                      style={{
+                        padding: "16px",
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#374151",
+                        borderBottom: "2px solid #f3f4f6",
+                      }}
+                    >
+                      Pension
+                    </th>
+                    <th
+                      style={{
+                        padding: "16px",
+                        textAlign: "left",
+                        fontWeight: 600,
+                        color: "#374151",
+                        borderBottom: "2px solid #f3f4f6",
+                      }}
+                    >
+                      Net Pay
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {calculations.map((calc) => (
+                    <tr key={calc.employeeId}>
+                      <td
+                        style={{
+                          padding: "16px",
+                          borderBottom: "1px solid #f3f4f6",
+                        }}
+                      >
+                        <div
+                          style={{ fontWeight: 500, color: "#1f2937" }}
+                        >
+                          {calc.employeeName}
+                        </div>
+                      </td>
+                      <td
+                        style={{
+                          padding: "16px",
+                          borderBottom: "1px solid #f3f4f6",
+                        }}
+                      >
+                        <span
+                          style={{ fontWeight: 600, color: "#059669" }}
+                        >
+                          {formatCurrency(calc.grossPay)}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          padding: "16px",
+                          borderBottom: "1px solid #f3f4f6",
+                        }}
+                      >
+                        <span style={{ color: "#dc2626" }}>
+                          {formatCurrency(calc.taxDeduction)}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          padding: "16px",
+                          borderBottom: "1px solid #f3f4f6",
+                        }}
+                      >
+                        <span style={{ color: "#dc2626" }}>
+                          {formatCurrency(calc.niDeduction)}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          padding: "16px",
+                          borderBottom: "1px solid #f3f4f6",
+                        }}
+                      >
+                        <span style={{ color: "#92400e" }}>
+                          {formatCurrency(calc.pensionDeduction)}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          padding: "16px",
+                          borderBottom: "1px solid #f3f4f6",
+                        }}
+                      >
+                        <span
+                          style={{ fontWeight: 600, color: "#059669" }}
+                        >
+                          {formatCurrency(calc.netPay)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr
+                    style={{
+                      backgroundColor: "#f8fafc",
+                      fontWeight: "bold",
+                    }}
                   >
-                    {employmentTypes.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={S.label}>Hire Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.hireDate}
-                    onChange={(e) => handleInputChange("hireDate", e.target.value)}
-                    style={S.input}
-                  />
-                </div>
-
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label style={S.label}>Annual Salary (£) *</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    step="100"
-                    value={formData.annualSalary || ""}
-                    onChange={(e) =>
-                      handleInputChange(
-                        "annualSalary",
-                        parseFloat(e.target.value) || 0
-                      )
-                    }
-                    style={S.input}
-                  />
-                  {formData.annualSalary > 0 && (
-                    <p style={S.salaryHint}>
-                      Annual Salary: {formatCurrency(formData.annualSalary)}
-                    </p>
-                  )}
-                </div>
-              </div>
+                    <td
+                      style={{
+                        padding: "16px",
+                        fontWeight: "bold",
+                        color: "#1f2937",
+                      }}
+                    >
+                      TOTALS
+                    </td>
+                    <td style={{ padding: "16px" }}>
+                      <span
+                        style={{ fontWeight: "bold", color: "#059669" }}
+                      >
+                        {formatCurrency(totals.grossPay)}
+                      </span>
+                    </td>
+                    <td style={{ padding: "16px" }}>
+                      <span
+                        style={{ fontWeight: "bold", color: "#dc2626" }}
+                      >
+                        {formatCurrency(totals.taxDeduction)}
+                      </span>
+                    </td>
+                    <td style={{ padding: "16px" }}>
+                      <span
+                        style={{ fontWeight: "bold", color: "#dc2626" }}
+                      >
+                        {formatCurrency(totals.niDeduction)}
+                      </span>
+                    </td>
+                    <td style={{ padding: "16px" }}>
+                      <span
+                        style={{ fontWeight: "bold", color: "#92400e" }}
+                      >
+                        {formatCurrency(totals.pensionDeduction)}
+                      </span>
+                    </td>
+                    <td style={{ padding: "16px" }}>
+                      <span
+                        style={{ fontWeight: "bold", color: "#059669" }}
+                      >
+                        {formatCurrency(totals.netPay)}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-
-            {/* Address Information Section */}
-            <div style={{ marginBottom: "40px" }}>
-              <h2 style={S.sectionTitle}>Address Information</h2>
-
-              <div style={S.grid}>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label style={S.label}>Address Line 1 *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.address.line1}
-                    onChange={(e) =>
-                      handleInputChange("address.line1", e.target.value)
-                    }
-                    placeholder="123 Main Street"
-                    style={S.input}
-                  />
-                </div>
-
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label style={S.label}>Address Line 2</label>
-                  <input
-                    type="text"
-                    value={formData.address.line2}
-                    onChange={(e) =>
-                      handleInputChange("address.line2", e.target.value)
-                    }
-                    placeholder="Apartment, suite, etc. (optional)"
-                    style={S.input}
-                  />
-                </div>
-
-                <div>
-                  <label style={S.label}>City *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.address.city}
-                    onChange={(e) =>
-                      handleInputChange("address.city", e.target.value)
-                    }
-                    placeholder="London"
-                    style={S.input}
-                  />
-                </div>
-
-                <div>
-                  <label style={S.label}>County</label>
-                  <input
-                    type="text"
-                    value={formData.address.county}
-                    onChange={(e) =>
-                      handleInputChange("address.county", e.target.value)
-                    }
-                    placeholder="Greater London"
-                    style={S.input}
-                  />
-                </div>
-
-                <div>
-                  <label style={S.label}>Postcode *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.address.postcode}
-                    onChange={(e) =>
-                      handleInputChange("address.postcode", e.target.value)
-                    }
-                    placeholder="SW1A 1AA"
-                    style={S.input}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Auto-Enrollment Status */}
-            {autoEnrollmentStatus && (
-              <div style={S.aeBox}>
-                <h3 style={S.aeTitle}>Auto-Enrollment Status</h3>
-                <p style={S.aeText}>{autoEnrollmentStatus}</p>
-              </div>
-            )}
 
             {/* Submit Button */}
-            <div style={S.actions}>
-              <a href={`/dashboard/employees/${employee.id}`} style={S.cancel}>
+            <div
+              style={{
+                display: "flex",
+                gap: "16px",
+                justifyContent: "flex-end",
+                marginTop: "24px",
+              }}
+            >
+              <a
+                href="/dashboard/payroll"
+                style={{
+                  backgroundColor: "#6b7280",
+                  color: "#ffffff",
+                  fontWeight: "bold",
+                  padding: "12px 24px",
+                  borderRadius: "8px",
+                  textDecoration: "none",
+                  fontSize: "16px",
+                }}
+              >
                 Cancel
               </a>
               <button
-                type="submit"
-                disabled={saving}
+                type="button"
+                onClick={submitPayrollRun}
+                disabled={submitting}
                 style={{
-                  ...S.submit,
-                  backgroundColor: saving ? "#9ca3af" : "#10b981",
-                  cursor: saving ? "not-allowed" : "pointer",
+                  backgroundColor: submitting ? "#9ca3af" : "#10b981",
+                  color: "#000000",
+                  fontWeight: "bold",
+                  padding: "12px 24px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "16px",
+                  cursor: submitting ? "not-allowed" : "pointer",
                 }}
               >
-                {saving ? "Saving Changes..." : "✅ Save Changes"}
+                {submitting ? "Creating Payroll Run..." : "£ Create Payroll Run"}
               </button>
             </div>
-          </form>
-        </div>
-
-        {/* Help Information */}
-        <div style={S.helpCard}>
-          <h3 style={S.helpTitle}>Edit Employee Information</h3>
-          <div style={S.helpGrid}>
-            <p style={S.helpP}>
-              <strong>Required Fields:</strong> Fields marked with * must be completed
-              before saving
-            </p>
-            <p style={S.helpP}>
-              <strong>Auto-Enrollment:</strong> Status automatically updates based on
-              age and salary
-            </p>
-            <p style={S.helpP}>
-              <strong>Changes:</strong> All changes will be saved and reflected in
-              payroll immediately
-            </p>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
