@@ -16,7 +16,7 @@ export interface Employee {
   nationalInsurance?: string;
   annualSalary: number;
   hireDate: string;
-  status: string;
+  status: "active" | "inactive";
   employmentType: EmploymentType;
   autoEnrollmentStatus: "eligible" | "entitled" | "non_eligible";
   address?: {
@@ -131,14 +131,16 @@ export const createEmployee = async (
   const newEmployee: Employee = {
     ...employee,
     id: newId,
-    // Ensure employeeNumber exists and matches our ID format if not supplied correctly
-    employeeNumber: employee.employeeNumber || newId,
+    // Keep the incoming employeeNumber, but if a caller passes an empty string,
+    // fall back to the generated one.
+    employeeNumber: employee.employeeNumber?.trim() ? employee.employeeNumber : newId,
   };
 
   DEMO_EMPLOYEES.push(newEmployee);
   return newEmployee;
 };
 
+// Type-safe partial update with proper address merge
 export const updateEmployee = async (
   id: string,
   updates: Partial<Employee>
@@ -146,14 +148,14 @@ export const updateEmployee = async (
   const index = DEMO_EMPLOYEES.findIndex((emp) => emp.id === id);
   if (index === -1) return null;
 
-  DEMO_EMPLOYEES[index] = {
-    ...DEMO_EMPLOYEES[index],
+  const current = DEMO_EMPLOYEES[index];
+
+  const merged: Employee = {
+    ...current,
     ...updates,
-    address: {
-      ...DEMO_EMPLOYEES[index].address,
-      ...updates.address,
-    },
+    address: updates.address ? { ...current.address, ...updates.address } : current.address,
   };
 
-  return DEMO_EMPLOYEES[index];
+  DEMO_EMPLOYEES[index] = merged;
+  return merged;
 };
