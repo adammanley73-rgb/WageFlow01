@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { getEmployeeById, type Employee } from "../../../../../lib/data/employees";
+import { getEmployeeById, type Employee } from "../../../../lib/data/employees";
 
 type EmploymentType = "full_time" | "part_time" | "contract" | "temporary" | "apprentice";
 

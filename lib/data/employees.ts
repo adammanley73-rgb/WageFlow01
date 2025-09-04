@@ -1,9 +1,4 @@
-export type EmploymentType =
-  | "full_time"
-  | "part_time"
-  | "contract"
-  | "temporary"
-  | "apprentice";
+export type EmploymentType = "full_time" | "part_time" | "contract" | "temporary" | "apprentice";
 
 export interface Employee {
   id: string;
@@ -16,7 +11,7 @@ export interface Employee {
   nationalInsurance?: string;
   annualSalary: number;
   hireDate: string;
-  status: "active" | "inactive";
+  status: string;
   employmentType: EmploymentType;
   autoEnrollmentStatus: "eligible" | "entitled" | "non_eligible";
   address?: {
@@ -28,7 +23,6 @@ export interface Employee {
   };
 }
 
-// SHARED EMPLOYEE DATA - Used by all pages
 export const DEMO_EMPLOYEES: Employee[] = [
   {
     id: "EMP001",
@@ -72,90 +66,9 @@ export const DEMO_EMPLOYEES: Employee[] = [
       postcode: "M1 1AB",
     },
   },
-  {
-    id: "EMP003",
-    employeeNumber: "EMP003",
-    firstName: "Emma",
-    lastName: "Brown",
-    email: "emma.brown@company.co.uk",
-    phone: "+44 7700 900125",
-    dateOfBirth: "1995-11-08",
-    nationalInsurance: "EF345678G",
-    annualSalary: 22000,
-    hireDate: "2022-06-20",
-    status: "active",
-    employmentType: "part_time",
-    autoEnrollmentStatus: "non_eligible",
-    address: {
-      line1: "789 Park Lane",
-      city: "Birmingham",
-      county: "West Midlands",
-      postcode: "B1 2CD",
-    },
-  },
-  {
-    id: "EMP004",
-    employeeNumber: "EMP004",
-    firstName: "Michael",
-    lastName: "Davis",
-    email: "michael.davis@company.co.uk",
-    phone: "+44 7700 900126",
-    dateOfBirth: "1987-12-03",
-    nationalInsurance: "GH567890I",
-    annualSalary: 32000,
-    hireDate: "2019-08-12",
-    status: "active",
-    employmentType: "full_time",
-    autoEnrollmentStatus: "eligible",
-    address: {
-      line1: "321 High Street",
-      city: "Leeds",
-      county: "West Yorkshire",
-      postcode: "LS1 3EX",
-    },
-  },
 ];
 
-// Helper functions
 export const getEmployeeById = (id: string): Employee | undefined =>
   DEMO_EMPLOYEES.find((emp) => emp.id === id);
 
-export const getAllEmployees = (): Employee[] => DEMO_EMPLOYEES;
-
-export const createEmployee = async (
-  employee: Omit<Employee, "id">
-): Promise<Employee> => {
-  const nextNum = String(DEMO_EMPLOYEES.length + 1).padStart(3, "0");
-  const newId = `EMP${nextNum}`;
-
-  const newEmployee: Employee = {
-    ...employee,
-    id: newId,
-    // Keep the incoming employeeNumber, but if a caller passes an empty string,
-    // fall back to the generated one.
-    employeeNumber: employee.employeeNumber?.trim() ? employee.employeeNumber : newId,
-  };
-
-  DEMO_EMPLOYEES.push(newEmployee);
-  return newEmployee;
-};
-
-// Type-safe partial update with proper address merge
-export const updateEmployee = async (
-  id: string,
-  updates: Partial<Employee>
-): Promise<Employee | null> => {
-  const index = DEMO_EMPLOYEES.findIndex((emp) => emp.id === id);
-  if (index === -1) return null;
-
-  const current = DEMO_EMPLOYEES[index];
-
-  const merged: Employee = {
-    ...current,
-    ...updates,
-    address: updates.address ? { ...current.address, ...updates.address } : current.address,
-  };
-
-  DEMO_EMPLOYEES[index] = merged;
-  return merged;
-};
+export const getAllEmployees = (): Employee[] => [...DEMO_EMPLOYEES];
