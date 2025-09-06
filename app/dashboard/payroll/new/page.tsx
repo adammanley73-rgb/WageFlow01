@@ -1,212 +1,182 @@
-"use client";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { DEMO_EMPLOYEES } from "../../../lib/data/employees";
+'use client';
 
-type Employee = {
-  id: string;
-  employeeNumber: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  annualSalary: number;
-  status: string;
-  selected?: boolean;
-};
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import {
+  DEMO_EMPLOYEES,
+  PAY_SCHEDULES,
+  getPayScheduleName,
+  type Employee,
+  type PaySchedule
+} from '../../../../lib/data/employees';
 
-type PayrollCalculation = {
-  employeeId: string;
-  employeeName: string;
+interface PayrollEmployee extends Employee {
+  selected: boolean;
   grossPay: number;
   taxDeduction: number;
   niDeduction: number;
   pensionDeduction: number;
   netPay: number;
-};
+}
 
 export default function NewPayrollRunPage() {
   const router = useRouter();
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [calculating, setCalculating] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [calculations, setCalculations] = useState<PayrollCalculation[]>([]);
-
-  const [formData, setFormData] = useState({
-    payrollName: "",
-    payPeriodStart: "",
-    payPeriodEnd: "",
-    payDate: "",
-    payFrequency: "monthly",
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [employees, setEmployees] = useState<PayrollEmployee[]>([]);
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const [selectedSchedule, setSelectedSchedule] = useState('');
+  const [payrollData, setPayrollData] = useState({
+    payPeriodStart: '',
+    payPeriodEnd: '',
+    payDate: '',
+    description: ''
   });
 
   useEffect(() => {
-    console.log("Loading employees for payroll run...");
+    loadEmployees();
 
-    const timer = setTimeout(() => {
-      // Convert shared employee data for payroll use
-      const payrollEmployees = DEMO_EMPLOYEES.map((emp) => ({
-        id: emp.id,
-        employeeNumber: emp.employeeNumber,
-        firstName: emp.firstName,
-        lastName: emp.lastName,
-        email: emp.email,
-        annualSalary: emp.annualSalary,
-        status: emp.status,
-        selected: true, // Default to selected for payroll
-      }));
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const payDay = new Date(now.getFullYear(), now.getMonth() + 1, 5);
 
-      console.log("Loaded employees for payroll:", payrollEmployees);
-      setEmployees(payrollEmployees);
-
-      // Auto-generate payroll details
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.toLocaleDateString("en-GB", { month: "long" });
-      setFormData((prev) => ({
-        ...prev,
-        payrollName: `Monthly Payroll - ${month} ${year}`,
-        payPeriodStart: new Date(year, now.getMonth(), 1)
-          .toISOString()
-          .split("T")[0],
-        payPeriodEnd: new Date(year, now.getMonth() + 1, 0)
-          .toISOString()
-          .split("T")[0],
-        payDate: new Date(year, now.getMonth() + 1, 0)
-          .toISOString()
-          .split("T")[0],
-      }));
-
-      setLoading(false);
-    }, 1000);
-
-    return () => clearTimeout(timer);
+    setPayrollData({
+      payPeriodStart: firstDay.toISOString().split('T')[0],
+      payPeriodEnd: lastDay.toISOString().split('T')[0],
+      payDate: payDay.toISOString().split('T')[0],
+      description: `Payroll - ${firstDay.toLocaleDateString('en-GB', {
+        month: 'long',
+        year: 'numeric'
+      })}`
+    });
   }, []);
 
-  const calculatePayroll = async () => {
-    setCalculating(true);
-    console.log("Starting payroll calculation...");
+  const loadEmployees = () => {
+    setLoading(true);
 
-    const selectedEmployees = employees.filter((emp) => emp.selected);
-    console.log("Selected employees for calculation:", selectedEmployees);
+    const payrollEmployees: PayrollEmployee[] = DEMO_EMPLOYEES.filter(
+      (emp) => emp.status === 'active'
+    ).map((emp) => {
+      const monthlyGross = emp.annualSalary / 12;
+      const taxDeduction = monthlyGross * 0.2;
+      const niDeduction = monthlyGross * 0.12;
+      const pensionDeduction = monthlyGross * 0.05;
+      const netPay = monthlyGross - taxDeduction - niDeduction - pensionDeduction;
 
-    // Simulate calculation delay
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+      const round2 = (n: number) => Math.round(n * 100) / 100;
 
-    const calculatedPayroll: PayrollCalculation[] = selectedEmployees.map(
-      (employee) => {
-        const monthlyGross = employee.annualSalary / 12;
-        const personalAllowance = 12570; // 2025/26 tax year
-        const taxableIncome = Math.max(
-          0,
-          employee.annualSalary - personalAllowance
-        );
-        const monthlyTaxableIncome = taxableIncome / 12;
-        const taxDeduction = monthlyTaxableIncome * 0.2; // Basic rate 20%
+      return {
+        ...emp,
+        selected: true,
+        grossPay: round2(monthlyGross),
+        taxDeduction: round2(taxDeduction),
+        niDeduction: round2(niDeduction),
+        pensionDeduction: round2(pensionDeduction),
+        netPay: round2(netPay)
+      };
+    });
 
-        const niThreshold = 12570; // Lower earnings limit
-        const niableIncome = Math.max(0, employee.annualSalary - niThreshold);
-        const monthlyNiableIncome = niableIncome / 12;
-        const niDeduction = monthlyNiableIncome * 0.12; // Employee NI rate 12%
+    setEmployees(payrollEmployees);
+    setSelectedEmployees(payrollEmployees.map((emp) => emp.id));
+    setLoading(false);
+  };
 
-        const pensionDeduction = monthlyGross * 0.05; // 5% auto-enrollment
-        const netPay =
-          monthlyGross - taxDeduction - niDeduction - pensionDeduction;
+  const filteredEmployees = employees.filter((emp) =>
+    selectedSchedule ? emp.payScheduleId === selectedSchedule : true
+  );
 
-        return {
-          employeeId: employee.id,
-          employeeName: `${employee.firstName} ${employee.lastName}`,
-          grossPay: Math.round(monthlyGross * 100) / 100,
-          taxDeduction: Math.round(taxDeduction * 100) / 100,
-          niDeduction: Math.round(niDeduction * 100) / 100,
-          pensionDeduction: Math.round(pensionDeduction * 100) / 100,
-          netPay: Math.round(netPay * 100) / 100,
-        };
-      }
+  const toggleEmployee = (employeeId: string) => {
+    setSelectedEmployees((prev) =>
+      prev.includes(employeeId) ? prev.filter((id) => id !== employeeId) : [...prev, employeeId]
     );
+  };
 
-    console.log("Payroll calculations completed:", calculatedPayroll);
-    setCalculations(calculatedPayroll);
-    setCalculating(false);
+  const selectAllFiltered = () => {
+    const filteredIds = filteredEmployees.map((emp) => emp.id);
+    setSelectedEmployees((prev) => {
+      const nonFilteredSelected = prev.filter((id) => !filteredIds.includes(id));
+      return [...nonFilteredSelected, ...filteredIds];
+    });
+  };
+
+  const deselectAllFiltered = () => {
+    const filteredIds = filteredEmployees.map((emp) => emp.id);
+    setSelectedEmployees((prev) => prev.filter((id) => !filteredIds.includes(id)));
+  };
+
+  const calculateTotals = () => {
+    const selected = filteredEmployees.filter((emp) => selectedEmployees.includes(emp.id));
+    return {
+      employeeCount: selected.length,
+      totalGross: selected.reduce((sum, emp) => sum + emp.grossPay, 0),
+      totalTax: selected.reduce((sum, emp) => sum + emp.taxDeduction, 0),
+      totalNI: selected.reduce((sum, emp) => sum + emp.niDeduction, 0),
+      totalPension: selected.reduce((sum, emp) => sum + emp.pensionDeduction, 0),
+      totalNet: selected.reduce((sum, emp) => sum + emp.netPay, 0)
+    };
+  };
+
+  const totals = calculateTotals();
+
+  const formatCurrency = (amount: number): string =>
+    new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: 'GBP',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(amount);
+
+  const formatDate = (dateString: string): string =>
+    new Date(dateString).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+
+  const nextStep = () => {
+    if (step < 3) setStep((s) => s + 1);
+  };
+
+  const prevStep = () => {
+    if (step > 1) setStep((s) => s - 1);
   };
 
   const submitPayrollRun = async () => {
-    setSubmitting(true);
-    console.log("Submitting payroll run...");
-
+    setLoading(true);
     try {
-      const payrollData = {
-        ...formData,
-        calculations,
-        selectedEmployees: employees.filter((emp) => emp.selected).length,
-        totalGross: calculations.reduce((sum, calc) => sum + calc.grossPay, 0),
-        totalNet: calculations.reduce((sum, calc) => sum + calc.netPay, 0),
-      };
-
-      console.log("Payroll run data:", payrollData);
-
-      // Simulate API submission
       await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      console.log("Payroll run created successfully");
-      alert("Payroll run created successfully!");
-
-      // Success - redirect to payroll dashboard
-      router.push("/dashboard/payroll");
+      alert('Payroll run created successfully!');
+      router.push('/dashboard/payroll');
     } catch (error) {
-      console.error("Failed to create payroll run:", error);
-      alert("Failed to create payroll run. Please try again.");
+      console.error('Failed to create payroll run:', error);
+      alert('Failed to create payroll run');
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat("en-GB", {
-      style: "currency",
-      currency: "GBP",
-    }).format(amount);
-  };
+  const selectedScheduleInfo = selectedSchedule
+    ? PAY_SCHEDULES.find((s) => s.id === selectedSchedule)
+    : null;
+  const filteredSelectedCount = filteredEmployees.filter((emp) =>
+    selectedEmployees.includes(emp.id)
+  ).length;
 
-  const getTotals = () => {
-    return calculations.reduce(
-      (acc, calc) => ({
-        grossPay: acc.grossPay + calc.grossPay,
-        taxDeduction: acc.taxDeduction + calc.taxDeduction,
-        niDeduction: acc.niDeduction + calc.niDeduction,
-        pensionDeduction: acc.pensionDeduction + calc.pensionDeduction,
-        netPay: acc.netPay + calc.netPay,
-      }),
-      {
-        grossPay: 0,
-        taxDeduction: 0,
-        niDeduction: 0,
-        pensionDeduction: 0,
-        netPay: 0,
-      }
-    );
-  };
-
-  const selectedCount = employees.filter((emp) => emp.selected).length;
-  const totals = getTotals();
-
-  if (loading) {
+  if (loading && step === 1) {
     return (
       <div
         style={{
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-          background:
-            "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
-          minHeight: "100vh",
-          padding: "40px 20px",
+          padding: '40px',
+          textAlign: 'center',
+          minHeight: '400px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}
       >
-        <div style={{ textAlign: "center", marginTop: "50px" }}>
-          <h1 style={{ color: "#1f2937", margin: "0" }}>
-            Loading New Payroll Run...
-          </h1>
-        </div>
+        <h2>Loading employees...</h2>
       </div>
     );
   }
@@ -214,519 +184,586 @@ export default function NewPayrollRunPage() {
   return (
     <div
       style={{
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-        background:
-          "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
-        minHeight: "100vh",
-        padding: "40px 20px",
+        padding: '32px',
+        maxWidth: '1200px',
+        margin: '0 auto',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        minHeight: '100vh'
       }}
     >
-      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        {/* Navigation Header */}
-        <div
+      {/* Header */}
+      <div
+        style={{
+          marginBottom: '32px',
+          textAlign: 'center'
+        }}
+      >
+        <Link
+          href="/dashboard/payroll"
           style={{
-            backgroundColor: "rgba(255, 255, 255, 0.95)",
-            backdropFilter: "blur(20px)",
-            padding: "20px 40px",
-            borderRadius: "12px",
-            boxShadow:
-              "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
-            marginBottom: "30px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            border: "1px solid rgba(255, 255, 255, 0.2)",
+            color: 'white',
+            textDecoration: 'none',
+            fontSize: '16px',
+            display: 'inline-block',
+            marginBottom: '16px'
           }}
         >
-          <div>
-            <h1
-              style={{
-                fontSize: "28px",
-                fontWeight: "bold",
-                color: "#1f2937",
-                margin: "0",
-              }}
-            >
-              💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> New Payroll
-              Run
-            </h1>
-            <p
-              style={{
-                fontSize: "14px",
-                color: "#6b7280",
-                margin: "8px 0 0 0",
-              }}
-            >
-              Set up and process payroll for your employees
-            </p>
-          </div>
-          <nav style={{ display: "flex", gap: "24px" }}>
-            <a
-              href="/dashboard"
-              style={{
-                color: "#000000",
-                textDecoration: "none",
-                fontWeight: "bold",
-                padding: "8px 16px",
-                borderRadius: "6px",
-                backgroundColor: "#10b981",
-                border: "1px solid #059669",
-              }}
-            >
-              Dashboard
-            </a>
-            <a
-              href="/dashboard/payroll"
-              style={{
-                color: "#000000",
-                textDecoration: "none",
-                fontWeight: "bold",
-                padding: "8px 16px",
-                borderRadius: "6px",
-                backgroundColor: "#10b981",
-                border: "1px solid #059669",
-              }}
-            >
-              ← Back to Payroll
-            </a>
-          </nav>
-        </div>
+          ← Back to Payroll Dashboard
+        </Link>
+        <h1
+          style={{
+            fontSize: '36px',
+            fontWeight: 'bold',
+            color: 'white',
+            margin: '0 0 8px 0'
+          }}
+        >
+          💰 Create New Payroll Run
+        </h1>
+        <p
+          style={{
+            color: 'rgba(255, 255, 255, 0.8)',
+            fontSize: '18px',
+            margin: '0'
+          }}
+        >
+          Step {step} of 3:{' '}
+          {step === 1 ? 'Setup Period & Schedule' : step === 2 ? 'Select Employees' : 'Review & Submit'}
+        </p>
+      </div>
 
-        {/* Payroll Details Form */}
+      {/* Progress Bar */}
+      <div
+        style={{
+          backgroundColor: 'rgba(255, 255, 255, 0.2)',
+          height: '8px',
+          borderRadius: '4px',
+          marginBottom: '32px',
+          overflow: 'hidden'
+        }}
+      >
         <div
           style={{
-            backgroundColor: "rgba(255, 255, 255, 0.95)",
-            backdropFilter: "blur(20px)",
-            borderRadius: "12px",
-            boxShadow:
-              "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
-            border: "1px solid rgba(255, 255, 255, 0.2)",
-            padding: "32px",
-            marginBottom: "30px",
+            backgroundColor: 'white',
+            height: '100%',
+            width: `${(step / 3) * 100}%`,
+            borderRadius: '4px',
+            transition: 'width 0.3s ease'
+          }}
+        />
+      </div>
+
+      {/* Step 1: Setup */}
+      {step === 1 && (
+        <div
+          style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
+            padding: '32px',
+            borderRadius: '16px',
+            boxShadow: '0 25px 80px rgba(0, 0, 0, 0.2)'
           }}
         >
           <h2
             style={{
-              fontSize: "20px",
-              fontWeight: 600,
-              color: "#1f2937",
-              margin: "0 0 24px 0",
+              fontSize: '24px',
+              fontWeight: 'bold',
+              color: '#1f2937',
+              marginBottom: '24px'
             }}
           >
-            Payroll Details
+            📅 Payroll Period & Schedule
           </h2>
 
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-              gap: "24px",
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+              gap: '24px'
             }}
           >
+            {/* Pay Schedule Selection */}
             <div>
               <label
                 style={{
-                  display: "block",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  color: "#374151",
-                  marginBottom: "8px",
+                  display: 'block',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#374151',
+                  marginBottom: '8px'
                 }}
               >
-                Payroll Name *
+                Pay Schedule (Filter Employees)
+              </label>
+              <select
+                value={selectedSchedule}
+                onChange={(e) => setSelectedSchedule(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  backgroundColor: 'white'
+                }}
+              >
+                <option value="">All Employees (No Filter)</option>
+                {PAY_SCHEDULES.map((schedule) => (
+                  <option key={schedule.id} value={schedule.id}>
+                    {schedule.name} ({schedule.frequency.replace('_', '-')})
+                  </option>
+                ))}
+              </select>
+              {selectedScheduleInfo && (
+                <p
+                  style={{
+                    marginTop: '8px',
+                    fontSize: '14px',
+                    color: '#6b7280',
+                    fontStyle: 'italic'
+                  }}
+                >
+                  {selectedScheduleInfo.description}
+                </p>
+              )}
+            </div>
+
+            {/* Pay Period Start */}
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#374151',
+                  marginBottom: '8px'
+                }}
+              >
+                Pay Period Start
+              </label>
+              <input
+                type="date"
+                value={payrollData.payPeriodStart}
+                onChange={(e) =>
+                  setPayrollData((prev) => ({ ...prev, payPeriodStart: e.target.value }))
+                }
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '16px'
+                }}
+                required
+              />
+            </div>
+
+            {/* Pay Period End */}
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#374151',
+                  marginBottom: '8px'
+                }}
+              >
+                Pay Period End
+              </label>
+              <input
+                type="date"
+                value={payrollData.payPeriodEnd}
+                onChange={(e) =>
+                  setPayrollData((prev) => ({ ...prev, payPeriodEnd: e.target.value }))
+                }
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '16px'
+                }}
+                required
+              />
+            </div>
+
+            {/* Pay Date */}
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#374151',
+                  marginBottom: '8px'
+                }}
+              >
+                Pay Date
+              </label>
+              <input
+                type="date"
+                value={payrollData.payDate}
+                onChange={(e) => setPayrollData((prev) => ({ ...prev, payDate: e.target.value }))}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '16px'
+                }}
+                required
+              />
+            </div>
+
+            {/* Description */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: '#374151',
+                  marginBottom: '8px'
+                }}
+              >
+                Description
               </label>
               <input
                 type="text"
+                value={payrollData.description}
+                onChange={(e) =>
+                  setPayrollData((prev) => ({ ...prev, description: e.target.value }))
+                }
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '16px'
+                }}
+                placeholder="e.g., Monthly Payroll - December 2024"
                 required
-                value={formData.payrollName}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    payrollName: e.target.value,
-                  }))
-                }
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  border: "2px solid #e5e7eb",
-                  borderRadius: "8px",
-                  fontSize: "16px",
-                  outline: "none",
-                  transition: "border-color 0.2s",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  color: "#374151",
-                  marginBottom: "8px",
-                }}
-              >
-                Pay Frequency
-              </label>
-              <select
-                value={formData.payFrequency}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    payFrequency: e.target.value,
-                  }))
-                }
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  border: "2px solid #e5e7eb",
-                  borderRadius: "8px",
-                  fontSize: "16px",
-                  outline: "none",
-                  transition: "border-color 0.2s",
-                }}
-              >
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  color: "#374151",
-                  marginBottom: "8px",
-                }}
-              >
-                Pay Period Start *
-              </label>
-              <input
-                type="date"
-                required
-                value={formData.payPeriodStart}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    payPeriodStart: e.target.value,
-                  }))
-                }
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  border: "2px solid #e5e7eb",
-                  borderRadius: "8px",
-                  fontSize: "16px",
-                  outline: "none",
-                  transition: "border-color 0.2s",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  color: "#374151",
-                  marginBottom: "8px",
-                }}
-              >
-                Pay Period End *
-              </label>
-              <input
-                type="date"
-                required
-                value={formData.payPeriodEnd}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    payPeriodEnd: e.target.value,
-                  }))
-                }
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  border: "2px solid #e5e7eb",
-                  borderRadius: "8px",
-                  fontSize: "16px",
-                  outline: "none",
-                  transition: "border-color 0.2s",
-                }}
-              />
-            </div>
-
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "14px",
-                  fontWeight: 500,
-                  color: "#374151",
-                  marginBottom: "8px",
-                }}
-              >
-                Pay Date *
-              </label>
-              <input
-                type="date"
-                required
-                value={formData.payDate}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, payDate: e.target.value }))
-                }
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  border: "2px solid #e5e7eb",
-                  borderRadius: "8px",
-                  fontSize: "16px",
-                  outline: "none",
-                  transition: "border-color 0.2s",
-                }}
               />
             </div>
           </div>
-        </div>
 
-        {/* Employee Selection */}
+          {/* Employee Preview */}
+          {selectedSchedule && (
+            <div
+              style={{
+                marginTop: '32px',
+                padding: '20px',
+                backgroundColor: '#f0f9ff',
+                borderRadius: '12px',
+                border: '2px solid #0284c7'
+              }}
+            >
+              <h3
+                style={{
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  color: '#0369a1',
+                  marginBottom: '12px'
+                }}
+              >
+                📊 Filtered Employees Preview
+              </h3>
+              <p
+                style={{
+                  color: '#075985',
+                  margin: '0 0 16px 0'
+                }}
+              >
+                {filteredEmployees.length} employees match the selected pay schedule "
+                {selectedScheduleInfo?.name}"
+              </p>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: '12px'
+                }}
+              >
+                {filteredEmployees.slice(0, 6).map((emp) => (
+                  <div
+                    key={emp.id}
+                    style={{
+                      padding: '12px',
+                      backgroundColor: 'white',
+                      borderRadius: '8px',
+                      border: '1px solid #bae6fd'
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#1f2937'
+                      }}
+                    >
+                      {emp.firstName} {emp.lastName}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: '#6b7280'
+                      }}
+                    >
+                      {formatCurrency(emp.grossPay)}/month
+                    </div>
+                  </div>
+                ))}
+                {filteredEmployees.length > 6 && (
+                  <div
+                    style={{
+                      padding: '12px',
+                      backgroundColor: 'white',
+                      borderRadius: '8px',
+                      border: '1px solid #bae6fd',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '14px',
+                      color: '#6b7280'
+                    }}
+                  >
+                    +{filteredEmployees.length - 6} more...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div
+            style={{
+              marginTop: '32px',
+              textAlign: 'right'
+            }}
+          >
+            <button
+              onClick={nextStep}
+              disabled={
+                !payrollData.payPeriodStart || !payrollData.payPeriodEnd || !payrollData.payDate
+              }
+              style={{
+                backgroundColor:
+                  !payrollData.payPeriodStart || !payrollData.payPeriodEnd || !payrollData.payDate
+                    ? '#9ca3af'
+                    : '#10b981',
+                color: 'white',
+                padding: '14px 28px',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor:
+                  !payrollData.payPeriodStart || !payrollData.payPeriodEnd || !payrollData.payDate
+                    ? 'not-allowed'
+                    : 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              Next: Select Employees →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Employee Selection */}
+      {step === 2 && (
         <div
           style={{
-            backgroundColor: "rgba(255, 255, 255, 0.95)",
-            backdropFilter: "blur(20px)",
-            borderRadius: "12px",
-            boxShadow:
-              "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
-            border: "1px solid rgba(255, 255, 255, 0.2)",
-            padding: "32px",
-            marginBottom: "30px",
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
+            padding: '32px',
+            borderRadius: '16px',
+            boxShadow: '0 25px 80px rgba(0, 0, 0, 0.2)'
           }}
         >
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "24px",
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '24px'
             }}
           >
             <h2
               style={{
-                fontSize: "20px",
-                fontWeight: 600,
-                color: "#1f2937",
-                margin: "0",
+                fontSize: '24px',
+                fontWeight: 'bold',
+                color: '#1f2937',
+                margin: '0'
               }}
             >
-              Select Employees ({selectedCount} selected)
+              👥 Select Employees
             </h2>
-            <button
-              type="button"
-              onClick={calculatePayroll}
-              disabled={selectedCount === 0 || calculating}
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={selectAllFiltered}
+                style={{
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                Select All ({filteredEmployees.length})
+              </button>
+              <button
+                onClick={deselectAllFiltered}
+                style={{
+                  backgroundColor: '#ef4444',
+                  color: 'white',
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                Deselect All
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Info */}
+          {selectedSchedule && (
+            <div
               style={{
-                backgroundColor:
-                  selectedCount === 0 || calculating ? "#9ca3af" : "#10b981",
-                color: "#000000",
-                fontWeight: "bold",
-                padding: "12px 24px",
-                borderRadius: "8px",
-                border: "none",
-                fontSize: "16px",
-                cursor:
-                  selectedCount === 0 || calculating
-                    ? "not-allowed"
-                    : "pointer",
+                marginBottom: '24px',
+                padding: '16px',
+                backgroundColor: '#f0f9ff',
+                borderRadius: '8px',
+                border: '1px solid #0284c7'
               }}
             >
-              {calculating ? "Calculating..." : "£ Calculate Payroll"}
-            </button>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-              gap: "16px",
-            }}
-          >
-            {employees.map((employee) => (
-              <div
-                key={employee.id}
+              <p
                 style={{
-                  backgroundColor: "#f8fafc",
-                  border: "2px solid #e5e7eb",
-                  borderRadius: "8px",
-                  padding: "16px",
+                  margin: '0',
+                  color: '#075985',
+                  fontWeight: '600'
                 }}
               >
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "12px",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={employee.selected || false}
-                    onChange={(e) => {
-                      console.log(
-                        `Toggling employee ${employee.id} selection:`,
-                        e.target.checked
-                      );
-                      setEmployees((prev) =>
-                        prev.map((emp) =>
-                          emp.id === employee.id
-                            ? { ...emp, selected: e.target.checked }
-                            : emp
-                        )
-                      );
-                    }}
-                    style={{
-                      width: "16px",
-                      height: "16px",
-                      marginTop: "2px",
-                    }}
-                  />
-                  <div>
-                    <div
-                      style={{ fontWeight: 600, color: "#1f2937" }}
-                    >{`${employee.firstName} ${employee.lastName}`}</div>
-                    <div style={{ fontSize: "14px", color: "#6b7280" }}>
-                      {employee.employeeNumber} •{" "}
-                      {formatCurrency(employee.annualSalary)} annually
-                    </div>
-                  </div>
-                </label>
-              </div>
-            ))}
-          </div>
-
-          {employees.length === 0 && (
-            <div style={{ textAlign: "center", padding: "40px" }}>
-              <p style={{ fontSize: "16px", color: "#6b7280" }}>
-                No employees found. Please add employees before creating a
-                payroll run.
+                📅 Filtered by: {selectedScheduleInfo?.name} ({filteredEmployees.length}{' '}
+                employees)
               </p>
-              <a
-                href="/dashboard/employees/new"
-                style={{
-                  backgroundColor: "#3b82f6",
-                  color: "#ffffff",
-                  fontWeight: "bold",
-                  padding: "12px 24px",
-                  borderRadius: "8px",
-                  textDecoration: "none",
-                  fontSize: "16px",
-                }}
-              >
-                👤 Add Employee
-              </a>
             </div>
           )}
-        </div>
 
-        {/* Payroll Calculations */}
-        {calculations.length > 0 && (
+          {/* Employee Table */}
           <div
             style={{
-              backgroundColor: "rgba(255, 255, 255, 0.95)",
-              backdropFilter: "blur(20px)",
-              borderRadius: "12px",
-              boxShadow:
-                "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
-              border: "1px solid rgba(255, 255, 255, 0.2)",
-              padding: "32px",
-              marginBottom: "30px",
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              border: '1px solid #e5e7eb'
             }}
           >
-            <h2
-              style={{
-                fontSize: "20px",
-                fontWeight: 600,
-                color: "#1f2937",
-                margin: "0 0 24px 0",
-              }}
-            >
-              Payroll Calculations
-            </h2>
-
-            <div style={{ overflowX: "auto" }}>
+            <div style={{ overflowX: 'auto' }}>
               <table
-                style={{ width: "100%", borderCollapse: "collapse" }}
+                style={{
+                  width: '100%',
+                  borderCollapse: 'collapse'
+                }}
               >
                 <thead>
-                  <tr>
+                  <tr
+                    style={{
+                      backgroundColor: '#f8fafc',
+                      borderBottom: '2px solid #e5e7eb'
+                    }}
+                  >
                     <th
                       style={{
-                        padding: "16px",
-                        textAlign: "left",
-                        fontWeight: 600,
-                        color: "#374151",
-                        borderBottom: "2px solid #f3f4f6",
+                        padding: '16px',
+                        textAlign: 'left',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151',
+                        width: '50px'
+                      }}
+                    >
+                      Select
+                    </th>
+                    <th
+                      style={{
+                        padding: '16px',
+                        textAlign: 'left',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
                       }}
                     >
                       Employee
                     </th>
                     <th
                       style={{
-                        padding: "16px",
-                        textAlign: "left",
-                        fontWeight: 600,
-                        color: "#374151",
-                        borderBottom: "2px solid #f3f4f6",
+                        padding: '16px',
+                        textAlign: 'left',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
+                      }}
+                    >
+                      Pay Schedule
+                    </th>
+                    <th
+                      style={{
+                        padding: '16px',
+                        textAlign: 'right',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
                       }}
                     >
                       Gross Pay
                     </th>
                     <th
                       style={{
-                        padding: "16px",
-                        textAlign: "left",
-                        fontWeight: 600,
-                        color: "#374151",
-                        borderBottom: "2px solid #f3f4f6",
+                        padding: '16px',
+                        textAlign: 'right',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
                       }}
                     >
                       Tax
                     </th>
                     <th
                       style={{
-                        padding: "16px",
-                        textAlign: "left",
-                        fontWeight: 600,
-                        color: "#374151",
-                        borderBottom: "2px solid #f3f4f6",
+                        padding: '16px',
+                        textAlign: 'right',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
                       }}
                     >
-                      National Insurance
+                      NI
                     </th>
                     <th
                       style={{
-                        padding: "16px",
-                        textAlign: "left",
-                        fontWeight: 600,
-                        color: "#374151",
-                        borderBottom: "2px solid #f3f4f6",
+                        padding: '16px',
+                        textAlign: 'right',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
                       }}
                     >
                       Pension
                     </th>
                     <th
                       style={{
-                        padding: "16px",
-                        textAlign: "left",
-                        fontWeight: 600,
-                        color: "#374151",
-                        borderBottom: "2px solid #f3f4f6",
+                        padding: '16px',
+                        textAlign: 'right',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        color: '#374151'
                       }}
                     >
                       Net Pay
@@ -734,175 +771,729 @@ export default function NewPayrollRunPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {calculations.map((calc) => (
-                    <tr key={calc.employeeId}>
+                  {filteredEmployees.map((employee, index) => (
+                    <tr
+                      key={employee.id}
+                      style={{
+                        borderBottom:
+                          index < filteredEmployees.length - 1 ? '1px solid #f3f4f6' : 'none',
+                        backgroundColor: selectedEmployees.includes(employee.id)
+                          ? '#f0fdf4'
+                          : 'white'
+                      }}
+                    >
                       <td
                         style={{
-                          padding: "16px",
-                          borderBottom: "1px solid #f3f4f6",
+                          padding: '16px',
+                          textAlign: 'center'
                         }}
                       >
-                        <div
-                          style={{ fontWeight: 500, color: "#1f2937" }}
-                        >
-                          {calc.employeeName}
+                        <input
+                          type="checkbox"
+                          checked={selectedEmployees.includes(employee.id)}
+                          onChange={() => toggleEmployee(employee.id)}
+                          style={{
+                            width: '18px',
+                            height: '18px',
+                            cursor: 'pointer'
+                          }}
+                        />
+                      </td>
+                      <td
+                        style={{
+                          padding: '16px'
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: 'bold',
+                              color: '#1f2937'
+                            }}
+                          >
+                            {employee.firstName} {employee.lastName}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '14px',
+                              color: '#6b7280'
+                            }}
+                          >
+                            {employee.employeeNumber}
+                          </div>
                         </div>
                       </td>
                       <td
                         style={{
-                          padding: "16px",
-                          borderBottom: "1px solid #f3f4f6",
+                          padding: '16px'
                         }}
                       >
                         <span
-                          style={{ fontWeight: 600, color: "#059669" }}
+                          style={{
+                            padding: '4px 8px',
+                            backgroundColor: '#e0f2fe',
+                            color: '#0369a1',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}
                         >
-                          {formatCurrency(calc.grossPay)}
+                          {getPayScheduleName(employee.payScheduleId || '')}
                         </span>
                       </td>
                       <td
                         style={{
-                          padding: "16px",
-                          borderBottom: "1px solid #f3f4f6",
+                          padding: '16px',
+                          textAlign: 'right',
+                          fontWeight: 'bold',
+                          color: '#059669'
                         }}
                       >
-                        <span style={{ color: "#dc2626" }}>
-                          {formatCurrency(calc.taxDeduction)}
-                        </span>
+                        {formatCurrency(employee.grossPay)}
                       </td>
                       <td
                         style={{
-                          padding: "16px",
-                          borderBottom: "1px solid #f3f4f6",
+                          padding: '16px',
+                          textAlign: 'right',
+                          color: '#dc2626'
                         }}
                       >
-                        <span style={{ color: "#dc2626" }}>
-                          {formatCurrency(calc.niDeduction)}
-                        </span>
+                        {formatCurrency(employee.taxDeduction)}
                       </td>
                       <td
                         style={{
-                          padding: "16px",
-                          borderBottom: "1px solid #f3f4f6",
+                          padding: '16px',
+                          textAlign: 'right',
+                          color: '#dc2626'
                         }}
                       >
-                        <span style={{ color: "#92400e" }}>
-                          {formatCurrency(calc.pensionDeduction)}
-                        </span>
+                        {formatCurrency(employee.niDeduction)}
                       </td>
                       <td
                         style={{
-                          padding: "16px",
-                          borderBottom: "1px solid #f3f4f6",
+                          padding: '16px',
+                          textAlign: 'right',
+                          color: '#dc2626'
                         }}
                       >
-                        <span
-                          style={{ fontWeight: 600, color: "#059669" }}
-                        >
-                          {formatCurrency(calc.netPay)}
-                        </span>
+                        {formatCurrency(employee.pensionDeduction)}
+                      </td>
+                      <td
+                        style={{
+                          padding: '16px',
+                          textAlign: 'right',
+                          fontWeight: 'bold',
+                          color: '#059669'
+                        }}
+                      >
+                        {formatCurrency(employee.netPay)}
                       </td>
                     </tr>
                   ))}
-                  <tr
-                    style={{
-                      backgroundColor: "#f8fafc",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    <td
-                      style={{
-                        padding: "16px",
-                        fontWeight: "bold",
-                        color: "#1f2937",
-                      }}
-                    >
-                      TOTALS
-                    </td>
-                    <td style={{ padding: "16px" }}>
-                      <span
-                        style={{ fontWeight: "bold", color: "#059669" }}
-                      >
-                        {formatCurrency(totals.grossPay)}
-                      </span>
-                    </td>
-                    <td style={{ padding: "16px" }}>
-                      <span
-                        style={{ fontWeight: "bold", color: "#dc2626" }}
-                      >
-                        {formatCurrency(totals.taxDeduction)}
-                      </span>
-                    </td>
-                    <td style={{ padding: "16px" }}>
-                      <span
-                        style={{ fontWeight: "bold", color: "#dc2626" }}
-                      >
-                        {formatCurrency(totals.niDeduction)}
-                      </span>
-                    </td>
-                    <td style={{ padding: "16px" }}>
-                      <span
-                        style={{ fontWeight: "bold", color: "#92400e" }}
-                      >
-                        {formatCurrency(totals.pensionDeduction)}
-                      </span>
-                    </td>
-                    <td style={{ padding: "16px" }}>
-                      <span
-                        style={{ fontWeight: "bold", color: "#059669" }}
-                      >
-                        {formatCurrency(totals.netPay)}
-                      </span>
-                    </td>
-                  </tr>
                 </tbody>
               </table>
             </div>
+          </div>
 
-            {/* Submit Button */}
+          {/* Summary */}
+          <div
+            style={{
+              marginTop: '24px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: '16px'
+            }}
+          >
             <div
               style={{
-                display: "flex",
-                gap: "16px",
-                justifyContent: "flex-end",
-                marginTop: "24px",
+                padding: '16px',
+                backgroundColor: '#f0f9ff',
+                borderRadius: '8px',
+                textAlign: 'center'
               }}
             >
-              <a
-                href="/dashboard/payroll"
+              <div
                 style={{
-                  backgroundColor: "#6b7280",
-                  color: "#ffffff",
-                  fontWeight: "bold",
-                  padding: "12px 24px",
-                  borderRadius: "8px",
-                  textDecoration: "none",
-                  fontSize: "16px",
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  color: '#0369a1'
                 }}
               >
-                Cancel
-              </a>
-              <button
-                type="button"
-                onClick={submitPayrollRun}
-                disabled={submitting}
+                {filteredSelectedCount}
+              </div>
+              <div
                 style={{
-                  backgroundColor: submitting ? "#9ca3af" : "#10b981",
-                  color: "#000000",
-                  fontWeight: "bold",
-                  padding: "12px 24px",
-                  borderRadius: "8px",
-                  border: "none",
-                  fontSize: "16px",
-                  cursor: submitting ? "not-allowed" : "pointer",
+                  fontSize: '14px',
+                  color: '#075985'
                 }}
               >
-                {submitting ? "Creating Payroll Run..." : "£ Create Payroll Run"}
-              </button>
+                Employees
+              </div>
+            </div>
+            <div
+              style={{
+                padding: '16px',
+                backgroundColor: '#f0fdf4',
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                  color: '#059669'
+                }}
+              >
+                {formatCurrency(totals.totalGross)}
+              </div>
+              <div style={{ fontSize: '14px', color: '#047857' }}>Total Gross</div>
+            </div>
+            <div
+              style={{
+                padding: '16px',
+                backgroundColor: '#fef2f2',
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                  color: '#dc2626'
+                }}
+              >
+                {formatCurrency(totals.totalTax + totals.totalNI + totals.totalPension)}
+              </div>
+              <div
+                style={{
+                  fontSize: '14px',
+                  color: '#991b1b'
+                }}
+              >
+                Total Deductions
+              </div>
+            </div>
+            <div
+              style={{
+                padding: '16px',
+                backgroundColor: '#f0fdf4',
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '20px',
+                  fontWeight: 'bold',
+                  color: '#059669'
+                }}
+              >
+                {formatCurrency(totals.totalNet)}
+              </div>
+              <div
+                style={{
+                  fontSize: '14px',
+                  color: '#047857'
+                }}
+              >
+                Total Net Pay
+              </div>
             </div>
           </div>
-        )}
-      </div>
+
+          <div
+            style={{
+              marginTop: '32px',
+              display: 'flex',
+              justifyContent: 'space-between'
+            }}
+          >
+            <button
+              onClick={prevStep}
+              style={{
+                backgroundColor: '#6b7280',
+                color: 'white',
+                padding: '14px 28px',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              ← Back
+            </button>
+            <button
+              onClick={nextStep}
+              disabled={filteredSelectedCount === 0}
+              style={{
+                backgroundColor: filteredSelectedCount === 0 ? '#9ca3af' : '#10b981',
+                color: 'white',
+                padding: '14px 28px',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: filteredSelectedCount === 0 ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Next: Review & Submit →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Review & Submit */}
+      {step === 3 && (
+        <div
+          style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
+            padding: '32px',
+            borderRadius: '16px',
+            boxShadow: '0 25px 80px rgba(0, 0, 0, 0.2)'
+          }}
+        >
+          <h2
+            style={{
+              fontSize: '24px',
+              fontWeight: 'bold',
+              color: '#1f2937',
+              marginBottom: '24px'
+            }}
+          >
+            ✅ Review & Submit Payroll Run
+          </h2>
+
+          {/* Payroll Details */}
+          <div
+            style={{
+              marginBottom: '32px',
+              padding: '24px',
+              backgroundColor: '#f8fafc',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb'
+            }}
+          >
+            <h3
+              style={{
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: '#1f2937',
+                marginBottom: '16px'
+              }}
+            >
+              📋 Payroll Run Details
+            </h3>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                gap: '16px'
+              }}
+            >
+              <div>
+                <label
+                  style={{
+                    fontSize: '14px',
+                    color: '#6b7280',
+                    fontWeight: '600'
+                  }}
+                >
+                  Description:
+                </label>
+                <p
+                  style={{
+                    margin: '4px 0 0 0',
+                    fontSize: '16px',
+                    color: '#1f2937',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {payrollData.description}
+                </p>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    fontSize: '14px',
+                    color: '#6b7280',
+                    fontWeight: '600'
+                  }}
+                >
+                  Pay Period:
+                </label>
+                <p
+                  style={{
+                    margin: '4px 0 0 0',
+                    fontSize: '16px',
+                    color: '#1f2937',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {formatDate(payrollData.payPeriodStart)} - {formatDate(payrollData.payPeriodEnd)}
+                </p>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    fontSize: '14px',
+                    color: '#6b7280',
+                    fontWeight: '600'
+                  }}
+                >
+                  Pay Date:
+                </label>
+                <p
+                  style={{
+                    margin: '4px 0 0 0',
+                    fontSize: '16px',
+                    color: '#1f2937',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {formatDate(payrollData.payDate)}
+                </p>
+              </div>
+
+              {selectedSchedule && (
+                <div>
+                  <label
+                    style={{
+                      fontSize: '14px',
+                      color: '#6b7280',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Pay Schedule Filter:
+                  </label>
+                  <p
+                    style={{
+                      margin: '4px 0 0 0',
+                      fontSize: '16px',
+                      color: '#1f2937',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    {selectedScheduleInfo?.name}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Summary Cards */}
+          <div
+            style={{
+              marginBottom: '32px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '20px'
+            }}
+          >
+            <div
+              style={{
+                padding: '24px',
+                backgroundColor: '#f0f9ff',
+                borderRadius: '12px',
+                textAlign: 'center',
+                border: '2px solid #0284c7'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '32px',
+                  fontWeight: 'bold',
+                  color: '#0369a1',
+                  marginBottom: '8px'
+                }}
+              >
+                {totals.employeeCount}
+              </div>
+              <div
+                style={{
+                  fontSize: '16px',
+                  color: '#075985',
+                  fontWeight: '600'
+                }}
+              >
+                Employees
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: '24px',
+                backgroundColor: '#f0fdf4',
+                borderRadius: '12px',
+                textAlign: 'center',
+                border: '2px solid #10b981'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '28px',
+                  fontWeight: 'bold',
+                  color: '#059669',
+                  marginBottom: '8px'
+                }}
+              >
+                {formatCurrency(totals.totalGross)}
+              </div>
+              <div style={{}}>Total Gross Pay</div>
+            </div>
+
+            <div
+              style={{
+                padding: '24px',
+                backgroundColor: '#fef2f2',
+                borderRadius: '12px',
+                textAlign: 'center',
+                border: '2px solid #ef4444'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '28px',
+                  fontWeight: 'bold',
+                  color: '#dc2626',
+                  marginBottom: '8px'
+                }}
+              >
+                {formatCurrency(totals.totalTax + totals.totalNI + totals.totalPension)}
+              </div>
+              <div
+                style={{
+                  fontSize: '16px',
+                  color: '#991b1b',
+                  fontWeight: '600'
+                }}
+              >
+                Total Deductions
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: '24px',
+                backgroundColor: '#f0fdf4',
+                borderRadius: '12px',
+                textAlign: 'center',
+                border: '2px solid #10b981'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '28px',
+                  fontWeight: 'bold',
+                  color: '#059669',
+                  marginBottom: '8px'
+                }}
+              >
+                {formatCurrency(totals.totalNet)}
+              </div>
+              <div
+                style={{
+                  fontSize: '16px',
+                  color: '#047857',
+                  fontWeight: '600'
+                }}
+              >
+                Total Net Pay
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Breakdown */}
+          <div
+            style={{
+              marginBottom: '32px',
+              padding: '24px',
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb'
+            }}
+          >
+            <h3
+              style={{
+                fontSize: '18px',
+                fontWeight: 'bold',
+                color: '#1f2937',
+                marginBottom: '16px'
+              }}
+            >
+              💰 Deduction Breakdown
+            </h3>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                gap: '16px'
+              }}
+            >
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '16px',
+                  backgroundColor: '#fef2f2',
+                  borderRadius: '8px'
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '20px',
+                    fontWeight: 'bold',
+                    color: '#dc2626'
+                  }}
+                >
+                  {formatCurrency(totals.totalTax)}
+                </div>
+                <div
+                  style={{
+                    fontSize: '14px',
+                    color: '#991b1b'
+                  }}
+                >
+                  Income Tax
+                </div>
+              </div>
+
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '16px',
+                  backgroundColor: '#fef2f2',
+                  borderRadius: '8px'
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '20px',
+                    fontWeight: 'bold',
+                    color: '#dc2626'
+                  }}
+                >
+                  {formatCurrency(totals.totalNI)}
+                </div>
+                <div
+                  style={{
+                    fontSize: '14px',
+                    color: '#991b1b'
+                  }}
+                >
+                  National Insurance
+                </div>
+              </div>
+
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '16px',
+                  backgroundColor: '#fef2f2',
+                  borderRadius: '8px'
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '20px',
+                    fontWeight: 'bold',
+                    color: '#dc2626'
+                  }}
+                >
+                  {formatCurrency(totals.totalPension)}
+                </div>
+                <div
+                  style={{
+                    fontSize: '14px',
+                    color: '#991b1b'
+                  }}
+                >
+                  Pension Contributions
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <button
+              onClick={prevStep}
+              style={{
+                backgroundColor: '#6b7280',
+                color: 'white',
+                padding: '14px 28px',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              ← Back to Employee Selection
+            </button>
+
+            <button
+              onClick={submitPayrollRun}
+              disabled={loading}
+              style={{
+                backgroundColor: loading ? '#9ca3af' : '#059669',
+                color: 'white',
+                padding: '16px 32px',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              {loading ? (
+                <>
+                  <div
+                    style={{
+                      width: '20px',
+                      height: '20px',
+                      border: '2px solid #ffffff',
+                      borderTop: '2px solid transparent',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }}
+                  />
+                  Creating Payroll Run...
+                </>
+              ) : (
+                <>✅ Create Payroll Run</>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Custom CSS for spinner animation */}
+      <style jsx>{`
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "../../../lib/supabase";
+import { supabase } from "../../../lib/supabase"; // <- correct relative path
 
 // helper to map DB row -> app shape
 const toAppEmployee = (emp: any) => ({
