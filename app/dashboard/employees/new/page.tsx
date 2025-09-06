@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-// Local fallback types and data because PAY_SCHEDULES is not exported from '../../../../lib/data/employees'
 type EmploymentType = 'full_time' | 'part_time' | 'contract' | 'temporary' | 'apprentice';
 
 type PaySchedule = {
@@ -12,8 +11,8 @@ type PaySchedule = {
   name: string;
   description?: string;
   frequency: 'weekly' | 'fortnightly' | 'four_weekly' | 'monthly';
-  payDayOfMonth?: number; // 1-31
-  payDayOfWeek?: number; // 1=Mon ... 7=Sun
+  payDayOfMonth?: number;
+  payDayOfWeek?: number;
 };
 
 const PAY_SCHEDULES: PaySchedule[] = [
@@ -29,14 +28,13 @@ const PAY_SCHEDULES: PaySchedule[] = [
     name: 'Monthly — Last Working Day',
     description: 'Pays on the last working day of the month',
     frequency: 'monthly',
-    // leave both undefined, UI will still show frequency
   },
   {
     id: 'weekly-fri',
     name: 'Weekly — Friday',
     description: 'Pays every Friday',
     frequency: 'weekly',
-    payDayOfWeek: 5, // Friday
+    payDayOfWeek: 5,
   },
 ];
 
@@ -56,7 +54,7 @@ type FormState = {
   phone: string;
   dateOfBirth: string;
   nationalInsurance: string;
-  annualSalary: string; // keep as string for controlled input; parse on submit
+  annualSalary: string;
   hireDate: string;
   employmentType: EmploymentType;
   payScheduleId: string;
@@ -94,18 +92,13 @@ export default function NewEmployeePage() {
   const [errors, setErrors] = useState<string[]>([]);
 
   useEffect(() => {
-    // Use local fallback schedules
     setPaySchedules(PAY_SCHEDULES);
     generateEmployeeNumber();
   }, []);
 
   const generateEmployeeNumber = async () => {
-    try {
-      const nextNumber = `EMP${String(Date.now()).slice(-3).padStart(3, '0')}`;
-      setFormData((prev) => ({ ...prev, employeeNumber: nextNumber }));
-    } catch (error) {
-      console.error('Failed to generate employee number:', error);
-    }
+    const nextNumber = `EMP${String(Date.now()).slice(-3).padStart(3, '0')}`;
+    setFormData((prev) => ({ ...prev, employeeNumber: nextNumber }));
   };
 
   const validateForm = (): boolean => {
@@ -139,13 +132,9 @@ export default function NewEmployeePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setLoading(true);
-
     try {
       const employeeData = {
         employeeNumber: formData.employeeNumber,
@@ -173,9 +162,7 @@ export default function NewEmployeePage() {
         },
       };
 
-      // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 1000));
-
       alert('Employee created successfully!');
       router.push('/dashboard/employees');
     } catch (error) {
@@ -219,45 +206,23 @@ export default function NewEmployeePage() {
           margin: '0 auto',
         }}
       >
-        {/* Header */}
-        <div
-          style={{
-            marginBottom: '32px',
-          }}
-        >
+        <div style={{ marginBottom: '32px' }}>
           <Link
             href="/dashboard/employees"
-            style={{
-              color: 'white',
-              textDecoration: 'none',
-              fontSize: '16px',
-              opacity: 0.9,
-            }}
+            style={{ color: 'white', textDecoration: 'none', fontSize: '16px', opacity: 0.9 }}
           >
             ← Back to Employees
           </Link>
           <h1
-            style={{
-              fontSize: '32px',
-              fontWeight: 'bold',
-              color: 'white',
-              margin: '16px 0 8px 0',
-            }}
+            style={{ fontSize: '32px', fontWeight: 'bold', color: 'white', margin: '16px 0 8px 0' }}
           >
             👥 Add New Employee
           </h1>
-          <p
-            style={{
-              color: 'rgba(255, 255, 255, 0.9)',
-              fontSize: '16px',
-              margin: 0,
-            }}
-          >
+          <p style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: '16px', margin: 0 }}>
             Enter employee details and assign pay schedule
           </p>
         </div>
 
-        {/* Form Card */}
         <div
           style={{
             backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -268,7 +233,6 @@ export default function NewEmployeePage() {
             border: '1px solid rgba(255, 255, 255, 0.2)',
           }}
         >
-          {/* Error Messages */}
           {errors.length > 0 && (
             <div
               style={{
@@ -289,13 +253,7 @@ export default function NewEmployeePage() {
               >
                 Please fix the following errors:
               </h3>
-              <ul
-                style={{
-                  color: '#dc2626',
-                  margin: 0,
-                  paddingLeft: '20px',
-                }}
-              >
+              <ul style={{ color: '#dc2626', margin: 0, paddingLeft: '20px' }}>
                 {errors.map((error, index) => (
                   <li key={index}>{error}</li>
                 ))}
@@ -304,12 +262,7 @@ export default function NewEmployeePage() {
           )}
 
           <form onSubmit={handleSubmit}>
-            {/* Basic Information */}
-            <div
-              style={{
-                marginBottom: '32px',
-              }}
-            >
+            <div style={{ marginBottom: '32px' }}>
               <h2
                 style={{
                   fontSize: '20px',
@@ -507,12 +460,7 @@ export default function NewEmployeePage() {
               </div>
             </div>
 
-            {/* Employment Details */}
-            <div
-              style={{
-                marginBottom: '32px',
-              }}
-            >
+            <div style={{ marginBottom: '32px' }}>
               <h2
                 style={{
                   fontSize: '20px',
@@ -719,12 +667,7 @@ export default function NewEmployeePage() {
               </div>
             </div>
 
-            {/* Pay Schedule */}
-            <div
-              style={{
-                marginBottom: '32px',
-              }}
-            >
+            <div style={{ marginBottom: '32px' }}>
               <h2
                 style={{
                   fontSize: '20px',
@@ -782,22 +725,10 @@ export default function NewEmployeePage() {
                       borderRadius: '8px',
                     }}
                   >
-                    <div
-                      style={{
-                        fontSize: '14px',
-                        color: '#0369a1',
-                        fontWeight: 500,
-                      }}
-                    >
+                    <div style={{ fontSize: '14px', color: '#0369a1', fontWeight: 500 }}>
                       📅 {getPayScheduleInfo(formData.payScheduleId)}
                     </div>
-                    <div
-                      style={{
-                        fontSize: '13px',
-                        color: '#0284c7',
-                        marginTop: '4px',
-                      }}
-                    >
+                    <div style={{ fontSize: '13px', color: '#0284c7', marginTop: '4px' }}>
                       {paySchedules.find((s) => s.id === formData.payScheduleId)?.description}
                     </div>
                   </div>
@@ -805,12 +736,7 @@ export default function NewEmployeePage() {
               </div>
             </div>
 
-            {/* Address */}
-            <div
-              style={{
-                marginBottom: '32px',
-              }}
-            >
+            <div style={{ marginBottom: '32px' }}>
               <h2
                 style={{
                   fontSize: '20px',
@@ -824,13 +750,7 @@ export default function NewEmployeePage() {
                 🏠 Address
               </h2>
 
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr',
-                  gap: '20px',
-                }}
-              >
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
                 <div>
                   <label
                     style={{
@@ -984,10 +904,7 @@ export default function NewEmployeePage() {
                       onChange={(e) =>
                         setFormData((prev) => ({
                           ...prev,
-                          address: {
-                            ...prev.address,
-                            postcode: e.target.value.toUpperCase(),
-                          },
+                          address: { ...prev.address, postcode: e.target.value.toUpperCase() },
                         }))
                       }
                       style={{
@@ -1004,7 +921,6 @@ export default function NewEmployeePage() {
               </div>
             </div>
 
-            {/* Submit Buttons */}
             <div
               style={{
                 display: 'flex',
@@ -1072,7 +988,6 @@ export default function NewEmployeePage() {
         </div>
       </div>
 
-      {/* Custom CSS for spinner animation */}
       <style jsx>{`
         @keyframes spin {
           0% {
