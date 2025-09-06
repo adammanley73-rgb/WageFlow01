@@ -7,7 +7,7 @@ import { PAY_SCHEDULES, type PaySchedule } from '../../../../lib/data/employees'
 
 type EmploymentType = 'full_time' | 'part_time' | 'contract' | 'temporary' | 'apprentice';
 
-type FormAddress = {
+type Address = {
   line1: string;
   line2: string;
   city: string;
@@ -23,13 +23,13 @@ type FormState = {
   phone: string;
   dateOfBirth: string;
   nationalInsurance: string;
-  annualSalary: string; // keep as string for input binding; parse to number on submit
+  annualSalary: string; // keep as string for controlled input; parse on submit
   hireDate: string;
   employmentType: EmploymentType;
   payScheduleId: string;
   jobTitle: string;
   department: string;
-  address: FormAddress;
+  address: Address;
 };
 
 export default function NewEmployeePage() {
@@ -247,8 +247,7 @@ export default function NewEmployeePage() {
             <div
               style={{
                 backgroundColor: '#fee2e2',
-                border: '1px solid '#fecaca',
-                borderColor: '#fecaca',
+                border: '1px solid #fecaca',
                 borderRadius: '8px',
                 padding: '16px',
                 marginBottom: '24px',
@@ -959,7 +958,10 @@ export default function NewEmployeePage() {
                       onChange={(e) =>
                         setFormData((prev) => ({
                           ...prev,
-                          address: { ...prev.address, postcode: e.target.value.toUpperCase() },
+                          address: {
+                            ...prev.address,
+                            postcode: e.target.value.toUpperCase(),
+                          },
                         }))
                       }
                       style={{
