@@ -3,9 +3,42 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { PAY_SCHEDULES, type PaySchedule } from '../../../../lib/data/employees';
 
+// Local fallback types and data because PAY_SCHEDULES is not exported from '../../../../lib/data/employees'
 type EmploymentType = 'full_time' | 'part_time' | 'contract' | 'temporary' | 'apprentice';
+
+type PaySchedule = {
+  id: string;
+  name: string;
+  description?: string;
+  frequency: 'weekly' | 'fortnightly' | 'four_weekly' | 'monthly';
+  payDayOfMonth?: number; // 1-31
+  payDayOfWeek?: number; // 1=Mon ... 7=Sun
+};
+
+const PAY_SCHEDULES: PaySchedule[] = [
+  {
+    id: 'monthly-25th',
+    name: 'Monthly — 25th',
+    description: 'Pays on the 25th of each month',
+    frequency: 'monthly',
+    payDayOfMonth: 25,
+  },
+  {
+    id: 'monthly-last',
+    name: 'Monthly — Last Working Day',
+    description: 'Pays on the last working day of the month',
+    frequency: 'monthly',
+    // leave both undefined, UI will still show frequency
+  },
+  {
+    id: 'weekly-fri',
+    name: 'Weekly — Friday',
+    description: 'Pays every Friday',
+    frequency: 'weekly',
+    payDayOfWeek: 5, // Friday
+  },
+];
 
 type Address = {
   line1: string;
@@ -61,9 +94,9 @@ export default function NewEmployeePage() {
   const [errors, setErrors] = useState<string[]>([]);
 
   useEffect(() => {
+    // Use local fallback schedules
     setPaySchedules(PAY_SCHEDULES);
     generateEmployeeNumber();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const generateEmployeeNumber = async () => {
@@ -140,14 +173,7 @@ export default function NewEmployeePage() {
         },
       };
 
-      // Example API call:
-      // const response = await fetch('/api/employees', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(employeeData),
-      // });
-      // if (!response.ok) throw new Error('API error');
-
+      // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       alert('Employee created successfully!');
