@@ -1,341 +1,440 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Employee = {
   id: string;
-  employeeNumber: string;
   firstName: string;
   lastName: string;
+  employeeNumber: string;
   email: string;
-  phone: string;
-  dateOfBirth: string;
-  hireDate: string;
-  annualSalary: number;
-  status: "active" | "inactive";
-  autoEnrollmentStatus: "eligible" | "entitled" | "non_eligible";
+  phone?: string | null;
+  annualSalary?: number | null;
+  employmentType?: string | null;
 };
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      setEmployees([
-        {
-          id: "EMP001",
-          employeeNumber: "EMP001",
-          firstName: "Sarah",
-          lastName: "Johnson",
-          email: "sarah.johnson@company.co.uk",
-          phone: "+44 7700 900123",
-          dateOfBirth: "1985-03-15",
-          hireDate: "2020-01-15",
-          annualSalary: 35000,
-          status: "active",
-          autoEnrollmentStatus: "eligible",
-        },
-        {
-          id: "EMP002",
-          employeeNumber: "EMP002",
-          firstName: "James",
-          lastName: "Wilson",
-          email: "james.wilson@company.co.uk",
-          phone: "+44 7700 900124",
-          dateOfBirth: "1990-07-22",
-          hireDate: "2021-03-10",
-          annualSalary: 28000,
-          status: "active",
-          autoEnrollmentStatus: "entitled",
-        },
-        {
-          id: "EMP003",
-          employeeNumber: "EMP003",
-          firstName: "Emma",
-          lastName: "Brown",
-          email: "emma.brown@company.co.uk",
-          phone: "+44 7700 900125",
-          dateOfBirth: "1995-11-08",
-          hireDate: "2022-06-20",
-          annualSalary: 22000,
-          status: "active",
-          autoEnrollmentStatus: "non_eligible",
-        },
-      ]);
-      setLoading(false);
-    }, 1000);
-    return () => clearTimeout(t);
+    loadEmployees();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filteredEmployees = employees.filter(
-    (employee) =>
-      `${employee.firstName} ${employee.lastName}`
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      employee.employeeNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const loadEmployees = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-  // ---------- Styles (fixing invalid inline syntax; visuals unchanged) ----------
-  const page: React.CSSProperties = {
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    background:
-      "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
-    minHeight: "100vh",
-    padding: "40px 20px",
-  };
-  const container: React.CSSProperties = { maxWidth: "1200px", margin: "0 auto" };
-  const headerCard: React.CSSProperties = {
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
-    backdropFilter: "blur(20px)",
-    padding: "20px 40px",
-    borderRadius: "12px",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1)",
-    marginBottom: "30px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    border: "1px solid rgba(255, 255, 255, 0.2)",
-  };
-  const title: React.CSSProperties = {
-    fontSize: "28px",
-    fontWeight: "bold",
-    color: "#1f2937",
-    margin: 0,
-  };
-  const navRow: React.CSSProperties = { display: "flex", gap: "24px" };
-  const navLink: React.CSSProperties = {
-    color: "#000000",
-    textDecoration: "none",
-    fontWeight: "bold",
-    padding: "8px 16px",
-    borderRadius: "6px",
-    backgroundColor: "#10b981",
-    border: "1px solid #059669",
+      const response = await fetch("/api/employees");
+      if (!response.ok) throw new Error("Failed to load employees");
+
+      const data: Employee[] = await response.json();
+      setEmployees(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error loading employees:", err);
+      setError("Failed to load employees");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const cardOuter: React.CSSProperties = {
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
-    backdropFilter: "blur(20px)",
-    borderRadius: "12px",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1)",
-    border: "1px solid rgba(255, 255, 255, 0.2)",
-    overflow: "hidden",
-  };
-  const cardHeader: React.CSSProperties = {
-    padding: "24px 32px",
-    borderBottom: "1px solid rgba(0,0,0,0.06)",
-  };
-  const h2: React.CSSProperties = {
-    fontSize: "20px",
-    fontWeight: "bold",
-    color: "#1f2937",
-    margin: "0 0 8px 0",
-  };
-  const sub: React.CSSProperties = { color: "#6b7280", margin: 0, fontSize: "14px" };
+  const filteredEmployees = useMemo(() => {
+    const q = searchTerm.toLowerCase();
+    return employees.filter((e) => {
+      const name = `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim().toLowerCase();
+      const num = (e.employeeNumber ?? "").toLowerCase();
+      const email = (e.email ?? "").toLowerCase();
+      return name.includes(q) || num.includes(q) || email.includes(q);
+    });
+  }, [employees, searchTerm]);
 
-  const toolbar: React.CSSProperties = {
-    padding: "24px 32px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottom: "1px solid rgba(0,0,0,0.06)",
-  };
-  const searchInput: React.CSSProperties = {
-    padding: "12px 16px",
-    fontSize: "14px",
-    border: "2px solid #e5e7eb",
-    borderRadius: "8px",
-    outline: "none",
-    width: "300px",
-    fontFamily: "inherit",
-  };
-  const primaryLinkBtn: React.CSSProperties = {
-    display: "inline-block",
-    padding: "12px 24px",
-    backgroundColor: "#10b981",
-    color: "#000000",
-    borderRadius: "8px",
-    textDecoration: "none",
-    fontWeight: "bold",
-    border: "1px solid #059669",
-  };
+  if (loading) {
+    return (
+      <div
+        style={{
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          background:
+            "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
+          minHeight: "100vh",
+          padding: "40px 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <h1 style={{ color: "white", fontSize: "24px", textAlign: "center" }}>
+          Loading Employees...
+        </h1>
+      </div>
+    );
+  }
 
-  const tableWrap: React.CSSProperties = { overflowX: "auto" };
-  const table: React.CSSProperties = { width: "100%", borderCollapse: "collapse" };
-  const th: React.CSSProperties = {
-    padding: "16px",
-    textAlign: "left",
-    fontWeight: 600,
-    color: "#374151",
-    fontSize: "12px",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-    backgroundColor: "#f8fafc",
-    borderBottom: "1px solid #e2e8f0",
-  };
-  const td: React.CSSProperties = { padding: "16px" };
-  const nameStrong: React.CSSProperties = { fontWeight: 600, color: "#1e293b" };
-  const muted: React.CSSProperties = { color: "#64748b", fontSize: "14px" };
-  const salary: React.CSSProperties = { fontWeight: 600, color: "#059669" };
-  const statusPill = (active: boolean): React.CSSProperties => ({
-    padding: "4px 12px",
-    borderRadius: "12px",
-    fontSize: "12px",
-    fontWeight: 500,
-    backgroundColor: active ? "#dcfce7" : "#fee2e2",
-    color: active ? "#166534" : "#dc2626",
-  });
-  const aePill = (s: Employee["autoEnrollmentStatus"]): React.CSSProperties => ({
-    padding: "4px 12px",
-    borderRadius: "12px",
-    fontSize: "12px",
-    fontWeight: 500,
-    backgroundColor:
-      s === "eligible" ? "#dbeafe" : s === "entitled" ? "#dcfce7" : "#f3f4f6",
-    color: s === "eligible" ? "#1e40af" : s === "entitled" ? "#166534" : "#374151",
-  });
-  const actionsRow: React.CSSProperties = { display: "flex", gap: "8px" };
-  const actionLink: React.CSSProperties = {
-    color: "#3b82f6",
-    textDecoration: "none",
-    fontSize: "14px",
-    fontWeight: 500,
-  };
-
-  const emptyWrap: React.CSSProperties = { textAlign: "center", padding: "60px 20px" };
-  const emptyText: React.CSSProperties = {
-    color: "#6b7280",
-    fontSize: "16px",
-    margin: "0 0 16px 0",
-  };
+  if (error) {
+    return (
+      <div
+        style={{
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          background:
+            "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
+          minHeight: "100vh",
+          padding: "40px 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div style={{ textAlign: "center", color: "white" }}>
+          <h1>Error Loading Employees</h1>
+          <p>{error}</p>
+          <button
+            onClick={loadEmployees}
+            style={{
+              backgroundColor: "#059669",
+              color: "white",
+              border: "none",
+              padding: "12px 24px",
+              borderRadius: "6px",
+              cursor: "pointer",
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={page}>
-      <div style={container}>
-        {/* Navigation Header */}
-        <div style={headerCard}>
-          <div>
-            <h1 style={title}>
-              💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Employee Management
-            </h1>
+    <div
+      style={{
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        background:
+          "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
+        minHeight: "100vh",
+        padding: "40px 20px",
+      }}
+    >
+      <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
+        {/* Header */}
+        <div
+          style={{
+            backgroundColor: "rgba(255, 255, 255, 0.95)",
+            backdropFilter: "blur(20px)",
+            padding: "20px 40px",
+            borderRadius: "12px",
+            boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+            marginBottom: "30px",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "20px",
+            }}
+          >
+            <div>
+              <h1
+                style={{
+                  fontSize: "28px",
+                  fontWeight: "bold",
+                  color: "#1f2937",
+                  margin: "0",
+                }}
+              >
+                💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Employees
+              </h1>
+              <p style={{ color: "#6b7280", margin: "8px 0 0 0" }}>
+                Manage your employee records and information
+              </p>
+            </div>
+            <nav style={{ display: "flex", gap: "24px" }}>
+              <a
+                href="/dashboard"
+                style={{
+                  color: "#6b7280",
+                  textDecoration: "none",
+                  fontWeight: 500,
+                  padding: "8px 16px",
+                  borderRadius: "6px",
+                  backgroundColor: "#f3f4f6",
+                }}
+              >
+                Dashboard
+              </a>
+              <a
+                href="/dashboard/employees"
+                style={{
+                  color: "#000000",
+                  textDecoration: "none",
+                  fontWeight: "bold",
+                  padding: "8px 16px",
+                  borderRadius: "6px",
+                  backgroundColor: "#10b981",
+                  border: "1px solid #059669",
+                }}
+              >
+                Employees
+              </a>
+              <a
+                href="/dashboard/payroll"
+                style={{
+                  color: "#6b7280",
+                  textDecoration: "none",
+                  fontWeight: 500,
+                  padding: "8px 16px",
+                  borderRadius: "6px",
+                  backgroundColor: "#f3f4f6",
+                }}
+              >
+                Payroll
+              </a>
+            </nav>
           </div>
-          <nav style={navRow}>
-            <a href="/dashboard" style={navLink}>
-              Dashboard
-            </a>
-            <a href="/dashboard/payroll" style={navLink}>
-              Payroll
-            </a>
-          </nav>
-        </div>
 
-        {/* Main Content Card */}
-        <div style={cardOuter}>
-          <div style={cardHeader}>
-            <h2 style={h2}>Employee Management</h2>
-            <p style={sub}>Manage your workforce and track auto-enrollment status</p>
-          </div>
-
-          {/* Search and Actions */}
-          <div style={toolbar}>
-            <input
-              type="text"
-              placeholder="Search employees..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={searchInput}
-            />
-            <a href="/dashboard/employees/new" style={primaryLinkBtn}>
+          {/* Search and Add Button */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "20px",
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <input
+                type="text"
+                placeholder="🔍 Search employees..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "8px",
+                  fontSize: "16px",
+                  backgroundColor: "white",
+                }}
+              />
+            </div>
+            <a
+              href="/dashboard/employees/new"
+              style={{
+                display: "inline-block",
+                padding: "12px 24px",
+                backgroundColor: "#059669",
+                color: "white",
+                textDecoration: "none",
+                borderRadius: "8px",
+                fontWeight: "bold",
+                border: "1px solid #059669",
+              }}
+            >
               👤 Add New Employee
             </a>
           </div>
+        </div>
 
-          {/* Employee Table */}
-          {loading ? (
-            <div style={emptyWrap}>
-              <p style={sub as React.CSSProperties & { fontSize: string; margin: string }}>
-                Loading employees...
+        {/* Employee Table */}
+        <div
+          style={{
+            backgroundColor: "rgba(255, 255, 255, 0.95)",
+            backdropFilter: "blur(20px)",
+            borderRadius: "12px",
+            boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+            border: "1px solid rgba(255, 255, 255, 0.2)",
+            overflow: "hidden",
+          }}
+        >
+          {filteredEmployees.length === 0 ? (
+            <div style={{ padding: "60px 20px", textAlign: "center" }}>
+              <h3 style={{ color: "#6b7280", fontSize: "18px", marginBottom: "8px" }}>
+                No employees found
+              </h3>
+              <p style={{ color: "#9ca3af", margin: 0 }}>
+                {searchTerm
+                  ? "No employees found matching your search."
+                  : "No employees found."}
               </p>
+              <a
+                href="/dashboard/employees/new"
+                style={{
+                  display: "inline-block",
+                  marginTop: "20px",
+                  padding: "12px 24px",
+                  backgroundColor: "#059669",
+                  color: "white",
+                  textDecoration: "none",
+                  borderRadius: "8px",
+                  fontWeight: "bold",
+                }}
+              >
+                👤 Add First Employee
+              </a>
             </div>
           ) : (
-            <div style={tableWrap}>
-              <table style={table}>
-                <thead>
-                  <tr>
-                    <th style={th}>Employee</th>
-                    <th style={th}>Contact</th>
-                    <th style={th}>Salary</th>
-                    <th style={th}>Status</th>
-                    <th style={th}>Auto-Enrollment</th>
-                    <th style={th}>Actions</th>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ backgroundColor: "#f8fafc" }}>
+                  <th
+                    style={{
+                      padding: "16px",
+                      textAlign: "left",
+                      fontWeight: 600,
+                      color: "#374151",
+                      borderBottom: "1px solid #e5e7eb",
+                    }}
+                  >
+                    Employee
+                  </th>
+                  <th
+                    style={{
+                      padding: "16px",
+                      textAlign: "left",
+                      fontWeight: 600,
+                      color: "#374151",
+                      borderBottom: "1px solid #e5e7eb",
+                    }}
+                  >
+                    Contact
+                  </th>
+                  <th
+                    style={{
+                      padding: "16px",
+                      textAlign: "left",
+                      fontWeight: 600,
+                      color: "#374151",
+                      borderBottom: "1px solid #e5e7eb",
+                    }}
+                  >
+                    Employment
+                  </th>
+                  <th
+                    style={{
+                      padding: "16px",
+                      textAlign: "right",
+                      fontWeight: 600,
+                      color: "#374151",
+                      borderBottom: "1px solid #e5e7eb",
+                    }}
+                  >
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEmployees.map((employee, index) => (
+                  <tr
+                    key={employee.id}
+                    style={{
+                      borderBottom: "1px solid #f3f4f6",
+                      backgroundColor: index % 2 === 0 ? "white" : "#fafafa",
+                    }}
+                  >
+                    <td style={{ padding: "16px" }}>
+                      <div>
+                        <p
+                          style={{
+                            fontWeight: 600,
+                            color: "#111827",
+                            margin: "0 0 4px 0",
+                          }}
+                        >
+                          {employee.firstName} {employee.lastName}
+                        </p>
+                        <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
+                          {employee.employeeNumber}
+                        </p>
+                      </div>
+                    </td>
+                    <td style={{ padding: "16px" }}>
+                      <div>
+                        <p style={{ color: "#111827", margin: "0 0 4px 0" }}>
+                          {employee.email}
+                        </p>
+                        <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
+                          {employee.phone || "No phone"}
+                        </p>
+                      </div>
+                    </td>
+                    <td style={{ padding: "16px" }}>
+                      <div>
+                        <p style={{ color: "#111827", margin: "0 0 4px 0" }}>
+                          £{employee.annualSalary?.toLocaleString() ?? "0"}
+                        </p>
+                        <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
+                          {(employee.employmentType ?? "").replace("_", " ")}
+                        </p>
+                      </div>
+                    </td>
+                    <td style={{ padding: "16px", textAlign: "right" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "8px",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        <a
+                          href={`/dashboard/employees/${employee.id}`}
+                          style={{
+                            padding: "6px 12px",
+                            backgroundColor: "#3b82f6",
+                            color: "white",
+                            textDecoration: "none",
+                            borderRadius: "4px",
+                            fontSize: "14px",
+                            fontWeight: 500,
+                          }}
+                        >
+                          View
+                        </a>
+                        <a
+                          href={`/dashboard/employees/${employee.id}/edit`}
+                          style={{
+                            padding: "6px 12px",
+                            backgroundColor: "#059669",
+                            color: "white",
+                            textDecoration: "none",
+                            borderRadius: "4px",
+                            fontSize: "14px",
+                            fontWeight: 500,
+                          }}
+                        >
+                          Edit
+                        </a>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredEmployees.map((employee) => (
-                    <tr key={employee.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={td}>
-                        <div>
-                          <div style={nameStrong}>
-                            {employee.firstName} {employee.lastName}
-                          </div>
-                          <div style={muted}>{employee.employeeNumber}</div>
-                        </div>
-                      </td>
-                      <td style={td}>
-                        <div>
-                          <div style={{ color: "#1e293b", fontSize: "14px" }}>{employee.email}</div>
-                          <div style={muted}>{employee.phone}</div>
-                        </div>
-                      </td>
-                      <td style={td}>
-                        <span style={salary}>£{employee.annualSalary.toLocaleString()}</span>
-                      </td>
-                      <td style={td}>
-                        <span style={statusPill(employee.status === "active")}>
-                          {employee.status === "active" ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td style={td}>
-                        <span style={aePill(employee.autoEnrollmentStatus)}>
-                          {employee.autoEnrollmentStatus === "eligible"
-                            ? "Eligible"
-                            : employee.autoEnrollmentStatus === "entitled"
-                            ? "Entitled"
-                            : "Non-Eligible"}
-                        </span>
-                      </td>
-                      <td style={td}>
-                        <div style={actionsRow}>
-                          <a href={`/dashboard/employees/${employee.id}`} style={actionLink}>
-                            View
-                          </a>
-                          <a href={`/dashboard/employees/${employee.id}/edit`} style={actionLink}>
-                            Edit
-                          </a>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {filteredEmployees.length === 0 && (
-                <div style={emptyWrap}>
-                  <p style={emptyText}>
-                    {searchTerm
-                      ? "No employees found matching your search."
-                      : "No employees found."}
-                  </p>
-                  <a href="/dashboard/employees/new" style={primaryLinkBtn}>
-                    👤 Add Your First Employee
-                  </a>
-                </div>
-              )}
-            </div>
+                ))}
+              </tbody>
+            </table>
           )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ marginTop: "30px", padding: "20px", textAlign: "center" }}>
+          <a
+            href="/dashboard"
+            style={{ color: "rgba(255, 255, 255, 0.8)", textDecoration: "none", marginRight: "30px" }}
+          >
+            ← Back to Dashboard
+          </a>
+
+          <a
+            href="/dashboard/payroll"
+            style={{ color: "rgba(255, 255, 255, 0.8)", textDecoration: "none" }}
+          >
+            Go to Payroll →
+          </a>
         </div>
       </div>
     </div>
