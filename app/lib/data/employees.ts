@@ -25,14 +25,17 @@ export interface Employee {
 export interface PaySchedule {
   id: string;
   name: string;
-  frequency: 'weekly' | 'bi_weekly' | 'monthly';
-  payDayOfWeek?: number; // 1-7 (Monday-Sunday)
-  payDayOfMonth?: number; // 1-31
+  // include common aliases so pages using 'fortnightly' or 'four_weekly' still type-check
+  frequency: 'weekly' | 'bi_weekly' | 'fortnightly' | 'four_weekly' | 'monthly';
+  // 1-7 (Monday-Sunday)
+  payDayOfWeek?: number;
+  // 1-31
+  payDayOfMonth?: number;
   description?: string;
   isActive: boolean;
 }
 
-// PAY SCHEDULES DATA
+// PAY SCHEDULES DATA - Exported
 export const PAY_SCHEDULES: PaySchedule[] = [
   {
     id: '11111111-1111-1111-1111-111111111111',
@@ -53,8 +56,8 @@ export const PAY_SCHEDULES: PaySchedule[] = [
   {
     id: '33333333-3333-3333-3333-333333333333',
     name: 'Bi-Weekly Mixed',
-    frequency: 'bi_weekly',
-    payDayOfWeek: 5, // Every other Friday
+    frequency: 'bi_weekly', // keep canonical value; UI can show "Fortnightly"
+    payDayOfWeek: 5, // Every other Friday (handled by schedule logic)
     description: 'Mixed departments paid every other Friday',
     isActive: true,
   },
@@ -169,7 +172,7 @@ export const DEMO_EMPLOYEES: Employee[] = [
   },
 ];
 
-// Utility functions
+// Utility functions - Exported
 export const getEmployeeById = (id: string): Employee | undefined =>
   DEMO_EMPLOYEES.find((emp) => emp.id === id);
 
@@ -179,8 +182,7 @@ export const getEmployeesByPaySchedule = (scheduleId: string): Employee[] =>
 export const getPayScheduleById = (id: string): PaySchedule | undefined =>
   PAY_SCHEDULES.find((schedule) => schedule.id === id);
 
-export const getPayScheduleName = (scheduleId?: string): string => {
-  if (!scheduleId) return 'No Schedule Assigned';
+export const getPayScheduleName = (scheduleId: string): string => {
   const schedule = getPayScheduleById(scheduleId);
   return schedule ? schedule.name : 'No Schedule Assigned';
 };
