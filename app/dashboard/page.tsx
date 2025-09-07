@@ -164,7 +164,7 @@ export default function Dashboard() {
                 <h3 style={h3}>Monthly Payroll</h3>
                 <p style={bigNumDark}>£87,240</p>
               </div>
-              <div style={{ fontSize: "32px" }}>£</div>
+              <div style={{ fontSize: "32px" }}></div>
             </div>
             <a href="/dashboard/payroll" style={chipLink}>
               View Details

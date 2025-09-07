@@ -1,44 +1,35 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { DEMO_EMPLOYEES } from "../../../../lib/data/employees";
 
 type PayrollRun = {
   id: string;
-  name: string;
-  payPeriod: string;
+  runNumber: string;
   payPeriodStart: string;
   payPeriodEnd: string;
   payDate: string;
+  description: string;
   status: "draft" | "processing" | "completed" | "submitted";
   employeeCount: number;
-  grossPay: number;
-  netPay: number;
-  totalTax: number;
-  totalNI: number;
-  totalPension: number;
-  createdDate: string;
-  submittedDate?: string;
-};
-
-type PayrollEntry = {
-  employeeId: string;
-  employeeName: string;
-  employeeNumber: string;
-  grossPay: number;
-  taxDeduction: number;
-  niDeduction: number;
-  pensionDeduction: number;
-  netPay: number;
-  taxCode: string;
+  totalGrossPay: number;
+  totalNetPay: number;
+  totals?: {
+    gross: number;
+    net: number;
+    tax: number;
+    ni: number;
+    pension: number;
+  };
+  employees: any[];
+  createdBy: string;
+  createdAt: string;
 };
 
 export default function PayrollRunDetailsPage() {
   const params = useParams<{ id: string }>();
-  const payrollId = params?.id as string;
-
+  const payrollId = (params?.id as string) || "";
   const [payrollRun, setPayrollRun] = useState<PayrollRun | null>(null);
-  const [payrollEntries, setPayrollEntries] = useState<PayrollEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const S = {
@@ -76,7 +67,6 @@ export default function PayrollRunDetailsPage() {
       backgroundColor: "#10b981",
       border: "1px solid #059669",
     } as const,
-
     summaryCard: {
       backgroundColor: "rgba(255, 255, 255, 0.95)",
       backdropFilter: "blur(20px)",
@@ -93,13 +83,6 @@ export default function PayrollRunDetailsPage() {
       marginBottom: "16px",
     } as const,
     h2: { fontSize: "20px", fontWeight: "bold", color: "#1f2937", margin: 0 } as const,
-    rti: {
-      fontSize: "12px",
-      color: "#1f2937",
-      backgroundColor: "#f1f5f9",
-      padding: "4px 10px",
-      borderRadius: "999px",
-    } as const,
     summaryGrid: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
@@ -113,7 +96,6 @@ export default function PayrollRunDetailsPage() {
       marginBottom: "4px",
     } as const,
     value: { margin: 0, color: "#1f2937", fontSize: "16px" } as const,
-
     financeCard: {
       backgroundColor: "rgba(255, 255, 255, 0.95)",
       backdropFilter: "blur(20px)",
@@ -203,163 +185,52 @@ export default function PayrollRunDetailsPage() {
       fontWeight: 500,
       padding: "8px 16px",
     } as const,
-    editLink: {
+    statusButton: {
       backgroundColor: "#10b981",
       color: "#000000",
-      padding: "8px 16px",
+      padding: "12px 24px",
       borderRadius: "6px",
       textDecoration: "none",
       fontWeight: "bold",
-      border: "1px solid #059669",
+      border: "none",
+      cursor: "pointer",
+      fontSize: "14px",
     } as const,
   };
 
+  // ✅ Load payroll run from API
   useEffect(() => {
-    console.log("Loading payroll run with ID:", payrollId);
-
-    const timer = setTimeout(() => {
-      const demoPayrollRuns: PayrollRun[] = [
-        {
-          id: "pr-001",
-          name: "Monthly Payroll - September 2025",
-          payPeriod: "01/09/2025 - 30/09/2025",
-          payPeriodStart: "2025-09-01",
-          payPeriodEnd: "2025-09-30",
-          payDate: "2025-09-30",
-          status: "completed",
-          employeeCount: 4,
-          grossPay: 10083.33,
-          netPay: 7637.5,
-          totalTax: 1505.0,
-          totalNI: 890.0,
-          totalPension: 504.17,
-          createdDate: "2025-09-28",
-          submittedDate: "2025-10-01",
-        },
-        {
-          id: "pr-002",
-          name: "Monthly Payroll - August 2025",
-          payPeriod: "01/08/2025 - 31/08/2025",
-          payPeriodStart: "2025-08-01",
-          payPeriodEnd: "2025-08-31",
-          payDate: "2025-08-31",
-          status: "submitted",
-          employeeCount: 3,
-          grossPay: 8333.33,
-          netPay: 6312.5,
-          totalTax: 1270.0,
-          totalNI: 750.83,
-          totalPension: 416.67,
-          createdDate: "2025-08-28",
-          submittedDate: "2025-09-01",
-        },
-      ];
-
-      const demoPayrollEntries: { [key: string]: PayrollEntry[] } = {
-        "pr-001": [
-          {
-            employeeId: "EMP001",
-            employeeName: "Sarah Johnson",
-            employeeNumber: "EMP001",
-            grossPay: 2916.67,
-            taxDeduction: 450.0,
-            niDeduction: 280.0,
-            pensionDeduction: 145.83,
-            netPay: 2040.84,
-            taxCode: "1257L",
-          },
-          {
-            employeeId: "EMP002",
-            employeeName: "James Wilson",
-            employeeNumber: "EMP002",
-            grossPay: 2333.33,
-            taxDeduction: 315.0,
-            niDeduction: 200.0,
-            pensionDeduction: 116.67,
-            netPay: 1701.66,
-            taxCode: "1257L",
-          },
-          {
-            employeeId: "EMP003",
-            employeeName: "Emma Brown",
-            employeeNumber: "EMP003",
-            grossPay: 1833.33,
-            taxDeduction: 160.0,
-            niDeduction: 120.0,
-            pensionDeduction: 91.67,
-            netPay: 1461.66,
-            taxCode: "1257L",
-          },
-          {
-            employeeId: "EMP004",
-            employeeName: "Michael Davis",
-            employeeNumber: "EMP004",
-            grossPay: 3000.0,
-            taxDeduction: 580.0,
-            niDeduction: 290.0,
-            pensionDeduction: 150.0,
-            netPay: 1980.0,
-            taxCode: "1257L",
-          },
-        ],
-        "pr-002": [
-          {
-            employeeId: "EMP001",
-            employeeName: "Sarah Johnson",
-            employeeNumber: "EMP001",
-            grossPay: 2916.67,
-            taxDeduction: 440.0,
-            niDeduction: 290.0,
-            pensionDeduction: 145.83,
-            netPay: 2040.84,
-            taxCode: "1257L",
-          },
-          {
-            employeeId: "EMP002",
-            employeeName: "James Wilson",
-            employeeNumber: "EMP002",
-            grossPay: 2333.33,
-            taxDeduction: 310.0,
-            niDeduction: 210.0,
-            pensionDeduction: 116.67,
-            netPay: 1696.66,
-            taxCode: "1257L",
-          },
-          {
-            employeeId: "EMP003",
-            employeeName: "Emma Brown",
-            employeeNumber: "EMP003",
-            grossPay: 3083.33,
-            taxDeduction: 520.0,
-            niDeduction: 250.83,
-            pensionDeduction: 154.17,
-            netPay: 2158.33,
-            taxCode: "1257L",
-          },
-        ],
-      };
-
-      const foundPayrollRun = demoPayrollRuns.find((pr) => pr.id === payrollId);
-      console.log("Found payroll run:", foundPayrollRun);
-
-      setPayrollRun(foundPayrollRun || null);
-      setPayrollEntries(foundPayrollRun ? demoPayrollEntries[foundPayrollRun.id] || [] : []);
-
-      if (foundPayrollRun) {
-        const entries = demoPayrollEntries[foundPayrollRun.id] || [];
-        console.log("Payroll entries:", entries);
-        console.log("Available employees:", DEMO_EMPLOYEES.map((e) => e.id));
-        console.log("Entry employee IDs:", entries.map((e) => e.employeeId));
+    const loadPayrollRun = async () => {
+      try {
+        if (!payrollId) return;
+        const response = await fetch("/api/payroll");
+        if (response.ok) {
+          const allRuns: PayrollRun[] = await response.json();
+          const foundRun = allRuns.find((run: PayrollRun) => run.id === payrollId) || null;
+          setPayrollRun(foundRun);
+        } else {
+          console.error("❌ Failed to fetch payroll runs:", response.status);
+        }
+      } catch (error) {
+        console.error("❌ Error loading payroll run:", error);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      setLoading(false);
-    }, 1000);
-
-    return () => clearTimeout(timer);
+    void loadPayrollRun();
   }, [payrollId]);
 
+  // Update payroll run status (local only)
+  const updateStatus = async (newStatus: PayrollRun["status"]) => {
+    if (payrollRun) {
+      setPayrollRun({ ...payrollRun, status: newStatus });
+      alert(`✅ Payroll run status updated to: ${newStatus.toUpperCase()}`);
+    }
+  };
+
   const formatCurrency = (amount: number): string =>
-    new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(amount);
+    new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(amount || 0);
 
   const formatDateUK = (dateString: string): string =>
     new Date(dateString).toLocaleDateString("en-GB", {
@@ -368,7 +239,7 @@ export default function PayrollRunDetailsPage() {
       year: "numeric",
     });
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: PayrollRun["status"] | string) => {
     let backgroundColor = "";
     let color = "";
     let text = "";
@@ -397,7 +268,7 @@ export default function PayrollRunDetailsPage() {
       default:
         backgroundColor = "#f3f4f6";
         color = "#374151";
-        text = status;
+        text = String(status);
     }
 
     return (
@@ -422,6 +293,9 @@ export default function PayrollRunDetailsPage() {
       <div style={S.page}>
         <div style={S.center}>
           <h1 style={{ color: "#1f2937", margin: 0 }}>Loading Payroll Run...</h1>
+          <p style={{ color: "#6b7280", margin: "16px 0" }}>
+            Loading details for payroll run: {payrollId}
+          </p>
         </div>
       </div>
     );
@@ -433,10 +307,10 @@ export default function PayrollRunDetailsPage() {
         <div style={S.center}>
           <h1 style={{ color: "#1f2937", margin: 0 }}>Payroll Run Not Found</h1>
           <p style={{ color: "#6b7280", margin: "16px 0" }}>
-            The payroll run you're looking for could not be found.
+            The payroll run with ID "{payrollId}" could not be found.
           </p>
           <a href="/dashboard/payroll" style={S.navLink}>
-            ← Back to Payroll
+            ← Back to Payroll Dashboard
           </a>
         </div>
       </div>
@@ -453,7 +327,7 @@ export default function PayrollRunDetailsPage() {
               💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Payroll Run Details
             </h1>
             <p style={S.subtitle}>
-              {payrollRun.name} - {payrollEntries.length} employees
+              {payrollRun.description || payrollRun.runNumber} - {payrollRun.employeeCount} employees
             </p>
           </div>
           <nav style={S.nav}>
@@ -472,31 +346,34 @@ export default function PayrollRunDetailsPage() {
             <h2 style={S.h2}>Payroll Run Summary</h2>
             <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
               {getStatusBadge(payrollRun.status)}
-              {payrollRun.submittedDate && (
-                <span style={S.rti}>RTI Submitted: {formatDateUK(payrollRun.submittedDate)}</span>
-              )}
             </div>
           </div>
-
           <div style={S.summaryGrid}>
             <div>
-              <label style={S.label}>Pay Period</label>
-              <p style={S.value}>{payrollRun.payPeriod}</p>
+              <label style={S.label}>Run Number</label>
+              <p style={S.value}>{payrollRun.runNumber}</p>
             </div>
-
+            <div>
+              <label style={S.label}>Pay Period</label>
+              <p style={S.value}>
+                {formatDateUK(payrollRun.payPeriodStart)} - {formatDateUK(payrollRun.payPeriodEnd)}
+              </p>
+            </div>
             <div>
               <label style={S.label}>Pay Date</label>
               <p style={S.value}>{formatDateUK(payrollRun.payDate)}</p>
             </div>
-
             <div>
               <label style={S.label}>Employees</label>
               <p style={{ ...S.value, fontWeight: 700 }}>{payrollRun.employeeCount}</p>
             </div>
-
+            <div>
+              <label style={S.label}>Created By</label>
+              <p style={S.value}>{payrollRun.createdBy}</p>
+            </div>
             <div>
               <label style={S.label}>Created Date</label>
-              <p style={S.value}>{formatDateUK(payrollRun.createdDate)}</p>
+              <p style={S.value}>{formatDateUK(payrollRun.createdAt)}</p>
             </div>
           </div>
         </div>
@@ -507,36 +384,31 @@ export default function PayrollRunDetailsPage() {
             <div style={{ fontSize: "20px" }}>📊</div>
             <h2 style={S.financeH2}>Financial Summary</h2>
           </div>
-
           <div style={S.financeGrid}>
             <div style={S.financeItem}>
               <div style={{ fontSize: "24px", marginBottom: "8px" }}>💰</div>
               <h3 style={S.financeH3}>Total Gross Pay</h3>
-              <p style={S.financeVal}>{formatCurrency(payrollRun.grossPay)}</p>
+              <p style={S.financeVal}>{formatCurrency(payrollRun.totalGrossPay)}</p>
             </div>
-
             <div style={S.financeItem}>
               <div style={{ fontSize: "24px", marginBottom: "8px" }}>🏛️</div>
               <h3 style={S.financeH3}>PAYE Tax</h3>
-              <p style={S.financeValAlt}>{formatCurrency(payrollRun.totalTax)}</p>
+              <p style={S.financeValAlt}>{formatCurrency(payrollRun.totals?.tax || 0)}</p>
             </div>
-
             <div style={S.financeItem}>
               <div style={{ fontSize: "24px", marginBottom: "8px" }}>🏛️</div>
               <h3 style={S.financeH3}>National Insurance</h3>
-              <p style={S.financeValAlt}>{formatCurrency(payrollRun.totalNI)}</p>
+              <p style={S.financeValAlt}>{formatCurrency(payrollRun.totals?.ni || 0)}</p>
             </div>
-
             <div style={S.financeItem}>
               <div style={{ fontSize: "24px", marginBottom: "8px" }}>🏦</div>
               <h3 style={S.financeH3}>Pension Contributions</h3>
-              <p style={S.financeValAlt}>{formatCurrency(payrollRun.totalPension)}</p>
+              <p style={S.financeValAlt}>{formatCurrency(payrollRun.totals?.pension || 0)}</p>
             </div>
-
             <div style={S.financeNet}>
               <div style={{ fontSize: "24px", marginBottom: "8px" }}>💸</div>
               <h3 style={S.financeH3}>Total Net Pay</h3>
-              <p style={S.financeVal}>{formatCurrency(payrollRun.netPay)}</p>
+              <p style={S.financeVal}>{formatCurrency(payrollRun.totalNetPay)}</p>
             </div>
           </div>
         </div>
@@ -546,62 +418,108 @@ export default function PayrollRunDetailsPage() {
           <div style={{ marginBottom: "12px" }}>
             <h2 style={S.tableTitle}>Employee Payroll Details</h2>
           </div>
-
           <div style={{ overflowX: "auto" }}>
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  <th style={S.th}>Employee</th>
-                  <th style={S.th}>Gross Pay</th>
-                  <th style={S.th}>PAYE Tax</th>
-                  <th style={S.th}>National Insurance</th>
-                  <th style={S.th}>Pension</th>
-                  <th style={S.th}>Net Pay</th>
-                  <th style={S.th}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payrollEntries.map((entry) => (
-                  <tr key={entry.employeeId}>
-                    <td style={S.td}>
-                      <div>
-                        <div style={S.empName}>{entry.employeeName}</div>
-                        <div style={S.empMeta}>
-                          {entry.employeeNumber} • Tax Code: {entry.taxCode}
-                        </div>
-                      </div>
-                    </td>
-                    <td style={S.td}>
-                      <span style={S.amount}>{formatCurrency(entry.grossPay)}</span>
-                    </td>
-                    <td style={S.td}>
-                      <span style={S.amountTax}>{formatCurrency(entry.taxDeduction)}</span>
-                    </td>
-                    <td style={S.td}>
-                      <span style={S.amountTax}>{formatCurrency(entry.niDeduction)}</span>
-                    </td>
-                    <td style={S.td}>
-                      <span style={S.amountPen}>{formatCurrency(entry.pensionDeduction)}</span>
-                    </td>
-                    <td style={S.td}>
-                      <span style={S.amountNet}>{formatCurrency(entry.netPay)}</span>
-                    </td>
-                    <td style={S.td}>
-                      <a
-                        href={`/dashboard/employees/${entry.employeeId}`}
-                        style={{ color: "#3b82f6", textDecoration: "none", fontWeight: 500 }}
-                      >
-                        View Employee
-                      </a>
-                    </td>
+            {payrollRun.employees && payrollRun.employees.length > 0 ? (
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    <th style={S.th}>Employee</th>
+                    <th style={S.th}>Gross Pay</th>
+                    <th style={S.th}>PAYE Tax</th>
+                    <th style={S.th}>National Insurance</th>
+                    <th style={S.th}>Pension</th>
+                    <th style={S.th}>Net Pay</th>
+                    <th style={S.th}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {payrollEntries.length === 0 && (
+                </thead>
+                <tbody>
+                  {payrollRun.employees.map((employee: any, index: number) => (
+                    <tr key={employee.id || index}>
+                      <td style={S.td}>
+                        <div>
+                          <div style={S.empName}>
+                            {employee.firstName} {employee.lastName}
+                          </div>
+                          <div style={S.empMeta}>
+                            {employee.employeeNumber} • Tax Code: {employee.taxCode || "1257L"}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={S.td}>
+                        <span style={S.amount}>{formatCurrency(employee.grossPay || 0)}</span>
+                      </td>
+                      <td style={S.td}>
+                        <span style={S.amountTax}>{formatCurrency(employee.taxDeduction || 0)}</span>
+                      </td>
+                      <td style={S.td}>
+                        <span style={S.amountTax}>{formatCurrency(employee.niDeduction || 0)}</span>
+                      </td>
+                      <td style={S.td}>
+                        <span style={S.amountPen}>{formatCurrency(employee.pensionDeduction || 0)}</span>
+                      </td>
+                      <td style={S.td}>
+                        <span style={S.amountNet}>{formatCurrency(employee.netPay || 0)}</span>
+                      </td>
+                      <td style={S.td}>
+                        <a
+                          href={`/dashboard/employees/${employee.id}`}
+                          style={{ color: "#3b82f6", textDecoration: "none", fontWeight: 500 }}
+                        >
+                          View Employee
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
               <div style={S.empty}>
-                <p style={S.emptyText}>No payroll entries found for this run.</p>
+                <p style={S.emptyText}>No employee details available for this payroll run.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Status Update Actions */}
+        <div style={S.summaryCard}>
+          <h2 style={S.h2}>Payroll Actions</h2>
+          <div style={{ marginTop: "16px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            {payrollRun.status === "draft" && (
+              <>
+                <button onClick={() => updateStatus("processing")} style={S.statusButton}>
+                  🚀 Start Processing
+                </button>
+                <button
+                  onClick={() => alert("Edit functionality coming soon!")}
+                  style={{ ...S.statusButton, backgroundColor: "#3b82f6" }}
+                >
+                  ✏️ Edit Payroll Run
+                </button>
+              </>
+            )}
+
+            {payrollRun.status === "processing" && (
+              <button onClick={() => updateStatus("completed")} style={S.statusButton}>
+                ✅ Mark as Completed
+              </button>
+            )}
+
+            {payrollRun.status === "completed" && (
+              <button onClick={() => updateStatus("submitted")} style={S.statusButton}>
+                📊 Submit RTI to HMRC
+              </button>
+            )}
+
+            {payrollRun.status === "submitted" && (
+              <div
+                style={{
+                  padding: "12px",
+                  backgroundColor: "#f0fdf4",
+                  borderRadius: "8px",
+                  color: "#166534",
+                }}
+              >
+                ✅ RTI has been submitted to HMRC
               </div>
             )}
           </div>
@@ -610,13 +528,8 @@ export default function PayrollRunDetailsPage() {
         {/* Action Buttons */}
         <div style={S.actions}>
           <a href="/dashboard/payroll" style={S.backLink}>
-            ← Back to Payroll
+            ← Back to Payroll Dashboard
           </a>
-          {payrollRun.status === "draft" && (
-            <a href={`/dashboard/payroll/${payrollRun.id}/edit`} style={S.editLink}>
-              ✏️ Edit Payroll Run
-            </a>
-          )}
         </div>
       </div>
     </div>

@@ -1,0 +1,227 @@
+[
+  {
+    "id": "pr-1757257021834",
+    "runNumber": "PR-2025-09-07-1557",
+    "payPeriodStart": "2025-08-31",
+    "payPeriodEnd": "2025-09-29",
+    "payDate": "2025-10-04",
+    "description": "WageFlow - September 2025",
+    "employees": [
+      {
+        "id": "emp-001",
+        "employeeNumber": "EMP001",
+        "firstName": "Sarah",
+        "lastName": "Johnson",
+        "annualSalary": 35000,
+        "grossPay": 2916.6666666666665,
+        "taxDeduction": 583.3333333333334,
+        "niDeduction": 349.99999999999994,
+        "pensionDeduction": 145.83333333333334,
+        "netPay": 1837.4999999999998,
+        "selected": true
+      },
+      {
+        "id": "emp-002",
+        "employeeNumber": "EMP002",
+        "firstName": "Michael",
+        "lastName": "Brown",
+        "annualSalary": 42000,
+        "grossPay": 3500,
+        "taxDeduction": 700,
+        "niDeduction": 420,
+        "pensionDeduction": 175,
+        "netPay": 2205,
+        "selected": true
+      },
+      {
+        "id": "emp-003",
+        "employeeNumber": "EMP003",
+        "firstName": "Emma",
+        "lastName": "Davis",
+        "annualSalary": 38000,
+        "grossPay": 3166.6666666666665,
+        "taxDeduction": 633.3333333333334,
+        "niDeduction": 379.99999999999994,
+        "pensionDeduction": 158.33333333333334,
+        "netPay": 1994.9999999999998,
+        "selected": true
+      }
+    ],
+    "selectedEmployees": [
+      "emp-001",
+      "emp-002",
+      "emp-003"
+    ],
+    "newStartersCheck": {
+      "hasNewStarters": false,
+      "newStartersProcessed": false,
+      "checkedBy": "Adam",
+      "checkedDate": "2025-09-07",
+      "p45FormsAccessed": false
+    },
+    "totals": {
+      "gross": 9583.333333333332,
+      "tax": 1916.666666666667,
+      "ni": 1150,
+      "pension": 479.16666666666674,
+      "net": 6037.5
+    },
+    "totalGrossPay": 9583.333333333332,
+    "totalNetPay": 6037.5,
+    "status": "draft",
+    "createdBy": "Adam",
+    "employeeCount": 3,
+    "createdAt": "2025-09-07T14:57:01.834Z",
+    "updatedAt": "2025-09-07T14:57:01.834Z"
+  },
+  {
+    "id": "pr-1757260361158",
+    "runNumber": "PR-2025-09-07-1652",
+    "payPeriodStart": "2025-09-01",
+    "payPeriodEnd": "2025-09-30",
+    "payDate": "2025-09-30",
+    "description": "WageFlow - September 2025",
+    "employees": [
+      {
+        "id": "emp-001",
+        "employeeNumber": "EMP001",
+        "firstName": "Sarah",
+        "lastName": "Johnson",
+        "annualSalary": 35000,
+        "grossPay": 2916.6666666666665,
+        "taxDeduction": 583.3333333333334,
+        "niDeduction": 349.99999999999994,
+        "pensionDeduction": 145.83333333333334,
+        "netPay": 1837.4999999999998,
+        "selected": true
+      },
+      {
+        "id": "emp-002",
+        "employeeNumber": "EMP002",
+        "firstName": "Michael",
+        "lastName": "Brown",
+        "annualSalary": 42000,
+        "grossPay": 3500,
+        "taxDeduction": 700,
+        "niDeduction": 420,
+        "pensionDeduction": 175,
+        "netPay": 2205,
+        "selected": true
+      },
+      {
+        "id": "emp-003",
+        "employeeNumber": "EMP003",
+        "firstName": "Emma",
+        "lastName": "Davis",
+        "annualSalary": 38000,
+        "grossPay": 3166.6666666666665,
+        "taxDeduction": 633.3333333333334,
+        "niDeduction": 379.99999999999994,
+        "pensionDeduction": 158.33333333333334,
+        "netPay": 1994.9999999999998,
+        "selected": true
+      }
+    ],
+    "selectedEmployees": [
+      "emp-001",
+      "emp-002",
+      "emp-003"
+    ],
+    "newStartersCheck": {
+      "hasNewStarters": false,
+      "newStartersProcessed": false,
+      "checkedBy": "Adam",
+      "checkedDate": "2025-09-07",
+      "p45FormsAccessed": false
+    },
+    "totals": {
+      "gross": 9583.333333333332,
+      "tax": 1916.666666666667,
+      "ni": 1150,
+      "pension": 479.16666666666674,
+      "net": 6037.5
+    },
+    "totalGrossPay": 9583.333333333332,
+    "totalNetPay": 6037.5,
+    "status": "draft",
+    "createdBy": "Adam",
+    "employeeCount": 3,
+    "createdAt": "2025-09-07T15:52:41.158Z",
+    "updatedAt": "2025-09-07T15:52:41.158Z"
+  },
+  {
+    "id": "pr-1757260868550",
+    "runNumber": "PR-2025-09-07-1701",
+    "payPeriodStart": "2025-09-01",
+    "payPeriodEnd": "2025-09-30",
+    "payDate": "2025-09-30",
+    "description": "WageFlow - September 2025",
+    "employees": [
+      {
+        "id": "emp-001",
+        "employeeNumber": "EMP001",
+        "firstName": "Sarah",
+        "lastName": "Johnson",
+        "annualSalary": 35000,
+        "grossPay": 2916.6666666666665,
+        "taxDeduction": 583.3333333333334,
+        "niDeduction": 349.99999999999994,
+        "pensionDeduction": 145.83333333333334,
+        "netPay": 1837.4999999999998,
+        "selected": true
+      },
+      {
+        "id": "emp-002",
+        "employeeNumber": "EMP002",
+        "firstName": "Michael",
+        "lastName": "Brown",
+        "annualSalary": 42000,
+        "grossPay": 3500,
+        "taxDeduction": 700,
+        "niDeduction": 420,
+        "pensionDeduction": 175,
+        "netPay": 2205,
+        "selected": true
+      },
+      {
+        "id": "emp-003",
+        "employeeNumber": "EMP003",
+        "firstName": "Emma",
+        "lastName": "Davis",
+        "annualSalary": 38000,
+        "grossPay": 3166.6666666666665,
+        "taxDeduction": 633.3333333333334,
+        "niDeduction": 379.99999999999994,
+        "pensionDeduction": 158.33333333333334,
+        "netPay": 1994.9999999999998,
+        "selected": true
+      }
+    ],
+    "selectedEmployees": [
+      "emp-001",
+      "emp-002",
+      "emp-003"
+    ],
+    "newStartersCheck": {
+      "hasNewStarters": true,
+      "newStartersProcessed": true,
+      "checkedBy": "Adam",
+      "checkedDate": "2025-09-07",
+      "p45FormsAccessed": true
+    },
+    "totals": {
+      "gross": 9583.333333333332,
+      "tax": 1916.666666666667,
+      "ni": 1150,
+      "pension": 479.16666666666674,
+      "net": 6037.5
+    },
+    "totalGrossPay": 9583.333333333332,
+    "totalNetPay": 6037.5,
+    "status": "draft",
+    "createdBy": "Adam",
+    "employeeCount": 3,
+    "createdAt": "2025-09-07T16:01:08.550Z",
+    "updatedAt": "2025-09-07T16:01:08.550Z"
+  }
+]
