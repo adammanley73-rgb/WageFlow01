@@ -117,29 +117,6 @@ export default function NewPayrollRunPage() {
     description: '',
   });
 
-  // Basic styles (replace with Tailwind or your design system later)
-  const styles = {
-    page: { maxWidth: 1100, margin: '0 auto', padding: 24, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' },
-    header: { marginBottom: 16 },
-    backLink: { color: '#1e40af', textDecoration: 'none', fontSize: 14 },
-    h1: { margin: '8px 0 4px', fontSize: 24 },
-    p: { margin: '0 0 16px', color: '#475569' },
-    card: { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginBottom: 16 },
-    sectionTitle: { fontSize: 18, marginBottom: 12 },
-    row: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 },
-    label: { display: 'block', fontSize: 14, marginBottom: 6 },
-    input: { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1' },
-    select: { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1' },
-    btnRow: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 },
-    btn: { padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer' },
-    btnPrimary: { padding: '10px 14px', borderRadius: 6, border: '1px solid #1d4ed8', background: '#2563eb', color: '#fff', cursor: 'pointer' },
-    table: { width: '100%', borderCollapse: 'collapse' as const },
-    th: { textAlign: 'left' as const, padding: '8px 6px', borderBottom: '1px solid #e2e8f0', fontSize: 14 },
-    td: { padding: '8px 6px', borderBottom: '1px solid #f1f5f9', fontSize: 14, verticalAlign: 'top' as const },
-    totals: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginTop: 8 },
-    muted: { color: '#64748b', fontSize: 13 },
-  };
-
   useEffect(() => {
     loadEmployees();
     setDefaultDates();
@@ -237,7 +214,6 @@ export default function NewPayrollRunPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
     if (loading) return;
 
     if (totals.employeeCount === 0) {
@@ -280,16 +256,16 @@ export default function NewPayrollRunPage() {
       const result = await response.json();
 
       alert(
-        `Payroll run ${result.runNumber} created successfully.\n\n` +
-          `Employees: ${result.totals?.employeeCount ?? totals.employeeCount}\n` +
-          `Gross: ${formatCurrency(result.totals?.totalGross ?? totals.totalGross)}\n` +
-          `Net: ${formatCurrency(result.totals?.totalNet ?? totals.totalNet)}`
+        `✅ Payroll run ${result.runNumber} created successfully!\n\n` +
+          `• Employees: ${result.totals?.employeeCount ?? totals.employeeCount}\n` +
+          `• Gross: ${formatCurrency(result.totals?.totalGross ?? totals.totalGross)}\n` +
+          `• Net: ${formatCurrency(result.totals?.totalNet ?? totals.totalNet)}`
       );
 
       router.push('/dashboard/payroll');
     } catch (error) {
       console.error('Failed to create payroll run:', error);
-      alert('Failed to create payroll run. Please try again.');
+      alert('❌ Failed to create payroll run. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -302,192 +278,573 @@ export default function NewPayrollRunPage() {
   const filteredSelectedCount = filteredEmployees.filter((emp) => selectedEmployees.includes(emp.id)).length;
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <Link href="/dashboard/payroll" style={styles.backLink}>
-          ← Back to Payroll Dashboard
-        </Link>
-        <h1 style={styles.h1}>Create New Payroll Run</h1>
-        <p style={styles.p}>Set the payroll period and select employees by pay schedule.</p>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        padding: '24px',
+      }}
+    >
+      <div
+        style={{
+          maxWidth: '1400px',
+          margin: '0 auto',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            marginBottom: '32px',
+          }}
+        >
+          <Link
+            href="/dashboard/payroll"
+            style={{
+              color: 'white',
+              textDecoration: 'none',
+              fontSize: '16px',
+              fontWeight: 500,
+              display: 'inline-block',
+              marginBottom: '16px',
+            }}
+          >
+            ← Back to Payroll Dashboard
+          </Link>
+          <h1
+            style={{
+              fontSize: '36px',
+              fontWeight: 'bold',
+              color: 'white',
+              margin: '0 0 8px 0',
+            }}
+          >
+            💰 Create New Payroll Run
+          </h1>
+          <p
+            style={{
+              color: 'rgba(255, 255, 255, 0.8)',
+              fontSize: '18px',
+              margin: 0,
+            }}
+          >
+            Setup payroll period and select employees by pay schedule
+          </p>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
+            padding: '32px',
+            borderRadius: '16px',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+          }}
+        >
+          <form onSubmit={handleSubmit}>
+            {/* Setup Section */}
+            <div style={{ marginBottom: '32px' }}>
+              <h2
+                style={{
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  color: '#1f2937',
+                  marginBottom: '24px',
+                }}
+              >
+                📅 Payroll Setup
+              </h2>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                  gap: '24px',
+                  marginBottom: '24px',
+                }}
+              >
+                {/* Pay Schedule Selection */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: '#374151',
+                      marginBottom: '8px',
+                    }}
+                  >
+                    Pay Schedule (Filter Employees)
+                  </label>
+                  <select
+                    value={selectedSchedule}
+                    onChange={(e) => setSelectedSchedule(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '16px',
+                      backgroundColor: 'white',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">All Employees (No Filter)</option>
+                    {PAY_SCHEDULES.map((schedule) => (
+                      <option key={schedule.id} value={schedule.id}>
+                        {schedule.name} ({schedule.frequency.replace('_', '-')})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedScheduleInfo && (
+                    <p
+                      style={{
+                        fontSize: '14px',
+                        color: '#6b7280',
+                        margin: '4px 0 0 0',
+                      }}
+                    >
+                      {selectedScheduleInfo.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Pay Period Start */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: '#374151',
+                      marginBottom: '8px',
+                    }}
+                  >
+                    Pay Period Start
+                  </label>
+                  <input
+                    type="date"
+                    value={payrollData.payPeriodStart}
+                    onChange={(e) =>
+                      setPayrollData((prev) => ({ ...prev, payPeriodStart: e.target.value }))
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '16px',
+                      backgroundColor: 'white',
+                      outline: 'none',
+                    }}
+                    required
+                  />
+                </div>
+
+                {/* Pay Period End */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: '#374151',
+                      marginBottom: '8px',
+                    }}
+                  >
+                    Pay Period End
+                  </label>
+                  <input
+                    type="date"
+                    value={payrollData.payPeriodEnd}
+                    onChange={(e) =>
+                      setPayrollData((prev) => ({ ...prev, payPeriodEnd: e.target.value }))
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '16px',
+                      backgroundColor: 'white',
+                      outline: 'none',
+                    }}
+                    required
+                  />
+                </div>
+
+                {/* Pay Date */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: '#374151',
+                      marginBottom: '8px',
+                    }}
+                  >
+                    Pay Date
+                  </label>
+                  <input
+                    type="date"
+                    value={payrollData.payDate}
+                    onChange={(e) =>
+                      setPayrollData((prev) => ({ ...prev, payDate: e.target.value }))
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      fontSize: '16px',
+                      backgroundColor: 'white',
+                      outline: 'none',
+                    }}
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Employee Selection */}
+            <div style={{ marginBottom: '32px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '20px',
+                }}
+              >
+                <h2
+                  style={{
+                    fontSize: '24px',
+                    fontWeight: 'bold',
+                    color: '#1f2937',
+                    margin: 0,
+                  }}
+                >
+                  👥 Select Employees
+                </h2>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    type="button"
+                    onClick={selectAllFiltered}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#3b82f6',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Select All ({filteredEmployees.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deselectAllFiltered}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: '#6b7280',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Deselect All
+                  </button>
+                </div>
+              </div>
+
+              {selectedSchedule && (
+                <div
+                  style={{
+                    padding: '12px 16px',
+                    backgroundColor: '#eff6ff',
+                    borderRadius: '8px',
+                    marginBottom: '20px',
+                    border: '1px solid #dbeafe',
+                  }}
+                >
+                  <p
+                    style={{
+                      margin: 0,
+                      color: '#1e40af',
+                      fontSize: '14px',
+                    }}
+                  >
+                    📅 Filtered by: {selectedScheduleInfo?.name} ({filteredEmployees.length} employees)
+                  </p>
+                </div>
+              )}
+
+              <div
+                style={{
+                  overflowX: 'auto',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                }}
+              >
+                <table
+                  style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                  }}
+                >
+                  <thead>
+                    <tr style={{ backgroundColor: '#f9fafb' }}>
+                      {['Select', 'Employee', 'Gross Pay', 'Tax', 'NI', 'Pension', 'Net Pay'].map((h) => (
+                        <th
+                          key={h}
+                          style={{
+                            padding: '12px 16px',
+                            textAlign: h === 'Employee' || h === 'Select' ? 'left' : 'right',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            color: '#4b5563',
+                            textTransform: 'uppercase',
+                            borderBottom: '1px solid #e5e7eb',
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredEmployees.map((employee, index) => (
+                      <tr
+                        key={employee.id}
+                        style={{
+                          backgroundColor: index % 2 === 0 ? 'white' : '#f9fafb',
+                          borderBottom: '1px solid #f3f4f6',
+                        }}
+                      >
+                        <td style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedEmployees.includes(employee.id)}
+                            onChange={() => toggleEmployee(employee.id)}
+                            style={{ width: 16, height: 16, cursor: 'pointer' }}
+                          />
+                        </td>
+                        <td style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, color: '#111827' }}>
+                              {employee.firstName} {employee.lastName}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#6b7280' }}>{employee.employeeNumber}</div>
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            padding: '12px 16px',
+                            textAlign: 'right',
+                            fontWeight: 600,
+                            color: '#059669',
+                            borderBottom: '1px solid #f3f4f6',
+                          }}
+                        >
+                          {formatCurrency(employee.grossPay)}
+                        </td>
+                        <td
+                          style={{
+                            padding: '12px 16px',
+                            textAlign: 'right',
+                            color: '#dc2626',
+                            borderBottom: '1px solid #f3f4f6',
+                          }}
+                        >
+                          {formatCurrency(employee.taxDeduction)}
+                        </td>
+                        <td
+                          style={{
+                            padding: '12px 16px',
+                            textAlign: 'right',
+                            color: '#dc2626',
+                            borderBottom: '1px solid #f3f4f6',
+                          }}
+                        >
+                          {formatCurrency(employee.niDeduction)}
+                        </td>
+                        <td
+                          style={{
+                            padding: '12px 16px',
+                            textAlign: 'right',
+                            color: '#dc2626',
+                            borderBottom: '1px solid #f3f4f6',
+                          }}
+                        >
+                          {formatCurrency(employee.pensionDeduction)}
+                        </td>
+                        <td
+                          style={{
+                            padding: '12px 16px',
+                            textAlign: 'right',
+                            fontWeight: 600,
+                            color: '#059669',
+                            borderBottom: '1px solid #f3f4f6',
+                          }}
+                        >
+                          {formatCurrency(employee.netPay)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '16px',
+                marginBottom: '32px',
+              }}
+            >
+              <div
+                style={{
+                  padding: '20px',
+                  backgroundColor: '#eff6ff',
+                  borderRadius: '12px',
+                  textAlign: 'center',
+                  border: '1px solid #dbeafe',
+                }}
+              >
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e40af' }}>
+                  {filteredSelectedCount}
+                </div>
+                <div style={{ fontSize: '14px', color: '#1e40af' }}>Employees</div>
+              </div>
+
+              <div
+                style={{
+                  padding: '20px',
+                  backgroundColor: '#f0fdf4',
+                  borderRadius: '12px',
+                  textAlign: 'center',
+                  border: '1px solid #bbf7d0',
+                }}
+              >
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#166534' }}>
+                  {formatCurrency(totals.totalGross)}
+                </div>
+                <div style={{ fontSize: '14px', color: '#166534' }}>Total Gross Pay</div>
+              </div>
+
+              <div
+                style={{
+                  padding: '20px',
+                  backgroundColor: '#fef2f2',
+                  borderRadius: '12px',
+                  textAlign: 'center',
+                  border: '1px solid #fecaca',
+                }}
+              >
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#dc2626' }}>
+                  {formatCurrency(totals.totalTax + totals.totalNI + totals.totalPension)}
+                </div>
+                <div style={{ fontSize: '14px', color: '#dc2626' }}>Total Deductions</div>
+              </div>
+
+              <div
+                style={{
+                  padding: '20px',
+                  backgroundColor: '#f0fdf4',
+                  borderRadius: '12px',
+                  textAlign: 'center',
+                  border: '1px solid #bbf7d0',
+                }}
+              >
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#166534' }}>
+                  {formatCurrency(totals.totalNet)}
+                </div>
+                <div style={{ fontSize: '14px', color: '#166534' }}>Total Net Pay</div>
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <Link
+                href="/dashboard/payroll"
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: '#f3f4f6',
+                  color: '#374151',
+                  textDecoration: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 500,
+                  border: '1px solid #d1d5db',
+                }}
+              >
+                Cancel
+              </Link>
+
+              <button
+                type="submit"
+                disabled={loading || totals.employeeCount === 0}
+                style={{
+                  padding: '12px 32px',
+                  backgroundColor: totals.employeeCount === 0 ? '#9ca3af' : '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  cursor: totals.employeeCount === 0 ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                {loading ? (
+                  <>
+                    <div
+                      style={{
+                        width: 16,
+                        height: 16,
+                        border: '2px solid rgba(255,255,255,0.3)',
+                        borderTop: '2px solid white',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                      }}
+                    />
+                    Creating Payroll Run...
+                  </>
+                ) : (
+                  <>✅ Create Payroll ({totals.employeeCount} employees)</>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit}>
-        {/* Setup Section */}
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>Payroll Setup</h2>
-
-          <div style={styles.row}>
-            <div>
-              <label style={styles.label}>Pay Schedule (filter employees)</label>
-              <select
-                value={selectedSchedule}
-                onChange={(e) => setSelectedSchedule(e.target.value)}
-                style={styles.select}
-              >
-                <option value="">All Employees</option>
-                {PAY_SCHEDULES.map((schedule) => (
-                  <option key={schedule.id} value={schedule.id}>
-                    {schedule.name} ({schedule.frequency.replace('_', '-')})
-                  </option>
-                ))}
-              </select>
-              {selectedScheduleInfo ? (
-                <p style={styles.muted}>{selectedScheduleInfo.description}</p>
-              ) : (
-                <p style={styles.muted}>Showing all active employees.</p>
-              )}
-            </div>
-
-            <div>
-              <label style={styles.label}>Description</label>
-              <input
-                type="text"
-                value={payrollData.description}
-                onChange={(e) => setPayrollData((p) => ({ ...p, description: e.target.value }))}
-                style={styles.input}
-                placeholder="e.g., Payroll - September 2025"
-              />
-            </div>
-          </div>
-
-          <div style={styles.row}>
-            <div>
-              <label style={styles.label}>Pay period start</label>
-              <input
-                type="date"
-                value={payrollData.payPeriodStart}
-                onChange={(e) => setPayrollData((p) => ({ ...p, payPeriodStart: e.target.value }))}
-                style={styles.input}
-                required
-              />
-            </div>
-            <div>
-              <label style={styles.label}>Pay period end</label>
-              <input
-                type="date"
-                value={payrollData.payPeriodEnd}
-                onChange={(e) => setPayrollData((p) => ({ ...p, payPeriodEnd: e.target.value }))}
-                style={styles.input}
-                required
-              />
-            </div>
-          </div>
-
-          <div style={styles.row}>
-            <div>
-              <label style={styles.label}>Pay date</label>
-              <input
-                type="date"
-                value={payrollData.payDate}
-                onChange={(e) => setPayrollData((p) => ({ ...p, payDate: e.target.value }))}
-                style={styles.input}
-                required
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Employees Section */}
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>
-            Employees ({filteredSelectedCount}/{filteredEmployees.length} selected)
-          </h2>
-
-          <div style={styles.btnRow}>
-            <button type="button" style={styles.btn} onClick={selectAllFiltered}>
-              Select all in view
-            </button>
-            <button type="button" style={styles.btn} onClick={deselectAllFiltered}>
-              Deselect all in view
-            </button>
-          </div>
-
-          <div style={{ overflowX: 'auto' }}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Select</th>
-                  <th style={styles.th}>Employee</th>
-                  <th style={styles.th}>Number</th>
-                  <th style={styles.th}>Email</th>
-                  <th style={styles.th}>Gross</th>
-                  <th style={styles.th}>Tax</th>
-                  <th style={styles.th}>NI</th>
-                  <th style={styles.th}>Pension</th>
-                  <th style={styles.th}>Net</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEmployees.map((emp) => (
-                  <tr key={emp.id}>
-                    <td style={styles.td}>
-                      <input
-                        type="checkbox"
-                        checked={selectedEmployees.includes(emp.id)}
-                        onChange={() => toggleEmployee(emp.id)}
-                      />
-                    </td>
-                    <td style={styles.td}>
-                      {emp.firstName} {emp.lastName}
-                    </td>
-                    <td style={styles.td}>{emp.employeeNumber}</td>
-                    <td style={styles.td}>{emp.email}</td>
-                    <td style={styles.td}>{formatCurrency(emp.grossPay)}</td>
-                    <td style={styles.td}>{formatCurrency(emp.taxDeduction)}</td>
-                    <td style={styles.td}>{formatCurrency(emp.niDeduction)}</td>
-                    <td style={styles.td}>{formatCurrency(emp.pensionDeduction)}</td>
-                    <td style={styles.td}>{formatCurrency(emp.netPay)}</td>
-                  </tr>
-                ))}
-                {filteredEmployees.length === 0 && (
-                  <tr>
-                    <td style={styles.td} colSpan={9}>
-                      No employees in this view.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Totals Section */}
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>Totals</h2>
-          <div style={styles.totals}>
-            <div>
-              <div style={styles.muted}>Employees</div>
-              <div>{totals.employeeCount}</div>
-            </div>
-            <div>
-              <div style={styles.muted}>Gross</div>
-              <div>{formatCurrency(totals.totalGross)}</div>
-            </div>
-            <div>
-              <div style={styles.muted}>Tax</div>
-              <div>{formatCurrency(totals.totalTax)}</div>
-            </div>
-            <div>
-              <div style={styles.muted}>NI</div>
-              <div>{formatCurrency(totals.totalNI)}</div>
-            </div>
-            <div>
-              <div style={styles.muted}>Net</div>
-              <div>{formatCurrency(totals.totalNet)}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Link href="/dashboard/payroll" style={styles.btn as React.CSSProperties}>
-            Cancel
-          </Link>
-          <button type="submit" disabled={loading} style={styles.btnPrimary}>
-            {loading ? 'Creating…' : 'Create payroll run'}
-          </button>
-        </div>
-      </form>
+      <style jsx>{`
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 }
