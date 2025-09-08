@@ -1,135 +1,111 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, readFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
+import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '../../../../lib/supabase'
 
-const dataDir = path.join(process.cwd(), 'data');
-const employeesFile = path.join(dataDir, 'employees.json');
+// Optional: ensure this route is always dynamic
+export const dynamic = 'force-dynamic'
 
-async function ensureDataDir() {
-  if (!existsSync(dataDir)) {
-    await mkdir(dataDir, { recursive: true });
-  }
+// Helpers
+function buildUpdate(body: any) {
+  const update: Record<string, any> = { updated_at: new Date().toISOString() }
+  if (body.firstName !== undefined) update.first_name = body.firstName
+  if (body.lastName !== undefined) update.last_name = body.lastName
+  if (body.email !== undefined) update.email = body.email
+  if (body.phone !== undefined) update.phone = body.phone
+  if (body.annualSalary !== undefined) update.annual_salary = body.annualSalary
+  if (body.payScheduleId !== undefined) update.pay_schedule_id = body.payScheduleId
+  return update
 }
 
-async function loadEmployees(): Promise<any[]> {
+// GET /api/employees/[id] - Get single employee
+export async function GET(_request: NextRequest, context: { params: { id: string } }) {
   try {
-    await ensureDataDir();
-
-    if (!existsSync(employeesFile)) {
-      return [];
+    const employeeId = context?.params?.id
+    if (!employeeId) {
+      return NextResponse.json({ error: 'Missing employee id' }, { status: 400 })
     }
 
-    const data = await readFile(employeesFile, 'utf-8');
-    if (!data.trim()) return [];
-    const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error('Error loading employees:', error);
-    return [];
-  }
-}
+    const { data: employee, error } = await supabase
+      .from('employees')
+      .select('*')
+      .eq('employee_id', employeeId)  // CHANGED: was 'id', now 'employee_id'
+      .single()
 
-async function saveEmployees(employees: any[]): Promise<void> {
-  try {
-    await ensureDataDir();
-    await writeFile(employeesFile, JSON.stringify(employees, null, 2));
-    console.log('💾 Saved employees to file:', employees.length);
-  } catch (error) {
-    console.error('Error saving employees:', error);
-    throw error;
+    if (error || !employee) {
+      console.error('Database error:', error)
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    }
+
+    return NextResponse.json(employee, { status: 200 })
+  } catch (err) {
+    console.error('Error fetching employee:', err)
+    return NextResponse.json({ error: 'Failed to fetch employee' }, { status: 500 })
   }
 }
 
 // PUT /api/employees/[id] - Update employee
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, context: { params: { id: string } }) {
   try {
-    const employeeId = params.id;
-    const body = await request.json();
-    console.log('📝 Updating employee with ID:', employeeId, 'Data:', body);
-
-    const employees = await loadEmployees();
-    const employeeIndex = employees.findIndex((emp: any) => emp.id === employeeId);
-
-    if (employeeIndex === -1) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+    const employeeId = context?.params?.id
+    if (!employeeId) {
+      return NextResponse.json({ error: 'Missing employee id' }, { status: 400 })
     }
 
-    const updatedEmployee = {
-      ...employees[employeeIndex],
-      ...body,
-      id: employeeId,
-      updatedAt: new Date().toISOString(),
-    };
-
-    employees[employeeIndex] = updatedEmployee;
-    await saveEmployees(employees);
-
-    console.log('✅ Employee updated successfully:', updatedEmployee);
-
-    return NextResponse.json(
-      {
-        success: true,
-        employee: updatedEmployee,
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error('❌ Error updating employee:', error);
-    return NextResponse.json({ error: 'Failed to update employee' }, { status: 500 });
-  }
-}
-
-// GET /api/employees/[id] - Get single employee
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const employeeId = params.id;
-    console.log('🔍 Getting employee with ID:', employeeId);
-
-    const employees = await loadEmployees();
-    const employee = employees.find((emp: any) => emp.id === employeeId);
-
-    if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
     }
 
-    console.log('✅ Found employee:', employee);
+    const update = buildUpdate(body)
+    if (Object.keys(update).length === 1) {
+      // only has updated_at
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+    }
 
-    return NextResponse.json(employee, { status: 200 });
-  } catch (error) {
-    console.error('❌ Error fetching employee:', error);
-    return NextResponse.json({ error: 'Failed to fetch employee' }, { status: 500 });
+    const { data: updatedEmployee, error } = await supabase
+      .from('employees')
+      .update(update)
+      .eq('employee_id', employeeId)  // CHANGED: was 'id', now 'employee_id'
+      .select()
+      .single()
+
+    if (error || !updatedEmployee) {
+      console.error('Database update error:', error)
+      return NextResponse.json({ error: error?.message || 'Failed to update employee' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, employee: updatedEmployee }, { status: 200 })
+  } catch (err) {
+    console.error('Error updating employee:', err)
+    return NextResponse.json({ error: 'Failed to update employee' }, { status: 500 })
   }
 }
 
 // DELETE /api/employees/[id] - Delete employee
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_request: NextRequest, context: { params: { id: string } }) {
   try {
-    const employeeId = params.id;
-    console.log('🗑️ Deleting employee with ID:', employeeId);
-
-    const employees = await loadEmployees();
-    const employeeIndex = employees.findIndex((emp: any) => emp.id === employeeId);
-
-    if (employeeIndex === -1) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+    const employeeId = context?.params?.id
+    if (!employeeId) {
+      return NextResponse.json({ error: 'Missing employee id' }, { status: 400 })
     }
 
-    const [deletedEmployee] = employees.splice(employeeIndex, 1);
-    await saveEmployees(employees);
+    const { data: deletedEmployee, error } = await supabase
+      .from('employees')
+      .delete()
+      .eq('employee_id', employeeId)  // CHANGED: was 'id', now 'employee_id'
+      .select()
+      .single()
 
-    console.log('✅ Employee deleted successfully:', deletedEmployee);
+    if (error || !deletedEmployee) {
+      console.error('Database delete error:', error)
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    }
 
     return NextResponse.json(
-      {
-        success: true,
-        message: 'Employee deleted successfully',
-        employee: deletedEmployee,
-      },
+      { success: true, message: 'Employee deleted successfully', employee: deletedEmployee },
       { status: 200 }
-    );
-  } catch (error) {
-    console.error('❌ Error deleting employee:', error);
-    return NextResponse.json({ error: 'Failed to delete employee' }, { status: 500 });
+    )
+  } catch (err) {
+    console.error('Error deleting employee:', err)
+    return NextResponse.json({ error: 'Failed to delete employee' }, { status: 500 })
   }
 }
