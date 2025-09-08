@@ -203,23 +203,18 @@ export default function EditEmployeePage() {
   });
   const [errors, setErrors] = useState<string[]>([]);
 
-  // ✅ Load employee data from API
   useEffect(() => {
     const loadEmployee = async () => {
       try {
         console.log('🔍 Loading employee for edit, ID:', employeeId);
         setLoadingEmployee(true);
-
         const response = await fetch('/api/employees');
         if (response.ok) {
           const allEmployees = await response.json();
           const employee = allEmployees.find((emp: any) => emp.id === employeeId);
-
           if (employee) {
             console.log('✅ Found employee for editing:', employee);
             setOriginalEmployee(employee);
-
-            // Populate form with existing data
             setFormData({
               employeeNumber: employee.employeeNumber || '',
               firstName: employee.firstName || '',
@@ -262,7 +257,6 @@ export default function EditEmployeePage() {
 
   const validateForm = (): boolean => {
     const newErrors: string[] = [];
-
     if (!formData.firstName.trim()) newErrors.push('First name is required');
     if (!formData.lastName.trim()) newErrors.push('Last name is required');
     if (!formData.email.trim()) newErrors.push('Email is required');
@@ -289,12 +283,11 @@ export default function EditEmployeePage() {
     return newErrors.length === 0;
   };
 
-  // ✅ Update employee via API
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-
     setLoading(true);
+
     try {
       const employeeData = {
         id: employeeId,
@@ -325,12 +318,9 @@ export default function EditEmployeePage() {
       };
 
       console.log('📤 Updating employee with data:', employeeData);
-
       const response = await fetch(`/api/employees/${employeeId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(employeeData),
       });
 
@@ -344,6 +334,42 @@ export default function EditEmployeePage() {
 
       const result = await response.json();
       console.log('✅ Employee updated successfully:', result);
+
+      // Refresh the specific updated employee
+      try {
+        const refreshResponse = await fetch(`/api/employees/${employeeId}`);
+        if (refreshResponse.ok) {
+          const freshData = await refreshResponse.json();
+          setOriginalEmployee(freshData);
+          setFormData({
+            employeeNumber: freshData.employeeNumber || freshData.employeeId || '',
+            firstName: freshData.firstName || '',
+            lastName: freshData.lastName || '',
+            email: freshData.email || '',
+            phone: freshData.phone || '',
+            dateOfBirth: freshData.dateOfBirth || '',
+            nationalInsurance: freshData.nationalInsurance || '',
+            annualSalary: freshData.annualSalary?.toString() || '',
+            hireDate: freshData.hireDate || '',
+            employmentType: freshData.employmentType || 'full_time',
+            payScheduleId: freshData.payScheduleId || '',
+            jobTitle: freshData.jobTitle || '',
+            department: freshData.department || '',
+            status: freshData.status || 'active',
+            address: {
+              line1: freshData.address?.line1 || '',
+              line2: freshData.address?.line2 || '',
+              city: freshData.address?.city || '',
+              county: freshData.address?.county || '',
+              postcode: freshData.address?.postcode || '',
+            },
+          });
+        } else {
+          console.error('❌ Failed to refresh employee data');
+        }
+      } catch (refreshError) {
+        console.error('❌ Error refreshing data:', refreshError);
+      }
 
       alert(
         `✅ Employee updated successfully!\n\nEmployee: ${employeeData.firstName} ${employeeData.lastName}\nEmployee Number: ${employeeData.employeeNumber}`
@@ -362,7 +388,6 @@ export default function EditEmployeePage() {
   const getPayScheduleInfo = (scheduleId: string) => {
     const schedule = paySchedules.find((s) => s.id === scheduleId);
     if (!schedule) return '';
-
     const frequency = schedule.frequency.replace('_', '-');
     let payDay = '';
     if (schedule.payDayOfMonth) {
@@ -395,9 +420,7 @@ export default function EditEmployeePage() {
         <div style={S.max}>
           <div style={S.loadingCard}>
             <h1 style={S.notFoundTitle}>Employee Not Found</h1>
-            <p style={S.notFoundText}>
-              The employee with ID "{employeeId}" could not be found.
-            </p>
+            <p style={S.notFoundText}>The employee with ID "{employeeId}" could not be found.</p>
             <Link href="/dashboard/employees" style={S.backLinkLight}>
               ← Back to Employees
             </Link>
@@ -411,10 +434,7 @@ export default function EditEmployeePage() {
     <div style={S.page}>
       <div style={S.max}>
         <div style={{ marginBottom: '32px' }}>
-          <Link
-            href={`/dashboard/employees/${employeeId}`}
-            style={S.backLinkLight}
-          >
+          <Link href={`/dashboard/employees/${employeeId}`} style={S.backLinkLight}>
             ← Back to Employee Details
           </Link>
           <h1 style={S.headerH1}>✏️ Edit Employee</h1>
@@ -737,7 +757,6 @@ export default function EditEmployeePage() {
           </form>
         </div>
       </div>
-
       <style jsx>{`
         @keyframes spin {
           0% {

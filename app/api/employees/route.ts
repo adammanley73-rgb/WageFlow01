@@ -1,164 +1,145 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, readFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
+import { NextResponse } from 'next/server'
+import { supabase } from '../../../lib/supabase'
 
-export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic'
 
-const dataDir = path.join(process.cwd(), 'data');
-const employeesFile = path.join(dataDir, 'employees.json');
-
-async function ensureDataDir() {
-  if (!existsSync(dataDir)) {
-    await mkdir(dataDir, { recursive: true });
-  }
-}
-
-async function loadEmployees(): Promise<any[]> {
-  try {
-    await ensureDataDir();
-
-    if (!existsSync(employeesFile)) {
-      const initialData = [
-        {
-          id: 'emp-001',
-          employeeNumber: 'EMP001',
-          firstName: 'Sarah',
-          lastName: 'Johnson',
-          email: 'sarah.johnson@company.co.uk',
-          phone: '+44 7700 900123',
-          dateOfBirth: '1985-03-15',
-          nationalInsurance: 'AB123456C',
-          annualSalary: 35000,
-          hireDate: '2020-01-15',
-          status: 'active',
-          employmentType: 'full_time',
-          payScheduleId: 'monthly-25th',
-          jobTitle: 'Marketing Manager',
-          department: 'Marketing',
-          address: {
-            line1: '123 High Street',
-            line2: '',
-            city: 'London',
-            county: 'Greater London',
-            postcode: 'SW1A 1AA',
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: 'emp-002',
-          employeeNumber: 'EMP002',
-          firstName: 'Michael',
-          lastName: 'Brown',
-          email: 'michael.brown@company.co.uk',
-          phone: '+44 7700 900124',
-          dateOfBirth: '1990-07-22',
-          nationalInsurance: 'CD789012E',
-          annualSalary: 42000,
-          hireDate: '2021-03-10',
-          status: 'active',
-          employmentType: 'full_time',
-          payScheduleId: 'monthly-25th',
-          jobTitle: 'Software Developer',
-          department: 'Engineering',
-          address: {
-            line1: '456 Main Road',
-            line2: '',
-            city: 'Manchester',
-            county: 'Greater Manchester',
-            postcode: 'M1 1AA',
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ];
-
-      await writeFile(employeesFile, JSON.stringify(initialData, null, 2));
-      return initialData;
-    }
-
-    const data = await readFile(employeesFile, 'utf-8');
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('Error loading employees:', error);
-    return [];
-  }
-}
-
-async function saveEmployees(employees: any[]): Promise<void> {
-  try {
-    await ensureDataDir();
-    await writeFile(employeesFile, JSON.stringify(employees, null, 2));
-    console.log('💾 Saved employees to file:', employees.length);
-  } catch (error) {
-    console.error('Error saving employees:', error);
-    throw error;
-  }
-}
-
-// GET /api/employees - List all employees
+// GET /api/employees - Get all employees
 export async function GET() {
   try {
-    const employees = await loadEmployees();
-    console.log('📋 Retrieved employees:', employees.length);
+    console.log('🔍 API: Starting to fetch employees...')
 
-    return NextResponse.json(employees, { status: 200 });
+    const { data, error } = await supabase
+      .from('employees')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('❌ Database error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (!data) {
+      return NextResponse.json([], { status: 200 })
+    }
+
+    // Transform and filter out employees with missing critical data
+    const employees = (Array.isArray(data) ? data : [])
+      .filter((emp: any) => {
+        const hasRequiredFields =
+          emp?.employee_id && emp?.first_name && emp?.last_name && emp?.email
+        if (!hasRequiredFields) {
+          console.warn(
+            `⚠️ Skipping employee ${emp?.employee_id ?? 'UNKNOWN'} - missing required fields`
+          )
+        }
+        return hasRequiredFields
+      })
+      .map((emp: any) => ({
+        id: emp.employee_id,
+        employeeId: emp.employee_id,
+        employeeNumber: emp.employee_id,
+        firstName: emp.first_name,
+        lastName: emp.last_name,
+        email: emp.email,
+        phone: emp.phone ?? '',
+        dateOfBirth: emp.date_of_birth ?? '',
+        nationalInsurance: emp.national_insurance_number ?? '',
+        annualSalary: typeof emp.annual_salary === 'number' ? emp.annual_salary : 0,
+        hireDate: emp.hire_date ?? '',
+        employmentType: emp.employment_type ?? 'full_time',
+        payScheduleId: emp.pay_schedule_id ?? '',
+        jobTitle: emp.job_title ?? '',
+        department: emp.department ?? '',
+        status: emp.status ?? 'active',
+        address: emp.address ?? null,
+        createdAt: emp.created_at ?? '',
+        updatedAt: emp.updated_at ?? '',
+      }))
+
+    console.log(`✅ Returning ${employees.length} valid employees`)
+
+    return NextResponse.json(employees, { status: 200 })
   } catch (error) {
-    console.error('❌ Error fetching employees:', error);
-    return NextResponse.json({ error: 'Failed to fetch employees' }, { status: 500 });
+    console.error('❌ Error fetching employees:', error)
+    return NextResponse.json({ error: 'Failed to fetch employees' }, { status: 500 })
   }
 }
 
 // POST /api/employees - Create new employee
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    console.log('📝 Creating employee with data:', body);
+    const body = await request.json()
 
-    const employees = await loadEmployees();
+    const employeeId: string = body.employeeId || `emp-${Date.now().toString().slice(-6)}`
+    const annualSalaryRaw = body.annualSalary
+    const annualSalary: number | null =
+      typeof annualSalaryRaw === 'number'
+        ? annualSalaryRaw
+        : annualSalaryRaw
+        ? parseFloat(String(annualSalaryRaw))
+        : null
 
-    const newEmployee = {
-      id: `emp-${Date.now()}`,
-      employeeNumber: body.employeeNumber,
-      firstName: body.firstName,
-      lastName: body.lastName,
-      email: body.email,
+    const nationalInsurance: string | null = body.nationalInsurance
+      ? String(body.nationalInsurance).replace(/\s/g, '').toUpperCase()
+      : null
+
+    const insertPayload = {
+      employee_id: employeeId,
+      first_name: body.firstName ?? null,
+      last_name: body.lastName ?? null,
+      email: body.email ? String(body.email).toLowerCase() : null,
       phone: body.phone ?? null,
-      dateOfBirth: body.dateOfBirth,
-      nationalInsurance: body.nationalInsurance ?? null,
-      annualSalary: body.annualSalary,
-      hireDate: body.hireDate,
-      status: 'active',
-      employmentType: body.employmentType ?? 'full_time',
-      payScheduleId: body.payScheduleId ?? null,
-      jobTitle: body.jobTitle ?? null,
+      date_of_birth: body.dateOfBirth ?? null,
+      national_insurance_number: nationalInsurance,
+      annual_salary: Number.isFinite(annualSalary as number) ? annualSalary : null,
+      hire_date: body.hireDate || new Date().toISOString().split('T')[0],
+      employment_type: body.employmentType || 'full_time',
+      pay_schedule_id: body.payScheduleId ?? null,
+      job_title: body.jobTitle ?? null,
       department: body.department ?? null,
-      address: body.address ?? {
-        line1: '',
-        line2: '',
-        city: '',
-        county: '',
-        postcode: '',
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+      status: body.status || 'active',
+      address: body.address ?? null,
+    }
 
-    employees.push(newEmployee);
-    await saveEmployees(employees);
+    const { data, error } = await supabase
+      .from('employees')
+      .insert([insertPayload])
+      .select('*')
+      .single()
 
-    console.log('✅ Employee created successfully:', newEmployee);
+    if (error || !data) {
+      console.error('❌ Error creating employee:', error)
+      return NextResponse.json(
+        { error: error?.message || 'Failed to create employee' },
+        { status: 500 }
+      )
+    }
 
-    return NextResponse.json(
-      {
-        success: true,
-        employee: newEmployee,
-      },
-      { status: 201 }
-    );
+    const transformedEmployee = {
+      id: data.employee_id,
+      employeeId: data.employee_id,
+      employeeNumber: data.employee_id,
+      firstName: data.first_name ?? '',
+      lastName: data.last_name ?? '',
+      email: data.email ?? '',
+      phone: data.phone ?? '',
+      dateOfBirth: data.date_of_birth ?? '',
+      nationalInsurance: data.national_insurance_number ?? '',
+      annualSalary: typeof data.annual_salary === 'number' ? data.annual_salary : 0,
+      hireDate: data.hire_date ?? '',
+      employmentType: data.employment_type ?? 'full_time',
+      payScheduleId: data.pay_schedule_id ?? '',
+      jobTitle: data.job_title ?? '',
+      department: data.department ?? '',
+      status: data.status ?? 'active',
+      address: data.address ?? null,
+      createdAt: data.created_at ?? '',
+      updatedAt: data.updated_at ?? '',
+    }
+
+    return NextResponse.json({ success: true, employee: transformedEmployee }, { status: 201 })
   } catch (error) {
-    console.error('❌ Error creating employee:', error);
-    return NextResponse.json({ error: 'Failed to create employee' }, { status: 500 });
+    console.error('❌ Error in POST /api/employees:', error)
+    return NextResponse.json({ error: 'Failed to create employee' }, { status: 500 })
   }
 }
