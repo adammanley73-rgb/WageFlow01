@@ -28,9 +28,10 @@ type PayrollRun = {
 
 export default function PayrollRunDetailsPage() {
   const params = useParams<{ id: string }>();
-  const payrollId = (params?.id as string) || "";
+  const routeId = (params?.id as string) || "";
   const [payrollRun, setPayrollRun] = useState<PayrollRun | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isEmployeeView, setIsEmployeeView] = useState(false);
 
   const S = {
     page: {
@@ -139,7 +140,7 @@ export default function PayrollRunDetailsPage() {
     tableTitle: { fontSize: "20px", fontWeight: "bold", color: "#1f2937", margin: 0 } as const,
     table: {
       width: "100%",
-      borderCollapse: "separate",
+      borderCollapse: "separate" as const,
       borderSpacing: 0,
       minWidth: "800px",
       backgroundColor: "#fff",
@@ -148,15 +149,15 @@ export default function PayrollRunDetailsPage() {
       overflow: "hidden",
     } as const,
     th: {
-      textAlign: "left",
+      textAlign: "left" as const,
       fontSize: "12px",
-      textTransform: "uppercase",
+      textTransform: "uppercase" as const,
       letterSpacing: "0.04em",
       color: "#6b7280",
       padding: "12px 16px",
       backgroundColor: "#f9fafb",
       borderBottom: "1px solid #e5e7eb",
-      whiteSpace: "nowrap",
+      whiteSpace: "nowrap" as const,
     } as const,
     td: { padding: "12px 16px", borderBottom: "1px solid #f3f4f6", verticalAlign: "top" } as const,
     empName: { fontWeight: 600, color: "#111827" } as const,
@@ -166,7 +167,7 @@ export default function PayrollRunDetailsPage() {
     amountPen: { fontWeight: 600, color: "#0f766e" } as const,
     amountNet: { fontWeight: 700, color: "#065f46" } as const,
     empty: {
-      textAlign: "center",
+      textAlign: "center" as const,
       padding: "24px",
       backgroundColor: "#ffffff",
       border: "1px dashed #e5e7eb",
@@ -196,30 +197,52 @@ export default function PayrollRunDetailsPage() {
       cursor: "pointer",
       fontSize: "14px",
     } as const,
+    notFound: {
+      backgroundColor: "rgba(255, 255, 255, 0.95)",
+      backdropFilter: "blur(20px)",
+      borderRadius: "16px",
+      padding: "40px",
+      textAlign: "center" as const,
+      boxShadow: "0 25px 70px rgba(0, 0, 0, 0.2), 0 10px 25px rgba(0, 0, 0, 0.15)",
+      border: "1px solid rgba(255, 255, 255, 0.2)",
+    } as const,
   };
 
-  // ✅ Load payroll run from API
+  // ✅ Load payroll run or employee payroll history
   useEffect(() => {
-    const loadPayrollRun = async () => {
+    const loadData = async () => {
       try {
-        if (!payrollId) return;
+        if (!routeId) return;
+
+        // Check if this is an employee ID (starts with "emp-")
+        if (routeId.startsWith("emp-")) {
+          console.log("🔍 Employee payroll history requested for:", routeId);
+          setIsEmployeeView(true);
+
+          // For now, redirect to employee page - payroll history feature coming soon
+          window.location.href = `/dashboard/employees/${routeId}`;
+          return;
+        }
+
+        // Otherwise, treat as payroll run ID
         const response = await fetch("/api/payroll");
         if (response.ok) {
           const allRuns: PayrollRun[] = await response.json();
-          const foundRun = allRuns.find((run: PayrollRun) => run.id === payrollId) || null;
+          const foundRun =
+            allRuns.find((run: PayrollRun) => run.id === routeId) || null;
           setPayrollRun(foundRun);
         } else {
           console.error("❌ Failed to fetch payroll runs:", response.status);
         }
       } catch (error) {
-        console.error("❌ Error loading payroll run:", error);
+        console.error("❌ Error loading payroll data:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    void loadPayrollRun();
-  }, [payrollId]);
+    void loadData();
+  }, [routeId]);
 
   // Update payroll run status (local only)
   const updateStatus = async (newStatus: PayrollRun["status"]) => {
@@ -243,7 +266,6 @@ export default function PayrollRunDetailsPage() {
     let backgroundColor = "";
     let color = "";
     let text = "";
-
     switch (status) {
       case "draft":
         backgroundColor = "#fef3c7";
@@ -270,7 +292,6 @@ export default function PayrollRunDetailsPage() {
         color = "#374151";
         text = String(status);
     }
-
     return (
       <span
         style={{
@@ -292,30 +313,39 @@ export default function PayrollRunDetailsPage() {
     return (
       <div style={S.page}>
         <div style={S.center}>
-          <h1 style={{ color: "#1f2937", margin: 0 }}>Loading Payroll Run...</h1>
-          <p style={{ color: "#6b7280", margin: "16px 0" }}>
-            Loading details for payroll run: {payrollId}
-          </p>
+          <div style={S.notFound}>
+            <h1 style={{ color: "#1f2937", margin: 0 }}>Loading...</h1>
+            <p style={{ color: "#6b7280", margin: "16px 0" }}>
+              Loading payroll data for: {routeId}
+            </p>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!payrollRun) {
+  if (!payrollRun && !isEmployeeView) {
     return (
       <div style={S.page}>
         <div style={S.center}>
-          <h1 style={{ color: "#1f2937", margin: 0 }}>Payroll Run Not Found</h1>
-          <p style={{ color: "#6b7280", margin: "16px 0" }}>
-            The payroll run with ID "{payrollId}" could not be found.
-          </p>
-          <a href="/dashboard/payroll" style={S.navLink}>
-            ← Back to Payroll Dashboard
-          </a>
+          <div style={S.notFound}>
+            <h1 style={{ color: "#1f2937", margin: 0 }}>Payroll Run Not Found</h1>
+            <p style={{ color: "#6b7280", margin: "16px 0" }}>
+              The payroll run with ID "{routeId}" could not be found.
+            </p>
+            <p style={{ color: "#6b7280", margin: "16px 0", fontSize: "14px" }}>
+              If you're looking for employee payroll history, that feature is coming soon!
+            </p>
+            <a href="/dashboard/payroll" style={S.navLink}>
+              ← Back to Payroll Dashboard
+            </a>
+          </div>
         </div>
       </div>
     );
   }
+
+  if (!payrollRun) return null;
 
   return (
     <div style={S.page}>
@@ -497,19 +527,16 @@ export default function PayrollRunDetailsPage() {
                 </button>
               </>
             )}
-
             {payrollRun.status === "processing" && (
               <button onClick={() => updateStatus("completed")} style={S.statusButton}>
                 ✅ Mark as Completed
               </button>
             )}
-
             {payrollRun.status === "completed" && (
               <button onClick={() => updateStatus("submitted")} style={S.statusButton}>
                 📊 Submit RTI to HMRC
               </button>
             )}
-
             {payrollRun.status === "submitted" && (
               <div
                 style={{

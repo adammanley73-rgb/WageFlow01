@@ -42,8 +42,11 @@ type AbsenceRequest = {
 
 const S = {
   page: {
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     minHeight: '100vh',
-    background: 'linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)',
+    background:
+      'linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)',
     padding: '24px',
   } as const,
   max: { maxWidth: '1200px', margin: '0 auto' } as const,
@@ -153,6 +156,80 @@ const S = {
         ? '#991b1b'
         : '#374151',
   }),
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '24px',
+    textAlign: 'center' as const,
+  } as const,
+  statNumber: {
+    fontSize: '32px',
+    fontWeight: 'bold',
+    color: '#1f2937',
+    margin: '0 0 8px 0',
+  } as const,
+  statLabel: {
+    fontSize: '14px',
+    color: '#6b7280',
+    margin: 0,
+  } as const,
+    textarea: {
+    width: '100%',
+    padding: '12px',
+    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '16px',
+    marginBottom: '16px',
+    minHeight: '80px',
+    resize: 'vertical' as const,
+  } as const,
+
+  checkboxRow: {
+    display: 'flex',
+    gap: '24px',
+    marginBottom: '16px',
+  } as const,
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '14px',
+    color: '#374151',
+  } as const,
+  totalDays: {
+    backgroundColor: '#f0f9ff',
+    padding: '12px',
+    borderRadius: '8px',
+    marginBottom: '16px',
+    border: '1px solid #bae6fd',
+    color: '#0369a1',
+  } as const,
+  actionRow: {
+    display: 'flex',
+    gap: '16px',
+    justifyContent: 'flex-end',
+  } as const,
+  cancelBtn: {
+    padding: '12px 24px',
+    backgroundColor: '#f3f4f6',
+    color: '#374151',
+    border: '2px solid #e5e7eb',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  } as const,
+  noData: {
+    textAlign: 'center' as const,
+    color: '#6b7280',
+    fontStyle: 'italic' as const,
+    padding: '40px',
+  } as const,
+  tableWrapper: {
+    overflowX: 'auto' as const,
+    borderRadius: '8px',
+    border: '1px solid #e5e7eb',
+  } as const,
 };
 
 export default function AbsenceManagementPage() {
@@ -181,25 +258,25 @@ export default function AbsenceManagementPage() {
     try {
       setLoading(true);
 
-      const [employeesRes, typesRes, requestsRes, entitlementsRes] = await Promise.all([
-        fetch('/api/employees'),
-        fetch('/api/absence/types'),
-        fetch('/api/absence/requests'),
-        fetch('/api/absence/entitlements'),
-      ]);
-
+      const employeesRes = await fetch('/api/employees');
       if (employeesRes.ok) {
         const employeesData = await employeesRes.json();
         setEmployees(employeesData);
       }
+
+      const typesRes = await fetch('/api/absence/types');
       if (typesRes.ok) {
         const typesData = await typesRes.json();
         setAbsenceTypes(typesData);
       }
+
+      const requestsRes = await fetch('/api/absence/requests');
       if (requestsRes.ok) {
         const requestsData = await requestsRes.json();
         setAbsenceRequests(requestsData);
       }
+
+      const entitlementsRes = await fetch('/api/absence/entitlements');
       if (entitlementsRes.ok) {
         const entitlementsData = await entitlementsRes.json();
         setEntitlements(entitlementsData);
@@ -267,7 +344,7 @@ export default function AbsenceManagementPage() {
     return entitlements.find(
       (e) =>
         e.absence_type_id === typeId &&
-        // Placeholder until entitlements are keyed per employee
+        // placeholder until entitlements keyed by employee
         true
     );
   };
@@ -300,16 +377,9 @@ export default function AbsenceManagementPage() {
         <div style={S.grid}>
           <div style={S.card}>
             <h3 style={S.sectionTitle}>📊 Today&apos;s Overview</h3>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '16px',
-                textAlign: 'center',
-              }}
-            >
+            <div style={S.statsGrid}>
               <div>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#10b981' }}>
+                <div style={S.statNumber}>
                   {
                     absenceRequests.filter(
                       (r) =>
@@ -319,19 +389,17 @@ export default function AbsenceManagementPage() {
                     ).length
                   }
                 </div>
-                <div style={{ fontSize: '12px', color: '#6b7280' }}>On Leave Today</div>
+                <p style={S.statLabel}>On Leave Today</p>
               </div>
               <div>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f59e0b' }}>
+                <div style={S.statNumber}>
                   {absenceRequests.filter((r) => r.status === 'pending').length}
                 </div>
-                <div style={{ fontSize: '12px', color: '#6b7280' }}>Pending Requests</div>
+                <p style={S.statLabel}>Pending Requests</p>
               </div>
               <div>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#3b82f6' }}>
-                  {employees.length}
-                </div>
-                <div style={{ fontSize: '12px', color: '#6b7280' }}>Total Employees</div>
+                <div style={S.statNumber}>{employees.length}</div>
+                <p style={S.statLabel}>Total Employees</p>
               </div>
             </div>
           </div>
@@ -354,7 +422,9 @@ export default function AbsenceManagementPage() {
                   <label style={S.label}>Employee *</label>
                   <select
                     value={formData.employee_id}
-                    onChange={(e) => setFormData((p) => ({ ...p, employee_id: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((p) => ({ ...p, employee_id: e.target.value }))
+                    }
                     style={S.input}
                     required
                   >
@@ -371,7 +441,9 @@ export default function AbsenceManagementPage() {
                   <label style={S.label}>Absence Type *</label>
                   <select
                     value={formData.absence_type_id}
-                    onChange={(e) => setFormData((p) => ({ ...p, absence_type_id: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((p) => ({ ...p, absence_type_id: e.target.value }))
+                    }
                     style={S.input}
                     required
                   >
@@ -389,7 +461,9 @@ export default function AbsenceManagementPage() {
                   <input
                     type="date"
                     value={formData.start_date}
-                    onChange={(e) => setFormData((p) => ({ ...p, start_date: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((p) => ({ ...p, start_date: e.target.value }))
+                    }
                     style={S.input}
                     required
                   />
@@ -400,7 +474,9 @@ export default function AbsenceManagementPage() {
                   <input
                     type="date"
                     value={formData.end_date}
-                    onChange={(e) => setFormData((p) => ({ ...p, end_date: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((p) => ({ ...p, end_date: e.target.value }))
+                    }
                     style={S.input}
                     required
                   />
@@ -412,13 +488,13 @@ export default function AbsenceManagementPage() {
                 <textarea
                   value={formData.reason}
                   onChange={(e) => setFormData((p) => ({ ...p, reason: e.target.value }))}
-                  style={{ ...S.input, height: '80px', resize: 'vertical' as const }}
+                  style={S.textarea}
                   placeholder="Optional reason for absence..."
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={S.checkboxRow}>
+                <label style={S.checkboxLabel}>
                   <input
                     type="checkbox"
                     checked={formData.half_day_start}
@@ -428,7 +504,7 @@ export default function AbsenceManagementPage() {
                   />
                   Half day start
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={S.checkboxLabel}>
                   <input
                     type="checkbox"
                     checked={formData.half_day_end}
@@ -441,26 +517,19 @@ export default function AbsenceManagementPage() {
               </div>
 
               {formData.start_date && formData.end_date && (
-                <div
-                  style={{
-                    backgroundColor: '#f0f9ff',
-                    padding: '16px',
-                    borderRadius: '8px',
-                    marginBottom: '24px',
-                  }}
-                >
+                <div style={S.totalDays}>
                   <strong>Total Days: {calculateDays()}</strong>
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '16px' }}>
+              <div style={S.actionRow}>
                 <button type="submit" style={S.button}>
                   Submit Request
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
-                  style={{ ...S.button, backgroundColor: '#6b7280' }}
+                  style={S.cancelBtn}
                 >
                   Cancel
                 </button>
@@ -473,11 +542,11 @@ export default function AbsenceManagementPage() {
         <div style={S.card}>
           <h2 style={S.sectionTitle}>📋 Recent Absence Requests</h2>
           {absenceRequests.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#6b7280', padding: '40px' }}>
-              No absence requests yet. Click &quot;Record New Absence&quot; to get started.
+            <p style={S.noData}>
+              No absence requests yet. Click "Record New Absence" to get started.
             </p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <div style={S.tableWrapper}>
               <table style={S.table}>
                 <thead>
                   <tr>

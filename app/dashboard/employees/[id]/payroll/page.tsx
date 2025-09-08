@@ -1,7 +1,19 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { DEMO_EMPLOYEES, type Employee } from "../../../../../lib/data/employees";
+
+type Employee = {
+  id: string;
+  employeeId: string;
+  employeeNumber: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  annualSalary: number;
+  hireDate: string;
+  employmentType: string;
+  status: string;
+};
 
 type Section =
   | "overview"
@@ -48,31 +60,76 @@ export default function EmployeePayrollPage() {
   });
 
   const overtimeRates = [
-    { id: "1.25x", name: "Standard Overtime (1.25x)", multiplier: 1.25 },
-    { id: "1.5x", name: "Evening/Weekend (1.5x)", multiplier: 1.5 },
-    { id: "1.75x", name: "Bank Holiday (1.75x)", multiplier: 1.75 },
-    { id: "2.0x", name: "Emergency/Night (2.0x)", multiplier: 2.0 },
+    { id: "1.25x", name: "x1.25", multiplier: 1.25 },
+    { id: "1.5x", name: "x1.5", multiplier: 1.5 },
+    { id: "1.75x", name: "x1.75", multiplier: 1.75 },
+    { id: "2.0x", name: "x2.0", multiplier: 2.0 },
   ] as const;
 
-  // Employee data loading
+  // Employee data loading - NOW USES DATABASE
   useEffect(() => {
-    const foundEmployee = DEMO_EMPLOYEES.find((emp) => emp.id === employeeId);
-    if (foundEmployee) {
-      setEmployee(foundEmployee);
-      const monthlyPay = foundEmployee.annualSalary / 12;
-      setPayrollData((prev) => ({
-        ...prev,
-        basicPay: monthlyPay,
-        grossPay: monthlyPay,
-      }));
+    const loadEmployee = async () => {
+      try {
+        console.log("🔍 Loading employee from database:", employeeId);
+        const response = await fetch("/api/employees");
+        if (response.ok) {
+          const employees = await response.json();
+          const foundEmployee = employees.find(
+            (emp: any) => emp.id === employeeId || emp.employeeId === employeeId
+          );
+
+          if (foundEmployee) {
+            console.log("✅ Employee found:", foundEmployee);
+            // Transform to match expected format
+            const emp: Employee = {
+              id: foundEmployee.id,
+              employeeId: foundEmployee.employeeId,
+              employeeNumber:
+                foundEmployee.employeeNumber || foundEmployee.employeeId,
+              firstName: foundEmployee.firstName,
+              lastName: foundEmployee.lastName,
+              email: foundEmployee.email,
+              annualSalary: foundEmployee.annualSalary || 0,
+              hireDate: foundEmployee.hireDate,
+              employmentType: foundEmployee.employmentType || "full_time",
+              status: foundEmployee.status || "active",
+            };
+            setEmployee(emp);
+
+            const monthlyPay = (emp.annualSalary || 0) / 12;
+            setPayrollData((prev) => ({
+              ...prev,
+              basicPay: monthlyPay,
+              grossPay: monthlyPay,
+            }));
+          } else {
+            console.error("❌ Employee not found:", employeeId);
+          }
+        } else {
+          console.error("❌ Failed to fetch employees:", response.status);
+        }
+      } catch (error) {
+        console.error("❌ Error loading employee:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (employeeId) {
+      loadEmployee();
     }
-    setLoading(false);
   }, [employeeId]);
 
-  const calculateOvertime = (hours: number, hourlyRate: number, multiplier: number) =>
-    hours * hourlyRate * multiplier;
+  const calculateOvertime = (
+    hours: number,
+    hourlyRate: number,
+    multiplier: number
+  ) => hours * hourlyRate * multiplier;
 
-  const calculateTaxDeductions = (grossPay: number, _taxCode: string = "1257L") => {
+  const calculateTaxDeductions = (
+    grossPay: number,
+    _taxCode: string = "1257L"
+  ) => {
     // Simplified UK tax calculation for demo
     const monthlyAllowance = 12570 / 12; // 2025-26 personal allowance
     const taxableIncome = Math.max(0, grossPay - monthlyAllowance);
@@ -128,11 +185,13 @@ export default function EmployeePayrollPage() {
   };
 
   const updateGrossPay = () => {
-    const hourlyRate = employee ? employee.annualSalary / 2080 : 0;
+    if (!employee) return;
+    const hourlyRate = (employee.annualSalary || 0) / 2080;
     const overtimeAmount = calculateOvertime(
       payrollData.overtime.hours,
       hourlyRate,
-      overtimeRates.find((r) => r.id === payrollData.overtime.rate)?.multiplier || 1.5
+      overtimeRates.find((r) => r.id === payrollData.overtime.rate)?.multiplier ||
+        1.5
     );
 
     const newGrossPay =
@@ -196,9 +255,21 @@ export default function EmployeePayrollPage() {
           justifyContent: "center",
         }}
       >
-        <h1 style={{ color: "white", fontSize: "24px", textAlign: "center" }}>
-          Loading Employee Payroll...
-        </h1>
+        <div style={{ textAlign: "center", color: "white" }}>
+          <h1
+            style={{
+              color: "white",
+              fontSize: "24px",
+              textAlign: "center",
+              margin: 0,
+            }}
+          >
+            Loading Employee Payroll...
+          </h1>
+          <p style={{ color: "rgba(255,255,255,0.8)", margin: "16px 0" }}>
+            Fetching payroll data for employee: {employeeId}
+          </p>
+        </div>
       </div>
     );
   }
@@ -219,7 +290,11 @@ export default function EmployeePayrollPage() {
         }}
       >
         <div style={{ textAlign: "center", color: "white" }}>
-          <h1>Employee Not Found</h1>
+          <h1 style={{ margin: 0 }}>Employee Not Found</h1>
+          <p style={{ margin: "16px 0" }}>
+            The employee with ID "{employeeId}" could not be found in the
+            database.
+          </p>
           <a
             href="/dashboard/employees"
             style={{ color: "white", textDecoration: "underline" }}
@@ -250,7 +325,8 @@ export default function EmployeePayrollPage() {
             backdropFilter: "blur(20px)",
             padding: "20px 40px",
             borderRadius: "12px",
-            boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+            boxShadow:
+              "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
             marginBottom: "30px",
             border: "1px solid rgba(255, 255, 255, 0.2)",
           }}
@@ -269,13 +345,14 @@ export default function EmployeePayrollPage() {
                   fontSize: "28px",
                   fontWeight: "bold",
                   color: "#1f2937",
-                  margin: "0",
+                  margin: 0,
                 }}
               >
                 💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Payroll
               </h1>
               <p style={{ color: "#6b7280", margin: "8px 0 0 0" }}>
-                {employee.firstName} {employee.lastName} ({employee.employeeNumber})
+                {employee.firstName} {employee.lastName} (
+                {employee.employeeNumber})
               </p>
             </div>
             <nav style={{ display: "flex", gap: "24px" }}>
@@ -342,8 +419,13 @@ export default function EmployeePayrollPage() {
                   border: "none",
                   borderRadius: "6px",
                   backgroundColor:
-                    activeSection === (section.id as Section) ? "#3b82f6" : "#f3f4f6",
-                  color: activeSection === (section.id as Section) ? "white" : "#374151",
+                    activeSection === (section.id as Section)
+                      ? "#3b82f6"
+                      : "#f3f4f6",
+                  color:
+                    activeSection === (section.id as Section)
+                      ? "white"
+                      : "#374151",
                   fontWeight: "bold",
                   cursor: "pointer",
                 }}
@@ -372,7 +454,8 @@ export default function EmployeePayrollPage() {
                   backdropFilter: "blur(20px)",
                   padding: "32px",
                   borderRadius: "12px",
-                  boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+                  boxShadow:
+                    "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
                   border: "1px solid rgba(255, 255, 255, 0.2)",
                 }}
               >
@@ -390,7 +473,8 @@ export default function EmployeePayrollPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(200px, 1fr))",
                     gap: "20px",
                   }}
                 >
@@ -416,7 +500,7 @@ export default function EmployeePayrollPage() {
                         fontSize: "24px",
                         fontWeight: "bold",
                         color: "#059669",
-                        margin: "0",
+                        margin: 0,
                       }}
                     >
                       £{employee.annualSalary.toLocaleString()}
@@ -445,7 +529,7 @@ export default function EmployeePayrollPage() {
                         fontSize: "24px",
                         fontWeight: "bold",
                         color: "#059669",
-                        margin: "0",
+                        margin: 0,
                       }}
                     >
                       £{(employee.annualSalary / 12).toFixed(2)}
@@ -474,7 +558,7 @@ export default function EmployeePayrollPage() {
                         fontSize: "24px",
                         fontWeight: "bold",
                         color: "#059669",
-                        margin: "0",
+                        margin: 0,
                       }}
                     >
                       £{(employee.annualSalary / 2080).toFixed(2)}
@@ -503,7 +587,7 @@ export default function EmployeePayrollPage() {
                         fontSize: "24px",
                         fontWeight: "bold",
                         color: "#059669",
-                        margin: "0",
+                        margin: 0,
                       }}
                     >
                       1257L
@@ -521,7 +605,8 @@ export default function EmployeePayrollPage() {
                   backdropFilter: "blur(20px)",
                   padding: "32px",
                   borderRadius: "12px",
-                  boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+                  boxShadow:
+                    "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
                   border: "1px solid rgba(255, 255, 255, 0.2)",
                 }}
               >
@@ -590,7 +675,8 @@ export default function EmployeePayrollPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(150px, 1fr))",
                       gap: "16px",
                     }}
                   >
@@ -623,7 +709,7 @@ export default function EmployeePayrollPage() {
                             fontSize: "20px",
                             fontWeight: "bold",
                             color: "#059669",
-                            margin: "0",
+                            margin: 0,
                           }}
                         >
                           £{freq.amount.toFixed(2)}
@@ -643,7 +729,8 @@ export default function EmployeePayrollPage() {
                   backdropFilter: "blur(20px)",
                   padding: "32px",
                   borderRadius: "12px",
-                  boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+                  boxShadow:
+                    "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
                   border: "1px solid rgba(255, 255, 255, 0.2)",
                 }}
               >
@@ -661,7 +748,8 @@ export default function EmployeePayrollPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(200px, 1fr))",
                     gap: "20px",
                     marginBottom: "24px",
                   }}
@@ -772,17 +860,28 @@ export default function EmployeePayrollPage() {
                       marginBottom: "24px",
                     }}
                   >
-                    <h4 style={{ color: "#1e40af", fontSize: "18px", margin: "0 0 8px 0" }}>
+                    <h4
+                      style={{
+                        color: "#1e40af",
+                        fontSize: "18px",
+                        margin: "0 0 8px 0",
+                      }}
+                    >
                       💰 Overtime Calculation
                     </h4>
                     <p style={{ color: "#1e40af", margin: "0 0 8px 0" }}>
                       {payrollData.overtime.hours} hours × £
                       {(employee.annualSalary / 2080).toFixed(2)} ×{" "}
-                      {overtimeRates.find((r) => r.id === payrollData.overtime.rate)?.multiplier} ={" "}
-                      <strong> £{payrollData.overtime.amount.toFixed(2)}</strong>
+                      {
+                        overtimeRates.find(
+                          (r) => r.id === payrollData.overtime.rate
+                        )?.multiplier
+                      }{" "}
+                      = <strong> £{payrollData.overtime.amount.toFixed(2)}</strong>
                     </p>
-                    <p style={{ fontSize: "14px", color: "#6b7280", margin: "0" }}>
-                      Subject to PAYE tax, National Insurance, and pension contributions
+                    <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
+                      Subject to PAYE tax, National Insurance, and pension
+                      contributions
                     </p>
                   </div>
                 )}
@@ -795,13 +894,17 @@ export default function EmployeePayrollPage() {
                   }}
                   disabled={payrollData.overtime.hours <= 0}
                   style={{
-                    backgroundColor: payrollData.overtime.hours > 0 ? "#10b981" : "#9ca3af",
+                    backgroundColor:
+                      payrollData.overtime.hours > 0 ? "#10b981" : "#9ca3af",
                     color: "white",
                     border: "none",
                     padding: "12px 24px",
                     borderRadius: "6px",
                     fontWeight: "bold",
-                    cursor: payrollData.overtime.hours > 0 ? "pointer" : "not-allowed",
+                    cursor:
+                      payrollData.overtime.hours > 0
+                        ? "pointer"
+                        : "not-allowed",
                   }}
                 >
                   Add Overtime to Payroll
@@ -817,7 +920,8 @@ export default function EmployeePayrollPage() {
                   backdropFilter: "blur(20px)",
                   padding: "32px",
                   borderRadius: "12px",
-                  boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+                  boxShadow:
+                    "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
                   border: "1px solid rgba(255, 255, 255, 0.2)",
                 }}
               >
@@ -835,7 +939,8 @@ export default function EmployeePayrollPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(250px, 1fr))",
                     gap: "24px",
                   }}
                 >
@@ -976,7 +1081,8 @@ export default function EmployeePayrollPage() {
                   backdropFilter: "blur(20px)",
                   padding: "32px",
                   borderRadius: "12px",
-                  boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+                  boxShadow:
+                    "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
                   border: "1px solid rgba(255, 255, 255, 0.2)",
                 }}
               >
@@ -1012,7 +1118,9 @@ export default function EmployeePayrollPage() {
                     Statutory Deductions
                   </h3>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+                  >
                     <div
                       style={{
                         display: "flex",
@@ -1026,7 +1134,11 @@ export default function EmployeePayrollPage() {
                     >
                       <div>
                         <h4
-                          style={{ color: "#dc2626", fontSize: "16px", margin: "0 0 4px 0" }}
+                          style={{
+                            color: "#dc2626",
+                            fontSize: "16px",
+                            margin: "0 0 4px 0",
+                          }}
                         >
                           🏛️ PAYE Tax
                         </h4>
@@ -1054,7 +1166,11 @@ export default function EmployeePayrollPage() {
                     >
                       <div>
                         <h4
-                          style={{ color: "#dc2626", fontSize: "16px", margin: "0 0 4px 0" }}
+                          style={{
+                            color: "#dc2626",
+                            fontSize: "16px",
+                            margin: "0 0 4px 0",
+                          }}
                         >
                           🏥 National Insurance
                         </h4>
@@ -1082,7 +1198,11 @@ export default function EmployeePayrollPage() {
                     >
                       <div>
                         <h4
-                          style={{ color: "#dc2626", fontSize: "16px", margin: "0 0 4px 0" }}
+                          style={{
+                            color: "#dc2626",
+                            fontSize: "16px",
+                            margin: "0 0 4px 0",
+                          }}
                         >
                           🏦 Pension Contribution
                         </h4>
@@ -1261,7 +1381,8 @@ export default function EmployeePayrollPage() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(250px, 1fr))",
                       gap: "20px",
                     }}
                   >
@@ -1457,18 +1578,21 @@ export default function EmployeePayrollPage() {
                           marginBottom: "8px",
                         }}
                       >
-                        🍽️ Attachment of Earnings
+                        ⚖️ Attachment of Earnings
                       </h4>
                       <input
                         type="number"
                         placeholder="0.00"
-                        value={payrollData.taxDeductions.attachmentOfEarnings || 0}
+                        value={
+                          payrollData.taxDeductions.attachmentOfEarnings || 0
+                        }
                         onChange={(e) =>
                           setPayrollData((prev) => ({
                             ...prev,
                             taxDeductions: {
                               ...prev.taxDeductions,
-                              attachmentOfEarnings: parseFloat(e.target.value) || 0,
+                              attachmentOfEarnings:
+                                parseFloat(e.target.value) || 0,
                             },
                           }))
                         }
@@ -1584,7 +1708,11 @@ export default function EmployeePayrollPage() {
                       </strong>
                     </div>
                     <hr
-                      style={{ border: "none", borderTop: "2px solid #e2e8f0", margin: "8px 0" }}
+                      style={{
+                        border: "none",
+                        borderTop: "2px solid #e2e8f0",
+                        margin: "8px 0",
+                      }}
                     />
                     <div
                       style={{
@@ -1625,7 +1753,8 @@ export default function EmployeePayrollPage() {
                   backdropFilter: "blur(20px)",
                   padding: "32px",
                   borderRadius: "12px",
-                  boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+                  boxShadow:
+                    "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
                   border: "1px solid rgba(255, 255, 255, 0.2)",
                 }}
               >
@@ -1643,7 +1772,8 @@ export default function EmployeePayrollPage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(300px, 1fr))",
                     gap: "24px",
                     marginBottom: "32px",
                   }}
@@ -1719,7 +1849,11 @@ export default function EmployeePayrollPage() {
                         <span>£{payrollData.allowances.toFixed(2)}</span>
                       </div>
                       <hr
-                        style={{ border: "none", borderTop: "2px solid #bbf7d0", margin: "12px 0" }}
+                        style={{
+                          border: "none",
+                          borderTop: "2px solid #bbf7d0",
+                          margin: "12px 0",
+                        }}
                       />
                       <div
                         style={{
@@ -1775,7 +1909,9 @@ export default function EmployeePayrollPage() {
                         }}
                       >
                         <span>National Insurance:</span>
-                        <span>-£{payrollData.taxDeductions.nationalInsurance.toFixed(2)}</span>
+                        <span>
+                          -£{payrollData.taxDeductions.nationalInsurance.toFixed(2)}
+                        </span>
                       </div>
                       <div
                         style={{
@@ -1798,7 +1934,9 @@ export default function EmployeePayrollPage() {
                           }}
                         >
                           <span>Student Loan:</span>
-                          <span>-£{payrollData.taxDeductions.studentLoan.toFixed(2)}</span>
+                          <span>
+                            -£{payrollData.taxDeductions.studentLoan.toFixed(2)}
+                          </span>
                         </div>
                       )}
                       {(payrollData.taxDeductions.unionFees || 0) > 0 && (
@@ -1810,7 +1948,9 @@ export default function EmployeePayrollPage() {
                           }}
                         >
                           <span>Union Fees:</span>
-                          <span>-£{(payrollData.taxDeductions.unionFees || 0).toFixed(2)}</span>
+                          <span>
+                            -£{(payrollData.taxDeductions.unionFees || 0).toFixed(2)}
+                          </span>
                         </div>
                       )}
                       {(payrollData.taxDeductions.salarySacrifice || 0) > 0 && (
@@ -1823,12 +1963,17 @@ export default function EmployeePayrollPage() {
                         >
                           <span>Salary Sacrifice:</span>
                           <span>
-                            -£{(payrollData.taxDeductions.salarySacrifice || 0).toFixed(2)}
+                            -£
+                            {(payrollData.taxDeductions.salarySacrifice || 0).toFixed(2)}
                           </span>
                         </div>
                       )}
                       <hr
-                        style={{ border: "none", borderTop: "2px solid #fecaca", margin: "12px 0" }}
+                        style={{
+                          border: "none",
+                          borderTop: "2px solid #fecaca",
+                          margin: "12px 0",
+                        }}
                       />
                       <div
                         style={{
@@ -1895,7 +2040,7 @@ export default function EmployeePayrollPage() {
                   </p>
                 </div>
 
-                {/* Action Buttons */}
+                {/* Action Buttons - NOW WITH FUNCTIONALITY */}
                 <div
                   style={{
                     display: "flex",
@@ -1905,6 +2050,15 @@ export default function EmployeePayrollPage() {
                   }}
                 >
                   <button
+                    onClick={() => {
+                      alert(
+                        `📋 Payslip Generation\n\nEmployee: ${employee.firstName} ${employee.lastName}\nGross Pay: £${payrollData.grossPay.toFixed(
+                          2
+                        )}\nNet Pay: £${payrollData.netPay.toFixed(
+                          2
+                        )}\n\nPayslip generation feature coming soon!`
+                      );
+                    }}
                     style={{
                       backgroundColor: "#10b981",
                       color: "white",
@@ -1920,6 +2074,40 @@ export default function EmployeePayrollPage() {
                   </button>
 
                   <button
+                    onClick={() => {
+                      const totalDeductions =
+                        payrollData.taxDeductions.payeTax +
+                        payrollData.taxDeductions.nationalInsurance +
+                        payrollData.taxDeductions.pensionContribution +
+                        (payrollData.taxDeductions.studentLoan || 0) +
+                        (payrollData.taxDeductions.unionFees || 0) +
+                        (payrollData.taxDeductions.salarySacrifice || 0) +
+                        (payrollData.taxDeductions.privateMedical || 0) +
+                        (payrollData.taxDeductions.childcareVouchers || 0) +
+                        (payrollData.taxDeductions.attachmentOfEarnings || 0) +
+                        (payrollData.taxDeductions.otherDeductions || 0);
+
+                      const confirmed = window.confirm(
+                        `💰 Process Payment Confirmation\n\n` +
+                          `Employee: ${employee.firstName} ${employee.lastName}\n` +
+                          `Gross Pay: £${payrollData.grossPay.toFixed(2)}\n` +
+                          `Total Deductions: £${totalDeductions.toFixed(2)}\n` +
+                          `Net Pay: £${payrollData.netPay.toFixed(
+                            2
+                          )}\n\n` +
+                          `Proceed with payment processing?`
+                      );
+
+                      if (confirmed) {
+                        alert(
+                          `✅ Payment Processed!\n\n£${payrollData.netPay.toFixed(
+                            2
+                          )} will be paid to ${employee.firstName} ${
+                            employee.lastName
+                          }\n\nThis would integrate with your BACS/bank system.`
+                        );
+                      }
+                    }}
                     style={{
                       backgroundColor: "#3b82f6",
                       color: "white",
@@ -1935,6 +2123,49 @@ export default function EmployeePayrollPage() {
                   </button>
 
                   <button
+                    onClick={() => {
+                      const totalDeductions =
+                        payrollData.taxDeductions.payeTax +
+                        payrollData.taxDeductions.nationalInsurance +
+                        payrollData.taxDeductions.pensionContribution +
+                        (payrollData.taxDeductions.studentLoan || 0) +
+                        (payrollData.taxDeductions.unionFees || 0) +
+                        (payrollData.taxDeductions.salarySacrifice || 0) +
+                        (payrollData.taxDeductions.privateMedical || 0) +
+                        (payrollData.taxDeductions.childcareVouchers || 0) +
+                        (payrollData.taxDeductions.attachmentOfEarnings || 0) +
+                        (payrollData.taxDeductions.otherDeductions || 0);
+
+                      const payrollDataExport = {
+                        employee: `${employee.firstName} ${employee.lastName}`,
+                        employeeNumber: employee.employeeNumber,
+                        basicPay: payrollData.basicPay,
+                        overtime: payrollData.overtime.amount,
+                        bonus: payrollData.bonus,
+                        commission: payrollData.commission,
+                        allowances: payrollData.allowances,
+                        grossPay: payrollData.grossPay,
+                        payeTax: payrollData.taxDeductions.payeTax,
+                        nationalInsurance:
+                          payrollData.taxDeductions.nationalInsurance,
+                        pension:
+                          payrollData.taxDeductions.pensionContribution,
+                        studentLoan: payrollData.taxDeductions.studentLoan,
+                        otherDeductions:
+                          totalDeductions -
+                          (payrollData.taxDeductions.payeTax +
+                            payrollData.taxDeductions.nationalInsurance +
+                            payrollData.taxDeductions.pensionContribution +
+                            (payrollData.taxDeductions.studentLoan || 0)),
+                        totalDeductions: totalDeductions,
+                        netPay: payrollData.netPay,
+                      };
+
+                      console.log("📊 Payroll Data Export:", payrollDataExport);
+                      alert(
+                        `📊 Data Exported!\n\nPayroll data for ${employee.firstName} ${employee.lastName} has been logged to browser console.\n\nIn production, this would export to CSV/Excel/PDF.`
+                      );
+                    }}
                     style={{
                       backgroundColor: "#059669",
                       color: "white",
@@ -1961,7 +2192,8 @@ export default function EmployeePayrollPage() {
                 backdropFilter: "blur(20px)",
                 padding: "24px",
                 borderRadius: "12px",
-                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+                boxShadow:
+                  "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
                 border: "1px solid rgba(255, 255, 255, 0.2)",
                 position: "sticky",
                 top: "20px",
@@ -1980,45 +2212,37 @@ export default function EmployeePayrollPage() {
 
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 <div>
-                  <span
-                    style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}
-                  >
+                  <span style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}>
                     Employee Number:
                   </span>
                   <br />
                   <strong>{employee.employeeNumber}</strong>
                 </div>
                 <div>
-                  <span
-                    style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}
-                  >
+                  <span style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}>
                     Department:
                   </span>
                   <br />
                   <strong>General</strong>
                 </div>
                 <div>
-                  <span
-                    style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}
-                  >
+                  <span style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}>
                     Start Date:
                   </span>
                   <br />
-                  <strong>{new Date(employee.hireDate).toLocaleDateString("en-GB")}</strong>
+                  <strong>
+                    {new Date(employee.hireDate).toLocaleDateString("en-GB")}
+                  </strong>
                 </div>
                 <div>
-                  <span
-                    style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}
-                  >
+                  <span style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}>
                     Status:
                   </span>
                   <br />
                   <strong style={{ color: "#059669" }}>{employee.status}</strong>
                 </div>
                 <div>
-                  <span
-                    style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}
-                  >
+                  <span style={{ fontSize: "12px", color: "#6b7280", fontWeight: 500 }}>
                     Employment Type:
                   </span>
                   <br />
@@ -2059,14 +2283,22 @@ export default function EmployeePayrollPage() {
                 >
                   £{payrollData.netPay.toFixed(2)}
                 </p>
-                <p style={{ fontSize: "12px", color: "#6b7280", margin: 0 }}>Net Pay</p>
+                <p style={{ fontSize: "12px", color: "#6b7280", margin: 0 }}>
+                  Net Pay
+                </p>
               </div>
             </div>
           </div>
         </div>
 
         {/* Navigation Footer */}
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: "30px" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: "30px",
+          }}
+        >
           <a
             href="/dashboard/employees"
             style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}
