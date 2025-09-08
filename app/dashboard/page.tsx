@@ -1,8 +1,10 @@
 ﻿"use client";
 
+import type { CSSProperties } from "react";
+
 export default function Dashboard() {
   // Styles (converted from invalid inline syntax; visuals unchanged)
-  const page: React.CSSProperties = {
+  const page: CSSProperties = {
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     background:
@@ -11,9 +13,9 @@ export default function Dashboard() {
     padding: "40px 20px",
   };
 
-  const container: React.CSSProperties = { maxWidth: "1200px", margin: "0 auto" };
+  const container: CSSProperties = { maxWidth: "1200px", margin: "0 auto" };
 
-  const headerCard: React.CSSProperties = {
+  const headerCard: CSSProperties = {
     backgroundColor: "rgba(255, 255, 255, 0.95)",
     backdropFilter: "blur(20px)",
     padding: "20px 40px",
@@ -26,16 +28,16 @@ export default function Dashboard() {
     border: "1px solid rgba(255, 255, 255, 0.2)",
   };
 
-  const title: React.CSSProperties = {
+  const title: CSSProperties = {
     fontSize: "28px",
     fontWeight: "bold",
     color: "#1f2937",
     margin: 0,
   };
 
-  const nav: React.CSSProperties = { display: "flex", gap: "24px" };
+  const nav: CSSProperties = { display: "flex", gap: "24px" };
 
-  const navLink: React.CSSProperties = {
+  const navLink: CSSProperties = {
     color: "#000000",
     textDecoration: "none",
     fontWeight: "bold",
@@ -45,14 +47,14 @@ export default function Dashboard() {
     border: "1px solid #059669",
   };
 
-  const statsGrid: React.CSSProperties = {
+  const statsGrid: CSSProperties = {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: "24px",
     marginBottom: "40px",
   };
 
-  const card: React.CSSProperties = {
+  const card: CSSProperties = {
     backgroundColor: "rgba(255, 255, 255, 0.95)",
     backdropFilter: "blur(20px)",
     padding: "32px",
@@ -61,28 +63,28 @@ export default function Dashboard() {
     border: "1px solid rgba(255, 255, 255, 0.2)",
   };
 
-  const rowBetween: React.CSSProperties = {
+  const rowBetween: CSSProperties = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: "16px",
   };
 
-  const h3: React.CSSProperties = {
+  const h3: CSSProperties = {
     fontSize: "14px",
     fontWeight: 500,
     color: "#6b7280",
     margin: "0 0 8px 0",
   };
 
-  const bigNumDark: React.CSSProperties = {
+  const bigNumDark: CSSProperties = {
     fontSize: "32px",
     fontWeight: "bold",
     color: "#1f2937",
     margin: 0,
   };
 
-  const chipLink: React.CSSProperties = {
+  const chipLink: CSSProperties = {
     backgroundColor: "#f3f4f6",
     color: "#374151",
     padding: "4px 12px",
@@ -93,15 +95,15 @@ export default function Dashboard() {
     display: "inline-block",
   };
 
-  const quickGrid: React.CSSProperties = {
+  const quickGrid: CSSProperties = {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
     gap: "24px",
   };
 
-  const centerCard: React.CSSProperties = { ...card, textAlign: "center" };
+  const centerCard: CSSProperties = { ...card, textAlign: "center" };
 
-  const actionBtn: React.CSSProperties = {
+  const actionBtn: CSSProperties = {
     display: "inline-block",
     padding: "12px 24px",
     backgroundColor: "#10b981",
@@ -110,17 +112,6 @@ export default function Dashboard() {
     textDecoration: "none",
     fontWeight: 600,
     border: "1px solid #059669",
-  };
-
-  const systemCard: React.CSSProperties = {
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
-    backdropFilter: "blur(20px)",
-    padding: "24px",
-    borderRadius: "12px",
-    boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
-    border: "1px solid rgba(255, 255, 255, 0.2)",
-    marginTop: "40px",
-    textAlign: "center",
   };
 
   return (
@@ -140,6 +131,12 @@ export default function Dashboard() {
             <a href="/dashboard/payroll" style={navLink}>
               Payroll
             </a>
+            <a href="/dashboard/absence" style={navLink}>
+              Absence
+            </a>
+            <a href="/dashboard/settings" style={navLink}>
+              Settings
+            </a>
           </nav>
         </div>
 
@@ -149,7 +146,7 @@ export default function Dashboard() {
             <div style={rowBetween}>
               <div>
                 <h3 style={h3}>Total Employees</h3>
-                <p style={bigNumDark}>24</p>
+                <p style={bigNumDark}>3</p>
               </div>
               <div style={{ fontSize: "32px" }}>👥</div>
             </div>
@@ -162,12 +159,38 @@ export default function Dashboard() {
             <div style={rowBetween}>
               <div>
                 <h3 style={h3}>Monthly Payroll</h3>
-                <p style={bigNumDark}>£87,240</p>
+                <p style={bigNumDark}>£11,083</p>
               </div>
-              <div style={{ fontSize: "32px" }}></div>
+              <div style={{ fontSize: "32px" }}>💷</div>
             </div>
             <a href="/dashboard/payroll" style={chipLink}>
               View Details
+            </a>
+          </div>
+
+          <div style={card}>
+            <div style={rowBetween}>
+              <div>
+                <h3 style={h3}>On Leave Today</h3>
+                <p style={bigNumDark}>0</p>
+              </div>
+              <div style={{ fontSize: "32px" }}>📅</div>
+            </div>
+            <a href="/dashboard/absence" style={chipLink}>
+              Manage
+            </a>
+          </div>
+
+          <div style={card}>
+            <div style={rowBetween}>
+              <div>
+                <h3 style={h3}>Company Settings</h3>
+                <p style={bigNumDark}>PAYE</p>
+              </div>
+              <div style={{ fontSize: "32px" }}>🏢</div>
+            </div>
+            <a href="/dashboard/settings" style={chipLink}>
+              Configure
             </a>
           </div>
         </div>
@@ -213,14 +236,46 @@ export default function Dashboard() {
               Run Payroll
             </a>
           </div>
-        </div>
 
-        {/* System Status */}
-        <div style={systemCard}>
-          <p style={{ color: "#166534", margin: 0, fontWeight: 500 }}>
-            🚀 Your <span style={{ color: "#3b82f6", fontWeight: "bold" }}>WageFlow</span> system is
-            production-ready!
-          </p>
+          <div style={centerCard}>
+            <div style={{ fontSize: "48px", marginBottom: "16px" }}>📅</div>
+            <h3
+              style={{
+                fontSize: "20px",
+                fontWeight: 600,
+                color: "#1f2937",
+                margin: "0 0 12px 0",
+              }}
+            >
+              Record Absence
+            </h3>
+            <p style={{ color: "#6b7280", fontSize: "14px", margin: "0 0 20px 0" }}>
+              Record employee holidays and sick leave
+            </p>
+            <a href="/dashboard/absence" style={actionBtn}>
+              Manage Absence
+            </a>
+          </div>
+
+          <div style={centerCard}>
+            <div style={{ fontSize: "48px", marginBottom: "16px" }}>🏢</div>
+            <h3
+              style={{
+                fontSize: "20px",
+                fontWeight: 600,
+                color: "#1f2937",
+                margin: "0 0 12px 0",
+              }}
+            >
+              Company Settings
+            </h3>
+            <p style={{ color: "#6b7280", fontSize: "14px", margin: "0 0 20px 0" }}>
+              Configure PAYE reference and company details
+            </p>
+            <a href="/dashboard/settings" style={actionBtn}>
+              Settings
+            </a>
+          </div>
         </div>
       </div>
     </div>
