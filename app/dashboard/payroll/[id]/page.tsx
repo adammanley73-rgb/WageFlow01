@@ -1,355 +1,563 @@
-"use client";
-import type React from "react";
-import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { PayslipGenerator, type PayslipData } from "../../../../lib/services/payslip-generator";
+'use client';
+import type React from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 
-type PayrollRun = {
+// Workflow types (same as before)
+type WorkflowStatus = 
+  | 'draft'         
+  | 'processing'    
+  | 'review'        
+  | 'approved'      
+  | 'submitted'     
+  | 'completed'     
+  | 'cancelled';
+
+interface WorkflowHistoryEntry {
+  id: string;
+  from_status: WorkflowStatus | null;
+  to_status: WorkflowStatus;
+  changed_by: string;
+  changed_at: string;
+  comment?: string;
+  automated?: boolean;
+}
+
+interface PayrollRun {
   id: string;
   runNumber: string;
+  name: string;
+  payPeriod: string;
   payPeriodStart: string;
   payPeriodEnd: string;
   payDate: string;
   description: string;
   status: string;
-  totalGrossPay: number;
-  totalNetPay: number;
+  workflow_status?: WorkflowStatus;
+  workflow_history?: WorkflowHistoryEntry[];
   employeeCount: number;
+  grossPay: number;
+  netPay: number;
+  totalTax: number;
+  totalNI: number;
+  totalPension: number;
+  createdDate: string;
   createdBy: string;
-  createdAt: string;
-  payFrequency?: string;
-  entries?: PayrollEntry[];
+  submittedDate?: string;
+  approved_by_user_id?: string;
+  approved_at?: string;
+  submitted_to_hmrc_at?: string;
+}
+
+interface PayrollEntry {
+  employeeId: string;
+  employeeName: string;
+  employeeNumber: string;
+  grossPay: number;
+  taxDeduction: number;
+  niDeduction: number;
+  pensionDeduction: number;
+  netPay: number;
+  taxCode: string;
+}
+
+// Workflow configurations
+const WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
+  draft: ['processing', 'cancelled'],
+  processing: ['review', 'draft', 'cancelled'], 
+  review: ['approved', 'processing'],
+  approved: ['submitted', 'review'],
+  submitted: ['completed'],
+  completed: [],
+  cancelled: ['draft']
 };
 
-type PayrollEntry = {
-  employeeId: string;
-  employee: {
-    name: string;
-    employeeNumber: string;
-    email: string;
-  };
-  earnings: {
-    basicPay: number;
-    overtime: number;
-    bonus: number;
-    gross: number;
-  };
-  deductions: {
-    incomeTax: number;
-    nationalInsurance: number;
-    pensionEmployee: number;
-    total: number;
-  };
-  netPay: number;
-  payFrequency?: string;
+const WORKFLOW_STATUS_CONFIG: Record<WorkflowStatus, {
+  label: string;
+  color: string;
+  bgColor: string;
+  description: string;
+  canEdit: boolean;
+  canDelete: boolean;
+}> = {
+  draft: {
+    label: 'Draft',
+    color: '#92400e',
+    bgColor: '#fef3c7',
+    description: 'Payroll run is being prepared',
+    canEdit: true,
+    canDelete: true
+  },
+  processing: {
+    label: 'Processing', 
+    color: '#1e40af',
+    bgColor: '#dbeafe',
+    description: 'Calculations in progress',
+    canEdit: false,
+    canDelete: false
+  },
+  review: {
+    label: 'Review',
+    color: '#92400e', 
+    bgColor: '#fef3c7',
+    description: 'Ready for approval',
+    canEdit: false,
+    canDelete: false
+  },
+  approved: {
+    label: 'Approved',
+    color: '#166534',
+    bgColor: '#dcfce7', 
+    description: 'Approved for HMRC submission',
+    canEdit: false,
+    canDelete: false
+  },
+  submitted: {
+    label: 'RTI Submitted',
+    color: '#7c3aed',
+    bgColor: '#f3e8ff',
+    description: 'Submitted to HMRC',
+    canEdit: false,
+    canDelete: false
+  },
+  completed: {
+    label: 'Completed',
+    color: '#166534',
+    bgColor: '#dcfce7',
+    description: 'Fully processed and paid',
+    canEdit: false,
+    canDelete: false
+  },
+  cancelled: {
+    label: 'Cancelled', 
+    color: '#dc2626',
+    bgColor: '#fee2e2',
+    description: 'Cancelled payroll run',
+    canEdit: false,
+    canDelete: true
+  }
 };
 
 export default function PayrollRunDetailsPage() {
   const router = useRouter();
-  const params = useParams();
-  const payrollRunId = params?.id as string;
+  const params = useParams<{ id: string }>();
+  const payrollId = params?.id;
+  
   const [payrollRun, setPayrollRun] = useState<PayrollRun | null>(null);
+  const [payrollEntries, setPayrollEntries] = useState<PayrollEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generatingPayslips, setGeneratingPayslips] = useState(false);
-  const [generatingBulk, setGeneratingBulk] = useState(false);
+  const [showWorkflowHistory, setShowWorkflowHistory] = useState(false);
 
   useEffect(() => {
-    const loadPayrollRun = async () => {
-      try {
-        const response = await fetch("/api/payroll");
-        if (response.ok) {
-          const allRuns = await response.json();
-          const foundRun = allRuns.find((run: PayrollRun) => run.id === payrollRunId);
-          if (foundRun) setPayrollRun(foundRun);
+    const timer = setTimeout(() => {
+      // Demo payroll run data with workflow status
+      const demoPayrollRuns: PayrollRun[] = [
+        {
+          id: 'pr-001',
+          runNumber: 'PR-2025-001',
+          name: 'Monthly Payroll - July 2025',
+          payPeriod: '01/07/2025 - 31/07/2025',
+          payPeriodStart: '2025-07-01',
+          payPeriodEnd: '2025-07-31',
+          payDate: '2025-07-31',
+          description: 'Regular monthly payroll run',
+          status: 'completed',
+          workflow_status: 'completed',
+          employeeCount: 3,
+          grossPay: 9000.00,
+          netPay: 6850.00,
+          totalTax: 1385.00,
+          totalNI: 780.00,
+          totalPension: 450.00,
+          createdDate: '2025-07-28',
+          createdBy: 'Adam',
+          submittedDate: '2025-08-01',
+          approved_by_user_id: 'Adam',
+          approved_at: '2025-07-30T14:30:00Z',
+          submitted_to_hmrc_at: '2025-08-01T09:00:00Z',
+          workflow_history: [
+            {
+              id: '1',
+              from_status: null,
+              to_status: 'draft',
+              changed_by: 'Adam',
+              changed_at: '2025-07-28T10:00:00Z',
+              comment: 'Payroll run created',
+              automated: true
+            },
+            {
+              id: '2',
+              from_status: 'draft',
+              to_status: 'processing',
+              changed_by: 'Adam',
+              changed_at: '2025-07-29T09:00:00Z',
+              comment: 'Started payroll calculations'
+            },
+            {
+              id: '3',
+              from_status: 'processing',
+              to_status: 'review',
+              changed_by: 'System',
+              changed_at: '2025-07-29T09:15:00Z',
+              comment: 'Calculations completed automatically',
+              automated: true
+            },
+            {
+              id: '4',
+              from_status: 'review',
+              to_status: 'approved',
+              changed_by: 'Adam',
+              changed_at: '2025-07-30T14:30:00Z',
+              comment: 'Reviewed and approved for submission'
+            },
+            {
+              id: '5',
+              from_status: 'approved',
+              to_status: 'submitted',
+              changed_by: 'Adam',
+              changed_at: '2025-08-01T09:00:00Z',
+              comment: 'Submitted to HMRC RTI'
+            },
+            {
+              id: '6',
+              from_status: 'submitted',
+              to_status: 'completed',
+              changed_by: 'System',
+              changed_at: '2025-08-01T10:30:00Z',
+              comment: 'HMRC submission confirmed',
+              automated: true
+            }
+          ]
+        },
+        {
+          id: 'pr-002',
+          runNumber: 'PR-2025-002',
+          name: 'Monthly Payroll - August 2025',
+          payPeriod: '01/08/2025 - 31/08/2025',
+          payPeriodStart: '2025-08-01',
+          payPeriodEnd: '2025-08-31',
+          payDate: '2025-08-31',
+          description: 'Regular monthly payroll run',
+          status: 'review',
+          workflow_status: 'review',
+          employeeCount: 3,
+          grossPay: 9000.00,
+          netPay: 6850.00,
+          totalTax: 1385.00,
+          totalNI: 780.00,
+          totalPension: 450.00,
+          createdDate: '2025-08-28',
+          createdBy: 'Adam',
+          workflow_history: [
+            {
+              id: '1',
+              from_status: null,
+              to_status: 'draft',
+              changed_by: 'Adam',
+              changed_at: '2025-08-28T10:00:00Z',
+              comment: 'Payroll run created'
+            },
+            {
+              id: '2',
+              from_status: 'draft',
+              to_status: 'processing',
+              changed_by: 'Adam',
+              changed_at: '2025-08-29T09:00:00Z',
+              comment: 'Started payroll calculations'
+            },
+            {
+              id: '3',
+              from_status: 'processing',
+              to_status: 'review',
+              changed_by: 'System',
+              changed_at: '2025-08-29T09:15:00Z',
+              comment: 'Calculations completed - ready for review',
+              automated: true
+            }
+          ]
         }
-      } catch (error) {
-        console.error("❌ Failed to load payroll run:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (payrollRunId) {
-      void loadPayrollRun();
-    }
-  }, [payrollRunId]);
-
-  // Generate individual payslip
-  const generateIndividualPayslip = async (entry: PayrollEntry) => {
-    try {
-      setGeneratingPayslips(true);
-      const payslipData: PayslipData = {
-        employee: {
-          name: entry.employee.name,
-          employeeNumber: entry.employee.employeeNumber,
-          email: entry.employee.email,
-          address: "Employee Address\nLine 2\nCity, Postcode",
-          niNumber: "AB123456C",
-        },
-        company: {
-          name: "Your Company Ltd",
-          address: "Company House\n123 Business Street\nLondon, SW1A 1AA",
-          payeRef: "123/AB12345",
-        },
-        payPeriod: {
-          startDate: payrollRun!.payPeriodStart,
-          endDate: payrollRun!.payPeriodEnd,
-          payDate: payrollRun!.payDate,
-          frequency: payrollRun!.payFrequency || "monthly",
-        },
-        earnings: entry.earnings,
-        deductions: entry.deductions,
-        netPay: entry.netPay,
-        yearToDate: {
-          grossPay: entry.earnings.gross * 6,
-          incomeTax: entry.deductions.incomeTax * 6,
-          nationalInsurance: entry.deductions.nationalInsurance * 6,
-          pensionEmployee: entry.deductions.pensionEmployee * 6,
-          netPay: entry.netPay * 6,
-        },
-        payslipNumber: `${payrollRun!.runNumber}-${entry.employee.employeeNumber}`,
-        taxCode: "1257L",
+      ];
+      
+      // Demo payroll entries data
+      const demoPayrollEntries: { [key: string]: PayrollEntry[] } = {
+        'pr-001': [
+          {
+            employeeId: 'EMP001',
+            employeeName: 'Sarah Johnson',
+            employeeNumber: 'EMP001',
+            grossPay: 2916.67,
+            taxDeduction: 450.00,
+            niDeduction: 280.00,
+            pensionDeduction: 145.83,
+            netPay: 2040.84,
+            taxCode: '1257L'
+          },
+          {
+            employeeId: 'EMP002',
+            employeeName: 'James Wilson',
+            employeeNumber: 'EMP002',
+            grossPay: 2333.33,
+            taxDeduction: 315.00,
+            niDeduction: 200.00,
+            pensionDeduction: 116.67,
+            netPay: 1701.66,
+            taxCode: '1257L'
+          },
+          {
+            employeeId: 'EMP003',
+            employeeName: 'Emma Brown',
+            employeeNumber: 'EMP003',
+            grossPay: 3750.00,
+            taxDeduction: 625.00,
+            niDeduction: 380.00,
+            pensionDeduction: 187.50,
+            netPay: 2557.50,
+            taxCode: '1257L'
+          }
+        ],
+        'pr-002': [
+          {
+            employeeId: 'EMP001',
+            employeeName: 'Sarah Johnson',
+            employeeNumber: 'EMP001',
+            grossPay: 2916.67,
+            taxDeduction: 440.00,
+            niDeduction: 290.00,
+            pensionDeduction: 145.83,
+            netPay: 2040.84,
+            taxCode: '1257L'
+          },
+          {
+            employeeId: 'EMP002',
+            employeeName: 'James Wilson',
+            employeeNumber: 'EMP002',
+            grossPay: 2333.33,
+            taxDeduction: 310.00,
+            niDeduction: 210.00,
+            pensionDeduction: 116.67,
+            netPay: 1696.66,
+            taxCode: '1257L'
+          }
+        ]
       };
-      const pdf = PayslipGenerator.generatePayslip(payslipData);
-      pdf.save(`payslip_${entry.employee.employeeNumber}_${payrollRun!.runNumber}.pdf`);
-    } catch (error) {
-      console.error("❌ Failed to generate payslip:", error);
-      alert("Failed to generate payslip. Please try again.");
-    } finally {
-      setGeneratingPayslips(false);
-    }
-  };
+      
+      const foundPayrollRun = demoPayrollRuns.find(pr => pr.id === payrollId);
+      
+      if (foundPayrollRun) {
+        setPayrollRun(foundPayrollRun);
+        setPayrollEntries(demoPayrollEntries[payrollId || ''] || []);
+      }
+      
+      setLoading(false);
+    }, 1000);
 
-  // Generate bulk payslips
-  const generateBulkPayslips = async () => {
-    if (!payrollRun?.entries || payrollRun.entries.length === 0) {
-      alert("No employee entries found for this payroll run.");
-      return;
-    }
+    return () => clearTimeout(timer);
+  }, [payrollId]);
+
+  // Handle workflow status changes
+  const handleStatusChange = async (newStatus: WorkflowStatus) => {
+    if (!payrollRun) return;
+    
     try {
-      setGeneratingBulk(true);
-      const allPayslipData: PayslipData[] = payrollRun.entries.map((entry) => ({
-        employee: {
-          name: entry.employee.name,
-          employeeNumber: entry.employee.employeeNumber,
-          email: entry.employee.email,
-          address: "Employee Address\nLine 2\nCity, Postcode",
-          niNumber: "AB123456C",
-        },
-        company: {
-          name: "Your Company Ltd",
-          address: "Company House\n123 Business Street\nLondon, SW1A 1AA",
-          payeRef: "123/AB12345",
-        },
-        payPeriod: {
-          startDate: payrollRun.payPeriodStart,
-          endDate: payrollRun.payPeriodEnd,
-          payDate: payrollRun.payDate,
-          frequency: payrollRun.payFrequency || "monthly",
-        },
-        earnings: entry.earnings,
-        deductions: entry.deductions,
-        netPay: entry.netPay,
-        yearToDate: {
-          grossPay: entry.earnings.gross * 6,
-          incomeTax: entry.deductions.incomeTax * 6,
-          nationalInsurance: entry.deductions.nationalInsurance * 6,
-          pensionEmployee: entry.deductions.pensionEmployee * 6,
-          netPay: entry.netPay * 6,
-        },
-        payslipNumber: `${payrollRun.runNumber}-${entry.employee.employeeNumber}`,
-        taxCode: "1257L",
-      }));
-      const zipBlob = await PayslipGenerator.generateBulkPayslips(allPayslipData);
-      const url = window.URL.createObjectURL(zipBlob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `payslips_${payrollRun.runNumber}.zip`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-      alert(
-        `✅ Generated ${allPayslipData.length} payslips!\n\nDownloaded as: payslips_${payrollRun.runNumber}.zip`
-      );
+      const needsConfirmation = ['cancelled', 'submitted', 'completed'].includes(newStatus);
+      
+      if (needsConfirmation) {
+        const confirmed = confirm(`Are you sure you want to change status to ${newStatus}?`);
+        if (!confirmed) return;
+      }
+
+      // Update payroll run status
+      const updatedRun = {
+        ...payrollRun,
+        workflow_status: newStatus,
+        status: newStatus
+      };
+      
+      setPayrollRun(updatedRun);
+      alert(`✅ Status changed to ${newStatus}`);
+      
     } catch (error) {
-      console.error("❌ Failed to generate bulk payslips:", error);
-      alert("Failed to generate bulk payslips. Please try again.");
-    } finally {
-      setGeneratingBulk(false);
+      console.error('Status change error:', error);
+      alert('❌ Failed to change status');
     }
   };
 
-  // Format helpers
-  const formatCurrency = (amount: number) => `£${(amount ?? 0).toFixed(2)}`;
-  const formatDate = (dateStr: string) => {
-    try {
-      if (!dateStr) return "N/A";
-      const date = new Date(dateStr.includes("T") ? dateStr : `${dateStr}T12:00:00.000Z`);
-      return date.toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      });
-    } catch {
-      return "Invalid Date";
-    }
+  // Get available workflow transitions
+  const getAvailableTransitions = (currentStatus: WorkflowStatus): WorkflowStatus[] => {
+    return WORKFLOW_TRANSITIONS[currentStatus] || [];
   };
 
-  // Status badge
-  const getStatusBadge = (status: string) => {
-    const statusStyles: Record<string, React.CSSProperties> = {
-      draft: { backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fbbf24" },
-      processing: { backgroundColor: "#dbeafe", color: "#1e40af", border: "1px solid #60a5fa" },
-      completed: { backgroundColor: "#dcfce7", color: "#166534", border: "1px solid #22c55e" },
-      submitted: { backgroundColor: "#f3e8ff", color: "#7c3aed", border: "1px solid #a855f7" },
-    };
+  // Get workflow status badge
+  const getWorkflowStatusBadge = (status: WorkflowStatus) => {
+    const config = WORKFLOW_STATUS_CONFIG[status] || WORKFLOW_STATUS_CONFIG.draft;
+    
     return (
       <span
         style={{
-          padding: "4px 12px",
-          borderRadius: "12px",
-          fontSize: "12px",
+          padding: '6px 16px',
+          borderRadius: '12px',
+          fontSize: '14px',
           fontWeight: 600,
-          textTransform: "capitalize",
-          ...(statusStyles[status] || statusStyles.draft),
+          textTransform: 'capitalize',
+          backgroundColor: config.bgColor,
+          color: config.color,
+          border: `1px solid ${config.color}`,
         }}
+        title={config.description}
       >
-        {status}
+        {config.label}
       </span>
     );
   };
 
+  // Format currency
+  const formatCurrency = (amount: number) => `£${amount.toFixed(2)}`;
+
+  // Format date
+  const formatDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-GB');
+    } catch (error) {
+      return dateStr;
+    }
+  };
+
+  // Format datetime for workflow history
+  const formatDateTime = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-GB') + ' ' + date.toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return dateStr;
+    }
+  };
+
   const styles = {
     container: {
-      fontFamily:
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      background: "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
-      minHeight: "100vh",
-      padding: "40px 20px",
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+      background: 'linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)',
+      minHeight: '100vh',
+      padding: '40px 20px',
     } as React.CSSProperties,
-    maxWidth: { maxWidth: "1200px", margin: "0 auto" } as React.CSSProperties,
+    maxWidth: {
+      maxWidth: '1200px',
+      margin: '0 auto',
+    } as React.CSSProperties,
     card: {
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(20px)",
-      padding: "32px",
-      borderRadius: "12px",
-      boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
-      marginBottom: "24px",
-      border: "1px solid rgba(255, 255, 255, 0.2)",
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      backdropFilter: 'blur(20px)',
+      padding: '24px 32px',
+      borderRadius: '12px',
+      boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)',
+      marginBottom: '24px',
+      border: '1px solid rgba(255, 255, 255, 0.2)',
     } as React.CSSProperties,
-    header: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-      marginBottom: "32px",
+    title: {
+      fontSize: '28px',
+      fontWeight: 'bold',
+      color: '#1f2937',
+      margin: '0 0 8px 0',
     } as React.CSSProperties,
-    title: { fontSize: "28px", fontWeight: "bold", color: "#1f2937", margin: "0 0 8px 0" } as React.CSSProperties,
-    subtitle: { fontSize: "16px", color: "#6b7280", margin: 0 } as React.CSSProperties,
-    backButton: {
-      padding: "12px 24px",
-      backgroundColor: "rgba(59, 130, 246, 0.1)",
-      color: "#3b82f6",
-      textDecoration: "none",
-      borderRadius: "8px",
-      fontSize: "14px",
+    subtitle: {
+      fontSize: '16px',
+      color: '#6b7280',
+      margin: '0 0 24px 0',
+    } as React.CSSProperties,
+    button: {
+      display: 'inline-block',
+      padding: '12px 24px',
+      backgroundColor: '#10b981',
+      color: '#000000',
+      textDecoration: 'none',
+      borderRadius: '8px',
+      fontSize: '14px',
+      fontWeight: 700,
+      border: 'none',
+      cursor: 'pointer',
+      marginRight: '16px',
+      marginBottom: '16px',
+    } as React.CSSProperties,
+    buttonSecondary: {
+      display: 'inline-block',
+      padding: '8px 16px',
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      color: '#3b82f6',
+      textDecoration: 'none',
+      borderRadius: '8px',
+      fontSize: '12px',
       fontWeight: 600,
-      border: "1px solid #3b82f6",
-      cursor: "pointer",
+      border: '1px solid #3b82f6',
+      cursor: 'pointer',
+      marginRight: '8px',
+      marginBottom: '8px',
     } as React.CSSProperties,
-    grid: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-      gap: "24px",
-      marginBottom: "32px",
-    } as React.CSSProperties,
-    statCard: {
-      padding: "20px",
-      backgroundColor: "#f8fafc",
-      borderRadius: "8px",
-      border: "1px solid #e2e8f0",
-    } as React.CSSProperties,
-    statLabel: { fontSize: "14px", fontWeight: 600, color: "#64748b", marginBottom: "8px" } as React.CSSProperties,
-    statValue: { fontSize: "20px", fontWeight: "bold", color: "#1e293b" } as React.CSSProperties,
-    sectionTitle: { fontSize: "20px", fontWeight: "bold", color: "#1f2937", marginBottom: "16px" } as React.CSSProperties,
-    table: { width: "100%", borderCollapse: "collapse" as const, marginTop: "16px" },
+    table: {
+      width: '100%',
+      borderCollapse: 'collapse' as const,
+      marginTop: '16px',
+    },
     th: {
-      backgroundColor: "#f9fafb",
-      padding: "12px",
-      textAlign: "left" as const,
-      fontSize: "14px",
+      backgroundColor: '#f9fafb',
+      padding: '12px',
+      textAlign: 'left' as const,
+      fontSize: '14px',
       fontWeight: 600,
-      color: "#374151",
-      borderBottom: "1px solid #e5e7eb",
+      color: '#374151',
+      borderBottom: '1px solid #e5e7eb',
     } as React.CSSProperties,
     td: {
-      padding: "12px",
-      borderBottom: "1px solid #e5e7eb",
-      fontSize: "14px",
-      color: "#1f2937",
+      padding: '12px',
+      borderBottom: '1px solid #e5e7eb',
+      fontSize: '14px',
+      color: '#1f2937',
     } as React.CSSProperties,
-    loading: { textAlign: "center" as const, padding: "80px 20px", fontSize: "18px", color: "white" } as React.CSSProperties,
-    noData: { textAlign: "center" as const, padding: "80px 20px", fontSize: "18px", color: "white" } as React.CSSProperties,
-    actionButton: {
-      padding: "8px 16px",
-      backgroundColor: "#10b981",
-      color: "white",
-      border: "none",
-      borderRadius: "6px",
-      fontSize: "12px",
-      fontWeight: 600,
-      cursor: "pointer",
-      marginRight: "8px",
-      marginBottom: "8px",
+    loading: {
+      textAlign: 'center' as const,
+      padding: '80px 20px',
+      fontSize: '18px',
+      color: '#6b7280',
     } as React.CSSProperties,
-    actionButtonSecondary: {
-      padding: "8px 16px",
-      backgroundColor: "rgba(59, 130, 246, 0.1)",
-      color: "#3b82f6",
-      border: "1px solid #3b82f6",
-      borderRadius: "6px",
-      fontSize: "12px",
-      fontWeight: 600,
-      cursor: "pointer",
-      marginRight: "8px",
-      marginBottom: "8px",
+    brand: { color: '#3b82f6' } as React.CSSProperties,
+    statsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+      gap: '16px',
+      marginBottom: '24px',
     } as React.CSSProperties,
-    bulkActionButton: {
-      padding: "12px 24px",
-      backgroundColor: "#10b981",
-      color: "white",
-      border: "none",
-      borderRadius: "8px",
-      fontSize: "14px",
-      fontWeight: 600,
-      cursor: "pointer",
-      marginRight: "16px",
-      marginBottom: "16px",
+    statCard: {
+      padding: '16px',
+      backgroundColor: '#f8fafc',
+      borderRadius: '8px',
+      border: '1px solid #e2e8f0',
+      textAlign: 'center' as const,
     } as React.CSSProperties,
-    bulkActionButtonSecondary: {
-      padding: "12px 24px",
-      backgroundColor: "rgba(168, 85, 247, 0.1)",
-      color: "#7c3aed",
-      border: "1px solid #7c3aed",
-      borderRadius: "8px",
-      fontSize: "14px",
-      fontWeight: 600,
-      cursor: "pointer",
-      marginRight: "16px",
-      marginBottom: "16px",
+    workflowHistory: {
+      maxHeight: '300px',
+      overflowY: 'auto' as const,
+      border: '1px solid #e5e7eb',
+      borderRadius: '6px',
+      padding: '12px',
     } as React.CSSProperties,
-    disabledButton: { opacity: 0.6, cursor: "not-allowed" } as React.CSSProperties,
-    brand: { color: "#3b82f6" } as React.CSSProperties,
-    amountGross: { fontSize: "20px", fontWeight: "bold", color: "#1e293b" } as React.CSSProperties,
-    amountDeduction: { fontSize: "20px", fontWeight: "bold", color: "#dc2626" } as React.CSSProperties,
-    amountNet: { fontSize: "20px", fontWeight: "bold", color: "#3b82f6" } as React.CSSProperties,
-    actionsRow: { display: "flex", flexWrap: "wrap", alignItems: "center" } as React.CSSProperties,
-    infoMuted: { fontSize: "12px", color: "#6b7280" } as React.CSSProperties,
-    employeeSub: { fontSize: "12px", color: "#6b7280" } as React.CSSProperties,
+    historyEntry: {
+      padding: '8px 12px',
+      marginBottom: '8px',
+      backgroundColor: '#f9fafb',
+      borderRadius: '4px',
+      borderLeft: '3px solid #10b981',
+    } as React.CSSProperties,
   };
 
   if (loading) {
     return (
       <div style={styles.container}>
         <div style={styles.maxWidth}>
-          <div style={styles.loading}>🔄 Loading Payroll Run Details...</div>
+          <div style={styles.card}>
+            <div style={styles.loading}>🔄 Loading Payroll Run Details...</div>
+          </div>
         </div>
       </div>
     );
@@ -359,11 +567,16 @@ export default function PayrollRunDetailsPage() {
     return (
       <div style={styles.container}>
         <div style={styles.maxWidth}>
-          <div style={styles.noData}>
-            <h1>❌ Payroll Run Not Found</h1>
-            <p>The payroll run with ID "{payrollRunId}" could not be found.</p>
-            <button onClick={() => router.push("/dashboard/payroll")} style={styles.backButton}>
-              ← Back to Payroll
+          <div style={styles.card}>
+            <h1 style={styles.title}>Payroll Run Not Found</h1>
+            <p style={styles.subtitle}>
+              The payroll run you're looking for doesn't exist or has been removed.
+            </p>
+            <button
+              style={styles.button}
+              onClick={() => router.push('/dashboard/payroll')}
+            >
+              ← Back to Payroll Dashboard
             </button>
           </div>
         </div>
@@ -371,196 +584,192 @@ export default function PayrollRunDetailsPage() {
     );
   }
 
+  const currentStatus = (payrollRun.workflow_status || 'draft') as WorkflowStatus;
+  const availableTransitions = getAvailableTransitions(currentStatus);
+  const config = WORKFLOW_STATUS_CONFIG[currentStatus];
+
   return (
     <div style={styles.container}>
       <div style={styles.maxWidth}>
         {/* Header */}
         <div style={styles.card}>
-          <div style={styles.header}>
-            <div>
-              <h1 style={styles.title}>
-                💼 <span style={styles.brand}>WageFlow</span> Payroll Run Details
-              </h1>
-              <p style={styles.subtitle}>
-                {payrollRun.runNumber} - {payrollRun.description}
-              </p>
-            </div>
-            <button onClick={() => router.push("/dashboard/payroll")} style={styles.backButton}>
+          <h1 style={styles.title}>
+            💼 <span style={styles.brand}>WageFlow</span> Payroll Run Details
+          </h1>
+          <p style={styles.subtitle}>
+            {payrollRun.name} - {payrollRun.description}
+          </p>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              style={styles.buttonSecondary}
+              onClick={() => router.push('/dashboard/payroll')}
+            >
               ← Back to Payroll
             </button>
-          </div>
-          {/* Status and Key Info */}
-          <div style={styles.grid}>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Status</div>
-              <div>{getStatusBadge(payrollRun.status)}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Pay Frequency</div>
-              <div style={styles.statValue}>{payrollRun.payFrequency?.toUpperCase() || "MONTHLY"}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Employee Count</div>
-              <div style={styles.statValue}>{payrollRun.employeeCount}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Created By</div>
-              <div style={styles.statValue}>{payrollRun.createdBy}</div>
-            </div>
-          </div>
-          {/* Pay Period Information */}
-          <div style={styles.grid}>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Pay Period Start</div>
-              <div style={styles.statValue}>{formatDate(payrollRun.payPeriodStart)}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Pay Period End</div>
-              <div style={styles.statValue}>{formatDate(payrollRun.payPeriodEnd)}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Payment Date</div>
-              <div style={styles.statValue}>{formatDate(payrollRun.payDate)}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Created</div>
-              <div style={styles.statValue}>{formatDate(payrollRun.createdAt)}</div>
-            </div>
-          </div>
-          {/* Financial Summary */}
-          <div style={styles.grid}>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Total Gross Pay</div>
-              <div style={styles.amountGross}>{formatCurrency(payrollRun.totalGrossPay)}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Total Deductions</div>
-              <div style={styles.amountDeduction}>
-                {formatCurrency(payrollRun.totalGrossPay - payrollRun.totalNetPay)}
-              </div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={styles.statLabel}>Total Net Pay</div>
-              <div style={styles.amountNet}>{formatCurrency(payrollRun.totalNetPay)}</div>
-            </div>
+            {config.canEdit && (
+              <button
+                style={styles.buttonSecondary}
+                onClick={() => alert('Edit functionality coming soon!')}
+              >
+                ✏️ Edit
+              </button>
+            )}
+            <button
+              style={styles.buttonSecondary}
+              onClick={() => setShowWorkflowHistory(!showWorkflowHistory)}
+            >
+              📋 {showWorkflowHistory ? 'Hide' : 'Show'} History
+            </button>
           </div>
         </div>
-        {/* Payslip Actions */}
+
+        {/* Payroll Run Summary */}
         <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>📄 Payslip Generation</h2>
-          <div style={styles.actionsRow}>
-            <button
-              onClick={generateBulkPayslips}
-              disabled={generatingBulk || !payrollRun.entries || payrollRun.entries.length === 0}
-              style={{
-                ...styles.bulkActionButton,
-                ...(generatingBulk || !payrollRun.entries || payrollRun.entries.length === 0
-                  ? styles.disabledButton
-                  : {}),
-              }}
-            >
-              {generatingBulk ? "🔄 Generating..." : "📦 Download All Payslips (ZIP)"}
-            </button>
-            <button
-              onClick={() => alert("Email distribution feature coming soon!")}
-              style={styles.bulkActionButtonSecondary}
-            >
-              📧 Email All Payslips
-            </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#1f2937', margin: '0' }}>
+              {payrollRun.runNumber}
+            </h2>
+            {getWorkflowStatusBadge(currentStatus)}
           </div>
-          {!payrollRun.entries || payrollRun.entries.length === 0 ? (
-            <p style={styles.infoMuted}>
-              ℹ️ No employee entries available for payslip generation. This may be an older payroll
-              run format.
-            </p>
-          ) : (
-            <p style={styles.infoMuted}>
-              Generate and download professional UK-compliant payslips for {payrollRun.entries.length} employees.
-            </p>
-          )}
+          
+          <div style={styles.statsGrid}>
+            <div style={styles.statCard}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Pay Period</div>
+              <div style={{ fontWeight: 'bold' }}>{formatDate(payrollRun.payPeriodStart)} - {formatDate(payrollRun.payPeriodEnd)}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Pay Date</div>
+              <div style={{ fontWeight: 'bold' }}>{formatDate(payrollRun.payDate)}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Employees</div>
+              <div style={{ fontWeight: 'bold' }}>{payrollRun.employeeCount}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Gross Pay</div>
+              <div style={{ fontWeight: 'bold' }}>{formatCurrency(payrollRun.grossPay)}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Net Pay</div>
+              <div style={{ fontWeight: 'bold' }}>{formatCurrency(payrollRun.netPay)}</div>
+            </div>
+          </div>
         </div>
-        {/* Employee Details */}
-        {payrollRun.entries && payrollRun.entries.length > 0 && (
+
+        {/* Workflow Actions */}
+        {availableTransitions.length > 0 && (
           <div style={styles.card}>
-            <h2 style={styles.sectionTitle}>Employee Breakdown & Individual Payslips</h2>
-            <div style={{ overflowX: "auto" }}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Employee</th>
-                    <th style={styles.th}>Basic Pay</th>
-                    <th style={styles.th}>Overtime</th>
-                    <th style={styles.th}>Bonus</th>
-                    <th style={styles.th}>Gross Pay</th>
-                    <th style={styles.th}>Tax</th>
-                    <th style={styles.th}>NI</th>
-                    <th style={styles.th}>Pension</th>
-                    <th style={styles.th}>Net Pay</th>
-                    <th style={styles.th}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payrollRun.entries.map((entry, index) => (
-                    <tr key={index}>
-                      <td style={styles.td}>
-                        <div>
-                          <strong>{entry.employee.name}</strong>
-                          <div style={styles.employeeSub}>{entry.employee.employeeNumber}</div>
-                        </div>
-                      </td>
-                      <td style={styles.td}>{formatCurrency(entry.earnings.basicPay)}</td>
-                      <td style={styles.td}>{formatCurrency(entry.earnings.overtime)}</td>
-                      <td style={styles.td}>{formatCurrency(entry.earnings.bonus)}</td>
-                      <td style={styles.td}>
-                        <strong>{formatCurrency(entry.earnings.gross)}</strong>
-                      </td>
-                      <td style={styles.td}>-{formatCurrency(entry.deductions.incomeTax)}</td>
-                      <td style={styles.td}>-{formatCurrency(entry.deductions.nationalInsurance)}</td>
-                      <td style={styles.td}>-{formatCurrency(entry.deductions.pensionEmployee)}</td>
-                      <td style={styles.td}>
-                        <strong>{formatCurrency(entry.netPay)}</strong>
-                      </td>
-                      <td style={styles.td}>
-                        <button
-                          onClick={() => generateIndividualPayslip(entry)}
-                          disabled={generatingPayslips}
-                          style={{
-                            ...styles.actionButton,
-                            ...(generatingPayslips ? styles.disabledButton : {}),
-                          }}
-                        >
-                          📄 PDF
-                        </button>
-                        <button
-                          onClick={() => alert("Email payslip feature coming soon!")}
-                          style={styles.actionButtonSecondary}
-                        >
-                          📧 Email
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937', margin: '0 0 16px 0' }}>
+              Workflow Actions
+            </h3>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {availableTransitions.map((nextStatus) => {
+                const nextConfig = WORKFLOW_STATUS_CONFIG[nextStatus];
+                return (
+                  <button
+                    key={nextStatus}
+                    style={{
+                      ...styles.buttonSecondary,
+                      backgroundColor: nextConfig.bgColor,
+                      color: nextConfig.color,
+                      border: `1px solid ${nextConfig.color}`,
+                    }}
+                    onClick={() => handleStatusChange(nextStatus)}
+                  >
+                    → {nextConfig.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>
+              Current: {config.description}
             </div>
           </div>
         )}
-        {/* Other Actions */}
+
+        {/* Workflow History */}
+        {showWorkflowHistory && payrollRun.workflow_history && (
+          <div style={styles.card}>
+            <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937', margin: '0 0 16px 0' }}>
+              Workflow History
+            </h3>
+            <div style={styles.workflowHistory}>
+              {payrollRun.workflow_history.map((entry) => (
+                <div key={entry.id} style={styles.historyEntry}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <strong>
+                      {entry.from_status ? `${entry.from_status} → ${entry.to_status}` : `Created as ${entry.to_status}`}
+                    </strong>
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                      {formatDateTime(entry.changed_at)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#4b5563' }}>
+                    By: {entry.changed_by} {entry.automated && '(Automated)'}
+                  </div>
+                  {entry.comment && (
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                      {entry.comment}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Employee Breakdown */}
         <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>Additional Actions</h2>
-          <div style={styles.actionsRow}>
-            <button
-              onClick={() => alert("Export Data feature coming soon!")}
-              style={styles.bulkActionButtonSecondary}
-            >
-              📊 Export Data
-            </button>
-            <button
-              onClick={() => alert("Process Payment feature coming soon!")}
-              style={styles.bulkActionButton}
-            >
-              💰 Process Payment
-            </button>
+          <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937', margin: '0 0 16px 0' }}>
+            Employee Breakdown
+          </h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Employee</th>
+                  <th style={styles.th}>Gross Pay</th>
+                  <th style={styles.th}>Tax</th>
+                  <th style={styles.th}>National Insurance</th>
+                  <th style={styles.th}>Pension</th>
+                  <th style={styles.th}>Net Pay</th>
+                  <th style={styles.th}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payrollEntries.map((entry) => (
+                  <tr key={entry.employeeId}>
+                    <td style={styles.td}>
+                      <div>
+                        <strong>{entry.employeeName}</strong>
+                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                          {entry.employeeNumber} • {entry.taxCode}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={styles.td}>{formatCurrency(entry.grossPay)}</td>
+                    <td style={styles.td}>{formatCurrency(entry.taxDeduction)}</td>
+                    <td style={styles.td}>{formatCurrency(entry.niDeduction)}</td>
+                    <td style={styles.td}>{formatCurrency(entry.pensionDeduction)}</td>
+                    <td style={styles.td}>
+                      <strong>{formatCurrency(entry.netPay)}</strong>
+                    </td>
+                    <td style={styles.td}>
+                      <button
+                        style={{
+                          ...styles.buttonSecondary,
+                          fontSize: '11px',
+                          padding: '4px 8px',
+                        }}
+                        onClick={() => router.push(`/dashboard/employees/${entry.employeeId}`)}
+                      >
+                        View Employee
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

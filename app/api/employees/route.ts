@@ -1,38 +1,35 @@
-import { NextResponse } from 'next/server'
-import { supabase } from '../../../lib/supabase'
+import { NextResponse } from 'next/server';
+import { supabase } from '../../../lib/supabase';
 
-export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic';
 
 // GET /api/employees - Get all employees
 export async function GET() {
   try {
-    console.log('🔍 API: Starting to fetch employees...')
+    console.log('🔍 API: Starting to fetch employees...');
 
     const { data, error } = await supabase
-      .from('employees')
+      .from('employees_new')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('❌ Database error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error('❌ Database error:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     if (!data) {
-      return NextResponse.json([], { status: 200 })
+      return NextResponse.json([], { status: 200 });
     }
 
     // Transform and filter out employees with missing critical data
     const employees = (Array.isArray(data) ? data : [])
       .filter((emp: any) => {
-        const hasRequiredFields =
-          emp?.employee_id && emp?.first_name && emp?.last_name && emp?.email
+        const hasRequiredFields = !!(emp?.employee_id && emp?.first_name && emp?.last_name && emp?.email);
         if (!hasRequiredFields) {
-          console.warn(
-            `⚠️ Skipping employee ${emp?.employee_id ?? 'UNKNOWN'} - missing required fields`
-          )
+          console.warn(`⚠️ Skipping employee ${emp?.employee_id ?? 'UNKNOWN'} - missing required fields`);
         }
-        return hasRequiredFields
+        return hasRequiredFields;
       })
       .map((emp: any) => ({
         id: emp.employee_id,
@@ -44,7 +41,7 @@ export async function GET() {
         phone: emp.phone ?? '',
         dateOfBirth: emp.date_of_birth ?? '',
         nationalInsurance: emp.national_insurance_number ?? '',
-        annualSalary: typeof emp.annual_salary === 'number' ? emp.annual_salary : 0,
+        annualSalary: typeof emp.annual_salary === 'number' && Number.isFinite(emp.annual_salary) ? emp.annual_salary : 0,
         hireDate: emp.hire_date ?? '',
         employmentType: emp.employment_type ?? 'full_time',
         payScheduleId: emp.pay_schedule_id ?? '',
@@ -53,35 +50,40 @@ export async function GET() {
         status: emp.status ?? 'active',
         address: emp.address ?? null,
         createdAt: emp.created_at ?? '',
-        updatedAt: emp.updated_at ?? '',
-      }))
+        updatedAt: emp.updated_at ?? ''
+      }));
 
-    console.log(`✅ Returning ${employees.length} valid employees`)
+    console.log(`✅ Returning ${employees.length} valid employees`);
 
-    return NextResponse.json(employees, { status: 200 })
+    return NextResponse.json(employees, { status: 200 });
   } catch (error) {
-    console.error('❌ Error fetching employees:', error)
-    return NextResponse.json({ error: 'Failed to fetch employees' }, { status: 500 })
+    console.error('❌ Error fetching employees:', error);
+    return NextResponse.json({ error: 'Failed to fetch employees' }, { status: 500 });
   }
 }
 
 // POST /api/employees - Create new employee
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
+    const body = await request.json();
 
-    const employeeId: string = body.employeeId || `emp-${Date.now().toString().slice(-6)}`
-    const annualSalaryRaw = body.annualSalary
-    const annualSalary: number | null =
-      typeof annualSalaryRaw === 'number'
-        ? annualSalaryRaw
-        : annualSalaryRaw
-        ? parseFloat(String(annualSalaryRaw))
-        : null
+    // Generate a simple default ID if not provided (reduces collision risk)
+    const employeeId: string =
+      body.employeeId && String(body.employeeId).trim().length > 0
+        ? String(body.employeeId)
+        : `EMP${Date.now().toString().slice(-6)}`;
 
+    // Normalize annualSalary safely
+    let annualSalary: number | null = null;
+    if (body.annualSalary !== undefined && body.annualSalary !== null) {
+      const parsed = typeof body.annualSalary === 'number' ? body.annualSalary : Number.parseFloat(String(body.annualSalary));
+      annualSalary = Number.isFinite(parsed) ? parsed : null;
+    }
+
+    // Normalize NI number
     const nationalInsurance: string | null = body.nationalInsurance
       ? String(body.nationalInsurance).replace(/\s/g, '').toUpperCase()
-      : null
+      : null;
 
     const insertPayload = {
       employee_id: employeeId,
@@ -91,28 +93,25 @@ export async function POST(request: Request) {
       phone: body.phone ?? null,
       date_of_birth: body.dateOfBirth ?? null,
       national_insurance_number: nationalInsurance,
-      annual_salary: Number.isFinite(annualSalary as number) ? annualSalary : null,
+      annual_salary: annualSalary,
       hire_date: body.hireDate || new Date().toISOString().split('T')[0],
       employment_type: body.employmentType || 'full_time',
       pay_schedule_id: body.payScheduleId ?? null,
       job_title: body.jobTitle ?? null,
       department: body.department ?? null,
       status: body.status || 'active',
-      address: body.address ?? null,
-    }
+      address: body.address ?? null
+    };
 
     const { data, error } = await supabase
-      .from('employees')
+      .from('employees_new')
       .insert([insertPayload])
       .select('*')
-      .single()
+      .single();
 
     if (error || !data) {
-      console.error('❌ Error creating employee:', error)
-      return NextResponse.json(
-        { error: error?.message || 'Failed to create employee' },
-        { status: 500 }
-      )
+      console.error('❌ Error creating employee:', error);
+      return NextResponse.json({ error: error?.message || 'Failed to create employee' }, { status: 500 });
     }
 
     const transformedEmployee = {
@@ -125,7 +124,7 @@ export async function POST(request: Request) {
       phone: data.phone ?? '',
       dateOfBirth: data.date_of_birth ?? '',
       nationalInsurance: data.national_insurance_number ?? '',
-      annualSalary: typeof data.annual_salary === 'number' ? data.annual_salary : 0,
+      annualSalary: typeof data.annual_salary === 'number' && Number.isFinite(data.annual_salary) ? data.annual_salary : 0,
       hireDate: data.hire_date ?? '',
       employmentType: data.employment_type ?? 'full_time',
       payScheduleId: data.pay_schedule_id ?? '',
@@ -134,12 +133,12 @@ export async function POST(request: Request) {
       status: data.status ?? 'active',
       address: data.address ?? null,
       createdAt: data.created_at ?? '',
-      updatedAt: data.updated_at ?? '',
-    }
+      updatedAt: data.updated_at ?? ''
+    };
 
-    return NextResponse.json({ success: true, employee: transformedEmployee }, { status: 201 })
+    return NextResponse.json({ success: true, employee: transformedEmployee }, { status: 201 });
   } catch (error) {
-    console.error('❌ Error in POST /api/employees:', error)
-    return NextResponse.json({ error: 'Failed to create employee' }, { status: 500 })
+    console.error('❌ Error in POST /api/employees:', error);
+    return NextResponse.json({ error: 'Failed to create employee' }, { status: 500 });
   }
 }
