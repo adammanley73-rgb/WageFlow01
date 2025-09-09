@@ -223,5 +223,28 @@
     "employeeCount": 3,
     "createdAt": "2025-09-07T16:01:08.550Z",
     "updatedAt": "2025-09-07T16:01:08.550Z"
+  },
+  {
+    "id": "pr-1757377196690",
+    "runNumber": "PR-2025-09-09-0119",
+    "payPeriodStart": null,
+    "payPeriodEnd": null,
+    "payDate": null,
+    "description": "Payroll Run - 09/09/2025",
+    "employees": [],
+    "selectedEmployees": [],
+    "newStartersCheck": {},
+    "totals": {
+      "grossPay": 1961.5384615384614,
+      "totalDeductions": 571.0615384615385,
+      "netPay": 1390.4769230769232
+    },
+    "totalGrossPay": 0,
+    "totalNetPay": 0,
+    "status": "draft",
+    "createdBy": "System",
+    "employeeCount": 0,
+    "createdAt": "2025-09-09T00:19:59.234Z",
+    "updatedAt": "2025-09-09T00:19:59.234Z"
   }
 ]

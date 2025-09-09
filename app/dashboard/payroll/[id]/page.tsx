@@ -1,7 +1,8 @@
 "use client";
-
+import type React from "react";
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
+import { PayslipGenerator, type PayslipData } from "../../../../lib/services/payslip-generator";
 
 type PayrollRun = {
   id: string;
@@ -10,553 +11,557 @@ type PayrollRun = {
   payPeriodEnd: string;
   payDate: string;
   description: string;
-  status: "draft" | "processing" | "completed" | "submitted";
-  employeeCount: number;
+  status: string;
   totalGrossPay: number;
   totalNetPay: number;
-  totals?: {
-    gross: number;
-    net: number;
-    tax: number;
-    ni: number;
-    pension: number;
-  };
-  employees: any[];
+  employeeCount: number;
   createdBy: string;
   createdAt: string;
+  payFrequency?: string;
+  entries?: PayrollEntry[];
+};
+
+type PayrollEntry = {
+  employeeId: string;
+  employee: {
+    name: string;
+    employeeNumber: string;
+    email: string;
+  };
+  earnings: {
+    basicPay: number;
+    overtime: number;
+    bonus: number;
+    gross: number;
+  };
+  deductions: {
+    incomeTax: number;
+    nationalInsurance: number;
+    pensionEmployee: number;
+    total: number;
+  };
+  netPay: number;
+  payFrequency?: string;
 };
 
 export default function PayrollRunDetailsPage() {
-  const params = useParams<{ id: string }>();
-  const routeId = (params?.id as string) || "";
+  const router = useRouter();
+  const params = useParams();
+  const payrollRunId = params?.id as string;
   const [payrollRun, setPayrollRun] = useState<PayrollRun | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isEmployeeView, setIsEmployeeView] = useState(false);
+  const [generatingPayslips, setGeneratingPayslips] = useState(false);
+  const [generatingBulk, setGeneratingBulk] = useState(false);
 
-  const S = {
-    page: {
-      fontFamily:
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      background:
-        "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
-      minHeight: "100vh",
-      padding: "40px 20px",
-    } as const,
-    center: { maxWidth: "800px", margin: "0 auto", textAlign: "center" } as const,
-    container: { maxWidth: "1000px", margin: "0 auto" } as const,
-    headerCard: {
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(20px)",
-      padding: "20px 40px",
-      borderRadius: "12px",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1)",
-      marginBottom: "30px",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      border: "1px solid rgba(255,255,255,0.2)",
-    } as const,
-    title: { fontSize: "28px", fontWeight: "bold", color: "#1f2937", margin: 0 } as const,
-    subtitle: { color: "#6b7280", margin: "8px 0 0 0" } as const,
-    nav: { display: "flex", gap: "24px" } as const,
-    navLink: {
-      color: "#000000",
-      textDecoration: "none",
-      fontWeight: "bold",
-      padding: "8px 16px",
-      borderRadius: "6px",
-      backgroundColor: "#10b981",
-      border: "1px solid #059669",
-    } as const,
-    summaryCard: {
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(20px)",
-      borderRadius: "12px",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1)",
-      border: "1px solid rgba(255,255,255,0.2)",
-      padding: "24px 32px",
-      marginBottom: "24px",
-    } as const,
-    summaryHeader: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: "16px",
-    } as const,
-    h2: { fontSize: "20px", fontWeight: "bold", color: "#1f2937", margin: 0 } as const,
-    summaryGrid: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-      gap: "16px",
-    } as const,
-    label: {
-      display: "block",
-      fontSize: "12px",
-      fontWeight: 500,
-      color: "#6b7280",
-      marginBottom: "4px",
-    } as const,
-    value: { margin: 0, color: "#1f2937", fontSize: "16px" } as const,
-    financeCard: {
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(20px)",
-      borderRadius: "12px",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1)",
-      border: "1px solid rgba(255,255,255,0.2)",
-      padding: "24px 32px",
-      marginBottom: "24px",
-    } as const,
-    financeHeader: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" } as const,
-    financeH2: { fontSize: "20px", fontWeight: "bold", color: "#1f2937", margin: 0 } as const,
-    financeGrid: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-      gap: "16px",
-    } as const,
-    financeItem: {
-      backgroundColor: "#ffffff",
-      border: "1px solid #e5e7eb",
-      borderRadius: "12px",
-      padding: "16px",
-    } as const,
-    financeH3: { fontSize: "14px", fontWeight: 600, color: "#374151", margin: "4px 0 6px" } as const,
-    financeVal: { fontSize: "18px", fontWeight: 700, margin: 0 } as const,
-    financeValAlt: { fontSize: "18px", fontWeight: 700, margin: 0, color: "#1e3a8a" } as const,
-    financeNet: {
-      backgroundColor: "#ecfeff",
-      border: "1px solid #bae6fd",
-      borderRadius: "12px",
-      padding: "16px",
-    } as const,
-    tableCard: {
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(20px)",
-      borderRadius: "12px",
-      boxShadow: "0 20px 60px rgba(0,0,0,0.15), 0 8px 20px rgba(0,0,0,0.1)",
-      border: "1px solid rgba(255,255,255,0.2)",
-      padding: "24px 32px",
-      marginBottom: "24px",
-    } as const,
-    tableTitle: { fontSize: "20px", fontWeight: "bold", color: "#1f2937", margin: 0 } as const,
-    table: {
-      width: "100%",
-      borderCollapse: "separate" as const,
-      borderSpacing: 0,
-      minWidth: "800px",
-      backgroundColor: "#fff",
-      border: "1px solid #e5e7eb",
-      borderRadius: "12px",
-      overflow: "hidden",
-    } as const,
-    th: {
-      textAlign: "left" as const,
-      fontSize: "12px",
-      textTransform: "uppercase" as const,
-      letterSpacing: "0.04em",
-      color: "#6b7280",
-      padding: "12px 16px",
-      backgroundColor: "#f9fafb",
-      borderBottom: "1px solid #e5e7eb",
-      whiteSpace: "nowrap" as const,
-    } as const,
-    td: { padding: "12px 16px", borderBottom: "1px solid #f3f4f6", verticalAlign: "top" } as const,
-    empName: { fontWeight: 600, color: "#111827" } as const,
-    empMeta: { fontSize: "12px", color: "#6b7280" } as const,
-    amount: { fontWeight: 600, color: "#111827" } as const,
-    amountTax: { fontWeight: 600, color: "#1f2937" } as const,
-    amountPen: { fontWeight: 600, color: "#0f766e" } as const,
-    amountNet: { fontWeight: 700, color: "#065f46" } as const,
-    empty: {
-      textAlign: "center" as const,
-      padding: "24px",
-      backgroundColor: "#ffffff",
-      border: "1px dashed #e5e7eb",
-      borderRadius: "12px",
-      marginTop: "12px",
-    } as const,
-    emptyText: { color: "#6b7280", margin: 0 } as const,
-    actions: {
-      display: "flex",
-      justifyContent: "space-between",
-      marginTop: "24px",
-    } as const,
-    backLink: {
-      color: "#6b7280",
-      textDecoration: "none",
-      fontWeight: 500,
-      padding: "8px 16px",
-    } as const,
-    statusButton: {
-      backgroundColor: "#10b981",
-      color: "#000000",
-      padding: "12px 24px",
-      borderRadius: "6px",
-      textDecoration: "none",
-      fontWeight: "bold",
-      border: "none",
-      cursor: "pointer",
-      fontSize: "14px",
-    } as const,
-    notFound: {
-      backgroundColor: "rgba(255, 255, 255, 0.95)",
-      backdropFilter: "blur(20px)",
-      borderRadius: "16px",
-      padding: "40px",
-      textAlign: "center" as const,
-      boxShadow: "0 25px 70px rgba(0, 0, 0, 0.2), 0 10px 25px rgba(0, 0, 0, 0.15)",
-      border: "1px solid rgba(255, 255, 255, 0.2)",
-    } as const,
-  };
-
-  // ✅ Load payroll run or employee payroll history
   useEffect(() => {
-    const loadData = async () => {
+    const loadPayrollRun = async () => {
       try {
-        if (!routeId) return;
-
-        // Check if this is an employee ID (starts with "emp-")
-        if (routeId.startsWith("emp-")) {
-          console.log("🔍 Employee payroll history requested for:", routeId);
-          setIsEmployeeView(true);
-
-          // For now, redirect to employee page - payroll history feature coming soon
-          window.location.href = `/dashboard/employees/${routeId}`;
-          return;
-        }
-
-        // Otherwise, treat as payroll run ID
         const response = await fetch("/api/payroll");
         if (response.ok) {
-          const allRuns: PayrollRun[] = await response.json();
-          const foundRun =
-            allRuns.find((run: PayrollRun) => run.id === routeId) || null;
-          setPayrollRun(foundRun);
-        } else {
-          console.error("❌ Failed to fetch payroll runs:", response.status);
+          const allRuns = await response.json();
+          const foundRun = allRuns.find((run: PayrollRun) => run.id === payrollRunId);
+          if (foundRun) setPayrollRun(foundRun);
         }
       } catch (error) {
-        console.error("❌ Error loading payroll data:", error);
+        console.error("❌ Failed to load payroll run:", error);
       } finally {
         setLoading(false);
       }
     };
+    if (payrollRunId) {
+      void loadPayrollRun();
+    }
+  }, [payrollRunId]);
 
-    void loadData();
-  }, [routeId]);
-
-  // Update payroll run status (local only)
-  const updateStatus = async (newStatus: PayrollRun["status"]) => {
-    if (payrollRun) {
-      setPayrollRun({ ...payrollRun, status: newStatus });
-      alert(`✅ Payroll run status updated to: ${newStatus.toUpperCase()}`);
+  // Generate individual payslip
+  const generateIndividualPayslip = async (entry: PayrollEntry) => {
+    try {
+      setGeneratingPayslips(true);
+      const payslipData: PayslipData = {
+        employee: {
+          name: entry.employee.name,
+          employeeNumber: entry.employee.employeeNumber,
+          email: entry.employee.email,
+          address: "Employee Address\nLine 2\nCity, Postcode",
+          niNumber: "AB123456C",
+        },
+        company: {
+          name: "Your Company Ltd",
+          address: "Company House\n123 Business Street\nLondon, SW1A 1AA",
+          payeRef: "123/AB12345",
+        },
+        payPeriod: {
+          startDate: payrollRun!.payPeriodStart,
+          endDate: payrollRun!.payPeriodEnd,
+          payDate: payrollRun!.payDate,
+          frequency: payrollRun!.payFrequency || "monthly",
+        },
+        earnings: entry.earnings,
+        deductions: entry.deductions,
+        netPay: entry.netPay,
+        yearToDate: {
+          grossPay: entry.earnings.gross * 6,
+          incomeTax: entry.deductions.incomeTax * 6,
+          nationalInsurance: entry.deductions.nationalInsurance * 6,
+          pensionEmployee: entry.deductions.pensionEmployee * 6,
+          netPay: entry.netPay * 6,
+        },
+        payslipNumber: `${payrollRun!.runNumber}-${entry.employee.employeeNumber}`,
+        taxCode: "1257L",
+      };
+      const pdf = PayslipGenerator.generatePayslip(payslipData);
+      pdf.save(`payslip_${entry.employee.employeeNumber}_${payrollRun!.runNumber}.pdf`);
+    } catch (error) {
+      console.error("❌ Failed to generate payslip:", error);
+      alert("Failed to generate payslip. Please try again.");
+    } finally {
+      setGeneratingPayslips(false);
     }
   };
 
-  const formatCurrency = (amount: number): string =>
-    new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(amount || 0);
-
-  const formatDateUK = (dateString: string): string =>
-    new Date(dateString).toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-
-  const getStatusBadge = (status: PayrollRun["status"] | string) => {
-    let backgroundColor = "";
-    let color = "";
-    let text = "";
-    switch (status) {
-      case "draft":
-        backgroundColor = "#fef3c7";
-        color = "#92400e";
-        text = "Draft";
-        break;
-      case "processing":
-        backgroundColor = "#dbeafe";
-        color = "#1e40af";
-        text = "Processing";
-        break;
-      case "completed":
-        backgroundColor = "#dcfce7";
-        color = "#166534";
-        text = "Completed";
-        break;
-      case "submitted":
-        backgroundColor = "#f3e8ff";
-        color = "#7c3aed";
-        text = "RTI Submitted";
-        break;
-      default:
-        backgroundColor = "#f3f4f6";
-        color = "#374151";
-        text = String(status);
+  // Generate bulk payslips
+  const generateBulkPayslips = async () => {
+    if (!payrollRun?.entries || payrollRun.entries.length === 0) {
+      alert("No employee entries found for this payroll run.");
+      return;
     }
+    try {
+      setGeneratingBulk(true);
+      const allPayslipData: PayslipData[] = payrollRun.entries.map((entry) => ({
+        employee: {
+          name: entry.employee.name,
+          employeeNumber: entry.employee.employeeNumber,
+          email: entry.employee.email,
+          address: "Employee Address\nLine 2\nCity, Postcode",
+          niNumber: "AB123456C",
+        },
+        company: {
+          name: "Your Company Ltd",
+          address: "Company House\n123 Business Street\nLondon, SW1A 1AA",
+          payeRef: "123/AB12345",
+        },
+        payPeriod: {
+          startDate: payrollRun.payPeriodStart,
+          endDate: payrollRun.payPeriodEnd,
+          payDate: payrollRun.payDate,
+          frequency: payrollRun.payFrequency || "monthly",
+        },
+        earnings: entry.earnings,
+        deductions: entry.deductions,
+        netPay: entry.netPay,
+        yearToDate: {
+          grossPay: entry.earnings.gross * 6,
+          incomeTax: entry.deductions.incomeTax * 6,
+          nationalInsurance: entry.deductions.nationalInsurance * 6,
+          pensionEmployee: entry.deductions.pensionEmployee * 6,
+          netPay: entry.netPay * 6,
+        },
+        payslipNumber: `${payrollRun.runNumber}-${entry.employee.employeeNumber}`,
+        taxCode: "1257L",
+      }));
+      const zipBlob = await PayslipGenerator.generateBulkPayslips(allPayslipData);
+      const url = window.URL.createObjectURL(zipBlob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `payslips_${payrollRun.runNumber}.zip`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      alert(
+        `✅ Generated ${allPayslipData.length} payslips!\n\nDownloaded as: payslips_${payrollRun.runNumber}.zip`
+      );
+    } catch (error) {
+      console.error("❌ Failed to generate bulk payslips:", error);
+      alert("Failed to generate bulk payslips. Please try again.");
+    } finally {
+      setGeneratingBulk(false);
+    }
+  };
+
+  // Format helpers
+  const formatCurrency = (amount: number) => `£${(amount ?? 0).toFixed(2)}`;
+  const formatDate = (dateStr: string) => {
+    try {
+      if (!dateStr) return "N/A";
+      const date = new Date(dateStr.includes("T") ? dateStr : `${dateStr}T12:00:00.000Z`);
+      return date.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+    } catch {
+      return "Invalid Date";
+    }
+  };
+
+  // Status badge
+  const getStatusBadge = (status: string) => {
+    const statusStyles: Record<string, React.CSSProperties> = {
+      draft: { backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fbbf24" },
+      processing: { backgroundColor: "#dbeafe", color: "#1e40af", border: "1px solid #60a5fa" },
+      completed: { backgroundColor: "#dcfce7", color: "#166534", border: "1px solid #22c55e" },
+      submitted: { backgroundColor: "#f3e8ff", color: "#7c3aed", border: "1px solid #a855f7" },
+    };
     return (
       <span
         style={{
-          display: "inline-block",
           padding: "4px 12px",
-          borderRadius: "999px",
-          backgroundColor,
-          color,
+          borderRadius: "12px",
           fontSize: "12px",
           fontWeight: 600,
+          textTransform: "capitalize",
+          ...(statusStyles[status] || statusStyles.draft),
         }}
       >
-        {text}
+        {status}
       </span>
     );
   };
 
+  const styles = {
+    container: {
+      fontFamily:
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+      background: "linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)",
+      minHeight: "100vh",
+      padding: "40px 20px",
+    } as React.CSSProperties,
+    maxWidth: { maxWidth: "1200px", margin: "0 auto" } as React.CSSProperties,
+    card: {
+      backgroundColor: "rgba(255, 255, 255, 0.95)",
+      backdropFilter: "blur(20px)",
+      padding: "32px",
+      borderRadius: "12px",
+      boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)",
+      marginBottom: "24px",
+      border: "1px solid rgba(255, 255, 255, 0.2)",
+    } as React.CSSProperties,
+    header: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      marginBottom: "32px",
+    } as React.CSSProperties,
+    title: { fontSize: "28px", fontWeight: "bold", color: "#1f2937", margin: "0 0 8px 0" } as React.CSSProperties,
+    subtitle: { fontSize: "16px", color: "#6b7280", margin: 0 } as React.CSSProperties,
+    backButton: {
+      padding: "12px 24px",
+      backgroundColor: "rgba(59, 130, 246, 0.1)",
+      color: "#3b82f6",
+      textDecoration: "none",
+      borderRadius: "8px",
+      fontSize: "14px",
+      fontWeight: 600,
+      border: "1px solid #3b82f6",
+      cursor: "pointer",
+    } as React.CSSProperties,
+    grid: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+      gap: "24px",
+      marginBottom: "32px",
+    } as React.CSSProperties,
+    statCard: {
+      padding: "20px",
+      backgroundColor: "#f8fafc",
+      borderRadius: "8px",
+      border: "1px solid #e2e8f0",
+    } as React.CSSProperties,
+    statLabel: { fontSize: "14px", fontWeight: 600, color: "#64748b", marginBottom: "8px" } as React.CSSProperties,
+    statValue: { fontSize: "20px", fontWeight: "bold", color: "#1e293b" } as React.CSSProperties,
+    sectionTitle: { fontSize: "20px", fontWeight: "bold", color: "#1f2937", marginBottom: "16px" } as React.CSSProperties,
+    table: { width: "100%", borderCollapse: "collapse" as const, marginTop: "16px" },
+    th: {
+      backgroundColor: "#f9fafb",
+      padding: "12px",
+      textAlign: "left" as const,
+      fontSize: "14px",
+      fontWeight: 600,
+      color: "#374151",
+      borderBottom: "1px solid #e5e7eb",
+    } as React.CSSProperties,
+    td: {
+      padding: "12px",
+      borderBottom: "1px solid #e5e7eb",
+      fontSize: "14px",
+      color: "#1f2937",
+    } as React.CSSProperties,
+    loading: { textAlign: "center" as const, padding: "80px 20px", fontSize: "18px", color: "white" } as React.CSSProperties,
+    noData: { textAlign: "center" as const, padding: "80px 20px", fontSize: "18px", color: "white" } as React.CSSProperties,
+    actionButton: {
+      padding: "8px 16px",
+      backgroundColor: "#10b981",
+      color: "white",
+      border: "none",
+      borderRadius: "6px",
+      fontSize: "12px",
+      fontWeight: 600,
+      cursor: "pointer",
+      marginRight: "8px",
+      marginBottom: "8px",
+    } as React.CSSProperties,
+    actionButtonSecondary: {
+      padding: "8px 16px",
+      backgroundColor: "rgba(59, 130, 246, 0.1)",
+      color: "#3b82f6",
+      border: "1px solid #3b82f6",
+      borderRadius: "6px",
+      fontSize: "12px",
+      fontWeight: 600,
+      cursor: "pointer",
+      marginRight: "8px",
+      marginBottom: "8px",
+    } as React.CSSProperties,
+    bulkActionButton: {
+      padding: "12px 24px",
+      backgroundColor: "#10b981",
+      color: "white",
+      border: "none",
+      borderRadius: "8px",
+      fontSize: "14px",
+      fontWeight: 600,
+      cursor: "pointer",
+      marginRight: "16px",
+      marginBottom: "16px",
+    } as React.CSSProperties,
+    bulkActionButtonSecondary: {
+      padding: "12px 24px",
+      backgroundColor: "rgba(168, 85, 247, 0.1)",
+      color: "#7c3aed",
+      border: "1px solid #7c3aed",
+      borderRadius: "8px",
+      fontSize: "14px",
+      fontWeight: 600,
+      cursor: "pointer",
+      marginRight: "16px",
+      marginBottom: "16px",
+    } as React.CSSProperties,
+    disabledButton: { opacity: 0.6, cursor: "not-allowed" } as React.CSSProperties,
+    brand: { color: "#3b82f6" } as React.CSSProperties,
+    amountGross: { fontSize: "20px", fontWeight: "bold", color: "#1e293b" } as React.CSSProperties,
+    amountDeduction: { fontSize: "20px", fontWeight: "bold", color: "#dc2626" } as React.CSSProperties,
+    amountNet: { fontSize: "20px", fontWeight: "bold", color: "#3b82f6" } as React.CSSProperties,
+    actionsRow: { display: "flex", flexWrap: "wrap", alignItems: "center" } as React.CSSProperties,
+    infoMuted: { fontSize: "12px", color: "#6b7280" } as React.CSSProperties,
+    employeeSub: { fontSize: "12px", color: "#6b7280" } as React.CSSProperties,
+  };
+
   if (loading) {
     return (
-      <div style={S.page}>
-        <div style={S.center}>
-          <div style={S.notFound}>
-            <h1 style={{ color: "#1f2937", margin: 0 }}>Loading...</h1>
-            <p style={{ color: "#6b7280", margin: "16px 0" }}>
-              Loading payroll data for: {routeId}
-            </p>
-          </div>
+      <div style={styles.container}>
+        <div style={styles.maxWidth}>
+          <div style={styles.loading}>🔄 Loading Payroll Run Details...</div>
         </div>
       </div>
     );
   }
 
-  if (!payrollRun && !isEmployeeView) {
+  if (!payrollRun) {
     return (
-      <div style={S.page}>
-        <div style={S.center}>
-          <div style={S.notFound}>
-            <h1 style={{ color: "#1f2937", margin: 0 }}>Payroll Run Not Found</h1>
-            <p style={{ color: "#6b7280", margin: "16px 0" }}>
-              The payroll run with ID "{routeId}" could not be found.
-            </p>
-            <p style={{ color: "#6b7280", margin: "16px 0", fontSize: "14px" }}>
-              If you're looking for employee payroll history, that feature is coming soon!
-            </p>
-            <a href="/dashboard/payroll" style={S.navLink}>
-              ← Back to Payroll Dashboard
-            </a>
+      <div style={styles.container}>
+        <div style={styles.maxWidth}>
+          <div style={styles.noData}>
+            <h1>❌ Payroll Run Not Found</h1>
+            <p>The payroll run with ID "{payrollRunId}" could not be found.</p>
+            <button onClick={() => router.push("/dashboard/payroll")} style={styles.backButton}>
+              ← Back to Payroll
+            </button>
           </div>
         </div>
       </div>
     );
   }
-
-  if (!payrollRun) return null;
 
   return (
-    <div style={S.page}>
-      <div style={S.container}>
-        {/* Navigation Header */}
-        <div style={S.headerCard}>
-          <div>
-            <h1 style={S.title}>
-              💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Payroll Run Details
-            </h1>
-            <p style={S.subtitle}>
-              {payrollRun.description || payrollRun.runNumber} - {payrollRun.employeeCount} employees
-            </p>
-          </div>
-          <nav style={S.nav}>
-            <a href="/dashboard" style={S.navLink}>
-              Dashboard
-            </a>
-            <a href="/dashboard/payroll" style={S.navLink}>
-              ← Back to Payroll
-            </a>
-          </nav>
-        </div>
-
-        {/* Payroll Run Summary */}
-        <div style={S.summaryCard}>
-          <div style={S.summaryHeader}>
-            <h2 style={S.h2}>Payroll Run Summary</h2>
-            <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-              {getStatusBadge(payrollRun.status)}
-            </div>
-          </div>
-          <div style={S.summaryGrid}>
+    <div style={styles.container}>
+      <div style={styles.maxWidth}>
+        {/* Header */}
+        <div style={styles.card}>
+          <div style={styles.header}>
             <div>
-              <label style={S.label}>Run Number</label>
-              <p style={S.value}>{payrollRun.runNumber}</p>
-            </div>
-            <div>
-              <label style={S.label}>Pay Period</label>
-              <p style={S.value}>
-                {formatDateUK(payrollRun.payPeriodStart)} - {formatDateUK(payrollRun.payPeriodEnd)}
+              <h1 style={styles.title}>
+                💼 <span style={styles.brand}>WageFlow</span> Payroll Run Details
+              </h1>
+              <p style={styles.subtitle}>
+                {payrollRun.runNumber} - {payrollRun.description}
               </p>
             </div>
-            <div>
-              <label style={S.label}>Pay Date</label>
-              <p style={S.value}>{formatDateUK(payrollRun.payDate)}</p>
+            <button onClick={() => router.push("/dashboard/payroll")} style={styles.backButton}>
+              ← Back to Payroll
+            </button>
+          </div>
+          {/* Status and Key Info */}
+          <div style={styles.grid}>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Status</div>
+              <div>{getStatusBadge(payrollRun.status)}</div>
             </div>
-            <div>
-              <label style={S.label}>Employees</label>
-              <p style={{ ...S.value, fontWeight: 700 }}>{payrollRun.employeeCount}</p>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Pay Frequency</div>
+              <div style={styles.statValue}>{payrollRun.payFrequency?.toUpperCase() || "MONTHLY"}</div>
             </div>
-            <div>
-              <label style={S.label}>Created By</label>
-              <p style={S.value}>{payrollRun.createdBy}</p>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Employee Count</div>
+              <div style={styles.statValue}>{payrollRun.employeeCount}</div>
             </div>
-            <div>
-              <label style={S.label}>Created Date</label>
-              <p style={S.value}>{formatDateUK(payrollRun.createdAt)}</p>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Created By</div>
+              <div style={styles.statValue}>{payrollRun.createdBy}</div>
+            </div>
+          </div>
+          {/* Pay Period Information */}
+          <div style={styles.grid}>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Pay Period Start</div>
+              <div style={styles.statValue}>{formatDate(payrollRun.payPeriodStart)}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Pay Period End</div>
+              <div style={styles.statValue}>{formatDate(payrollRun.payPeriodEnd)}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Payment Date</div>
+              <div style={styles.statValue}>{formatDate(payrollRun.payDate)}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Created</div>
+              <div style={styles.statValue}>{formatDate(payrollRun.createdAt)}</div>
+            </div>
+          </div>
+          {/* Financial Summary */}
+          <div style={styles.grid}>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Total Gross Pay</div>
+              <div style={styles.amountGross}>{formatCurrency(payrollRun.totalGrossPay)}</div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Total Deductions</div>
+              <div style={styles.amountDeduction}>
+                {formatCurrency(payrollRun.totalGrossPay - payrollRun.totalNetPay)}
+              </div>
+            </div>
+            <div style={styles.statCard}>
+              <div style={styles.statLabel}>Total Net Pay</div>
+              <div style={styles.amountNet}>{formatCurrency(payrollRun.totalNetPay)}</div>
             </div>
           </div>
         </div>
-
-        {/* Financial Summary */}
-        <div style={S.financeCard}>
-          <div style={S.financeHeader}>
-            <div style={{ fontSize: "20px" }}>📊</div>
-            <h2 style={S.financeH2}>Financial Summary</h2>
+        {/* Payslip Actions */}
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>📄 Payslip Generation</h2>
+          <div style={styles.actionsRow}>
+            <button
+              onClick={generateBulkPayslips}
+              disabled={generatingBulk || !payrollRun.entries || payrollRun.entries.length === 0}
+              style={{
+                ...styles.bulkActionButton,
+                ...(generatingBulk || !payrollRun.entries || payrollRun.entries.length === 0
+                  ? styles.disabledButton
+                  : {}),
+              }}
+            >
+              {generatingBulk ? "🔄 Generating..." : "📦 Download All Payslips (ZIP)"}
+            </button>
+            <button
+              onClick={() => alert("Email distribution feature coming soon!")}
+              style={styles.bulkActionButtonSecondary}
+            >
+              📧 Email All Payslips
+            </button>
           </div>
-          <div style={S.financeGrid}>
-            <div style={S.financeItem}>
-              <div style={{ fontSize: "24px", marginBottom: "8px" }}>💰</div>
-              <h3 style={S.financeH3}>Total Gross Pay</h3>
-              <p style={S.financeVal}>{formatCurrency(payrollRun.totalGrossPay)}</p>
-            </div>
-            <div style={S.financeItem}>
-              <div style={{ fontSize: "24px", marginBottom: "8px" }}>🏛️</div>
-              <h3 style={S.financeH3}>PAYE Tax</h3>
-              <p style={S.financeValAlt}>{formatCurrency(payrollRun.totals?.tax || 0)}</p>
-            </div>
-            <div style={S.financeItem}>
-              <div style={{ fontSize: "24px", marginBottom: "8px" }}>🏛️</div>
-              <h3 style={S.financeH3}>National Insurance</h3>
-              <p style={S.financeValAlt}>{formatCurrency(payrollRun.totals?.ni || 0)}</p>
-            </div>
-            <div style={S.financeItem}>
-              <div style={{ fontSize: "24px", marginBottom: "8px" }}>🏦</div>
-              <h3 style={S.financeH3}>Pension Contributions</h3>
-              <p style={S.financeValAlt}>{formatCurrency(payrollRun.totals?.pension || 0)}</p>
-            </div>
-            <div style={S.financeNet}>
-              <div style={{ fontSize: "24px", marginBottom: "8px" }}>💸</div>
-              <h3 style={S.financeH3}>Total Net Pay</h3>
-              <p style={S.financeVal}>{formatCurrency(payrollRun.totalNetPay)}</p>
-            </div>
-          </div>
+          {!payrollRun.entries || payrollRun.entries.length === 0 ? (
+            <p style={styles.infoMuted}>
+              ℹ️ No employee entries available for payslip generation. This may be an older payroll
+              run format.
+            </p>
+          ) : (
+            <p style={styles.infoMuted}>
+              Generate and download professional UK-compliant payslips for {payrollRun.entries.length} employees.
+            </p>
+          )}
         </div>
-
-        {/* Employee Payroll Details */}
-        <div style={S.tableCard}>
-          <div style={{ marginBottom: "12px" }}>
-            <h2 style={S.tableTitle}>Employee Payroll Details</h2>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            {payrollRun.employees && payrollRun.employees.length > 0 ? (
-              <table style={S.table}>
+        {/* Employee Details */}
+        {payrollRun.entries && payrollRun.entries.length > 0 && (
+          <div style={styles.card}>
+            <h2 style={styles.sectionTitle}>Employee Breakdown & Individual Payslips</h2>
+            <div style={{ overflowX: "auto" }}>
+              <table style={styles.table}>
                 <thead>
                   <tr>
-                    <th style={S.th}>Employee</th>
-                    <th style={S.th}>Gross Pay</th>
-                    <th style={S.th}>PAYE Tax</th>
-                    <th style={S.th}>National Insurance</th>
-                    <th style={S.th}>Pension</th>
-                    <th style={S.th}>Net Pay</th>
-                    <th style={S.th}>Actions</th>
+                    <th style={styles.th}>Employee</th>
+                    <th style={styles.th}>Basic Pay</th>
+                    <th style={styles.th}>Overtime</th>
+                    <th style={styles.th}>Bonus</th>
+                    <th style={styles.th}>Gross Pay</th>
+                    <th style={styles.th}>Tax</th>
+                    <th style={styles.th}>NI</th>
+                    <th style={styles.th}>Pension</th>
+                    <th style={styles.th}>Net Pay</th>
+                    <th style={styles.th}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {payrollRun.employees.map((employee: any, index: number) => (
-                    <tr key={employee.id || index}>
-                      <td style={S.td}>
+                  {payrollRun.entries.map((entry, index) => (
+                    <tr key={index}>
+                      <td style={styles.td}>
                         <div>
-                          <div style={S.empName}>
-                            {employee.firstName} {employee.lastName}
-                          </div>
-                          <div style={S.empMeta}>
-                            {employee.employeeNumber} • Tax Code: {employee.taxCode || "1257L"}
-                          </div>
+                          <strong>{entry.employee.name}</strong>
+                          <div style={styles.employeeSub}>{entry.employee.employeeNumber}</div>
                         </div>
                       </td>
-                      <td style={S.td}>
-                        <span style={S.amount}>{formatCurrency(employee.grossPay || 0)}</span>
+                      <td style={styles.td}>{formatCurrency(entry.earnings.basicPay)}</td>
+                      <td style={styles.td}>{formatCurrency(entry.earnings.overtime)}</td>
+                      <td style={styles.td}>{formatCurrency(entry.earnings.bonus)}</td>
+                      <td style={styles.td}>
+                        <strong>{formatCurrency(entry.earnings.gross)}</strong>
                       </td>
-                      <td style={S.td}>
-                        <span style={S.amountTax}>{formatCurrency(employee.taxDeduction || 0)}</span>
+                      <td style={styles.td}>-{formatCurrency(entry.deductions.incomeTax)}</td>
+                      <td style={styles.td}>-{formatCurrency(entry.deductions.nationalInsurance)}</td>
+                      <td style={styles.td}>-{formatCurrency(entry.deductions.pensionEmployee)}</td>
+                      <td style={styles.td}>
+                        <strong>{formatCurrency(entry.netPay)}</strong>
                       </td>
-                      <td style={S.td}>
-                        <span style={S.amountTax}>{formatCurrency(employee.niDeduction || 0)}</span>
-                      </td>
-                      <td style={S.td}>
-                        <span style={S.amountPen}>{formatCurrency(employee.pensionDeduction || 0)}</span>
-                      </td>
-                      <td style={S.td}>
-                        <span style={S.amountNet}>{formatCurrency(employee.netPay || 0)}</span>
-                      </td>
-                      <td style={S.td}>
-                        <a
-                          href={`/dashboard/employees/${employee.id}`}
-                          style={{ color: "#3b82f6", textDecoration: "none", fontWeight: 500 }}
+                      <td style={styles.td}>
+                        <button
+                          onClick={() => generateIndividualPayslip(entry)}
+                          disabled={generatingPayslips}
+                          style={{
+                            ...styles.actionButton,
+                            ...(generatingPayslips ? styles.disabledButton : {}),
+                          }}
                         >
-                          View Employee
-                        </a>
+                          📄 PDF
+                        </button>
+                        <button
+                          onClick={() => alert("Email payslip feature coming soon!")}
+                          style={styles.actionButtonSecondary}
+                        >
+                          📧 Email
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            ) : (
-              <div style={S.empty}>
-                <p style={S.emptyText}>No employee details available for this payroll run.</p>
-              </div>
-            )}
+            </div>
           </div>
-        </div>
-
-        {/* Status Update Actions */}
-        <div style={S.summaryCard}>
-          <h2 style={S.h2}>Payroll Actions</h2>
-          <div style={{ marginTop: "16px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
-            {payrollRun.status === "draft" && (
-              <>
-                <button onClick={() => updateStatus("processing")} style={S.statusButton}>
-                  🚀 Start Processing
-                </button>
-                <button
-                  onClick={() => alert("Edit functionality coming soon!")}
-                  style={{ ...S.statusButton, backgroundColor: "#3b82f6" }}
-                >
-                  ✏️ Edit Payroll Run
-                </button>
-              </>
-            )}
-            {payrollRun.status === "processing" && (
-              <button onClick={() => updateStatus("completed")} style={S.statusButton}>
-                ✅ Mark as Completed
-              </button>
-            )}
-            {payrollRun.status === "completed" && (
-              <button onClick={() => updateStatus("submitted")} style={S.statusButton}>
-                📊 Submit RTI to HMRC
-              </button>
-            )}
-            {payrollRun.status === "submitted" && (
-              <div
-                style={{
-                  padding: "12px",
-                  backgroundColor: "#f0fdf4",
-                  borderRadius: "8px",
-                  color: "#166534",
-                }}
-              >
-                ✅ RTI has been submitted to HMRC
-              </div>
-            )}
+        )}
+        {/* Other Actions */}
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>Additional Actions</h2>
+          <div style={styles.actionsRow}>
+            <button
+              onClick={() => alert("Export Data feature coming soon!")}
+              style={styles.bulkActionButtonSecondary}
+            >
+              📊 Export Data
+            </button>
+            <button
+              onClick={() => alert("Process Payment feature coming soon!")}
+              style={styles.bulkActionButton}
+            >
+              💰 Process Payment
+            </button>
           </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div style={S.actions}>
-          <a href="/dashboard/payroll" style={S.backLink}>
-            ← Back to Payroll Dashboard
-          </a>
         </div>
       </div>
     </div>

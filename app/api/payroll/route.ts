@@ -1,217 +1,136 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, readFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
+import { NextResponse } from "next/server";
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+type PayFrequency = "weekly" | "bi-weekly" | "monthly";
 
-// Data directory for storing payroll runs
-const dataDir = path.join(process.cwd(), 'data');
-const payrollFile = path.join(dataDir, 'payroll-runs.json');
+type PayrollRunEntry = {
+  employeeId: string;
+  employee: {
+    name: string;
+    employeeNumber: string;
+    email: string;
+  };
+  earnings: {
+    basicPay: number;
+    overtime: number;
+    bonus: number;
+    gross: number;
+  };
+  deductions: {
+    incomeTax: number;
+    nationalInsurance: number;
+    pensionEmployee: number;
+    total: number;
+  };
+  netPay: number;
+  payFrequency: PayFrequency;
+};
 
-// Ensure data directory exists
-async function ensureDataDir() {
-  if (!existsSync(dataDir)) {
-    await mkdir(dataDir, { recursive: true });
-  }
-}
+type PayrollRunInput = {
+  type?: string;
+  payFrequency?: PayFrequency;
+  payPeriod?: {
+    startDate?: string;
+    endDate?: string;
+    payDate?: string;
+  };
+  entries?: PayrollRunEntry[];
+  totals?: {
+    grossPay?: number;
+    totalDeductions?: number;
+    netPay?: number;
+  };
+  employeeCount?: number;
+  status?: string;
+};
 
-// Load payroll runs from file
-async function loadPayrollRuns(): Promise<any[]> {
+type PayrollRun = {
+  id: string;
+  runNumber: string;
+  payPeriodStart: string;
+  payPeriodEnd: string;
+  payDate: string;
+  description: string;
+  status: string;
+  totalGrossPay: number;
+  totalNetPay: number;
+  employeeCount: number;
+  createdBy: string;
+  createdAt: string;
+  entries: PayrollRunEntry[];
+  payFrequency: PayFrequency;
+};
+
+// Demo storage (replace with your database)
+let payrollRuns: PayrollRun[] = [];
+
+export async function POST(request: Request) {
   try {
-    await ensureDataDir();
+    const body = (await request.json()) as PayrollRunInput;
 
-    if (!existsSync(payrollFile)) {
-      // Create initial demo data
-      const initialData = [
-        {
-          id: 'pr-demo-001',
-          runNumber: 'PR-2025-09-01',
-          payPeriodStart: '2025-08-01',
-          payPeriodEnd: '2025-08-31',
-          payDate: '2025-09-05',
-          description: 'Demo Payroll - August 2025',
-          status: 'completed',
-          totalGrossPay: 15000,
-          totalNetPay: 11250,
-          employeeCount: 3,
-          createdBy: 'Admin',
-          createdAt: new Date('2025-08-31').toISOString(),
-          updatedAt: new Date('2025-08-31').toISOString(),
-        },
-      ];
+    console.log("Received payroll data:", body); // Debug log
 
-      await writeFile(payrollFile, JSON.stringify(initialData, null, 2));
-      return initialData;
-    }
+    // Helpers
+    const todayStr = new Date().toISOString().split("T")[0];
+    const toNumber = (v: unknown, fallback = 0) =>
+      typeof v === "number" && Number.isFinite(v) ? v : fallback;
 
-    const data = await readFile(payrollFile, 'utf-8');
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('Error loading payroll runs:', error);
-    return [];
-  }
-}
-
-// Save payroll runs to file
-async function savePayrollRuns(runs: any[]): Promise<void> {
-  try {
-    await ensureDataDir();
-    await writeFile(payrollFile, JSON.stringify(runs, null, 2));
-    console.log('💾 Saved payroll runs to file:', runs.length);
-  } catch (error) {
-    console.error('Error saving payroll runs:', error);
-    throw error;
-  }
-}
-
-// POST /api/payroll - Create new payroll run
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    console.log('📝 Creating payroll run with data:', JSON.stringify(body, null, 2));
-
-    // Load existing runs
-    const payrollRuns = await loadPayrollRuns();
-
-    // Generate unique run number with timestamp (zero-padded hhmm)
-    const now = new Date();
-    const runNumber = `PR-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-      now.getDate(),
-    ).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-
-    // Calculate totals from employees if provided
-    const employees = Array.isArray(body?.employees) ? body.employees : [];
-    const calculatedTotals = employees.reduce(
-      (acc: any, emp: any) => {
-        acc.gross += Number(emp?.grossPay) || 0;
-        acc.net += Number(emp?.netPay) || 0;
-        acc.tax += Number(emp?.taxDeduction) || 0;
-        acc.ni += Number(emp?.niDeduction) || 0;
-        acc.pension += Number(emp?.pensionDeduction) || 0;
-        return acc;
-      },
-      { gross: 0, net: 0, tax: 0, ni: 0, pension: 0 },
-    );
-
-    // Create payroll run object
-    const newPayrollRun = {
-      id: `pr-${Date.now()}`,
-      runNumber,
-      payPeriodStart: body?.payPeriodStart ?? null,
-      payPeriodEnd: body?.payPeriodEnd ?? null,
-      payDate: body?.payDate ?? null,
-      description: body?.description || `Payroll Run - ${new Date().toLocaleDateString('en-GB')}`,
-      employees,
-      selectedEmployees: Array.isArray(body?.selectedEmployees) ? body.selectedEmployees : [],
-      newStartersCheck: body?.newStartersCheck || {},
-      totals: body?.totals || calculatedTotals,
-      totalGrossPay: Number(body?.totalGrossPay) || calculatedTotals.gross,
-      totalNetPay: Number(body?.totalNetPay) || calculatedTotals.net,
-      status: 'draft',
-      createdBy: body?.createdBy || body?.newStartersCheck?.checkedBy || 'System',
-      employeeCount: employees.length,
+    // Create new payroll run with proper date handling
+    const newPayrollRun: PayrollRun = {
+      id: `PR-${Date.now()}`,
+      runNumber: `PAY-${new Date().getFullYear()}-${String(
+        payrollRuns.length + 1
+      ).padStart(3, "0")}`,
+      payPeriodStart: body.payPeriod?.startDate || todayStr,
+      payPeriodEnd: body.payPeriod?.endDate || todayStr,
+      payDate: body.payPeriod?.payDate || todayStr,
+      description: `${(body.payFrequency || "monthly")
+        .charAt(0)
+        .toUpperCase()}${(body.payFrequency || "monthly").slice(
+        1
+      )} Batch Payroll - ${body.employeeCount || 0} employees`,
+      status: body.status || "draft",
+      totalGrossPay: toNumber(body.totals?.grossPay, 0),
+      totalNetPay: toNumber(body.totals?.netPay, 0),
+      employeeCount: body.employeeCount || (body.entries?.length ?? 0),
+      createdBy: "System Admin",
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      entries: Array.isArray(body.entries) ? body.entries : [],
+      payFrequency: body.payFrequency || "monthly",
     };
 
-    // Add to array and save
-    const updated = [...payrollRuns, newPayrollRun];
-    await savePayrollRuns(updated);
+    console.log("Created payroll run:", newPayrollRun); // Debug log
 
-    console.log('✅ Payroll run created and saved to file:', {
-      id: newPayrollRun.id,
-      runNumber: newPayrollRun.runNumber,
-      totalRuns: updated.length,
+    payrollRuns.push(newPayrollRun);
+
+    return NextResponse.json({
+      success: true,
+      payrollRun: newPayrollRun,
+      message: "Payroll run created successfully",
     });
-
-    return NextResponse.json(
-      {
-        success: true,
-        id: newPayrollRun.id,
-        runNumber: newPayrollRun.runNumber,
-        message: 'Payroll run created successfully',
-        payrollRun: newPayrollRun,
-      },
-      { status: 201 },
-    );
-  } catch (error) {
-    console.error('❌ Error creating payroll run:', error);
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "Unknown error occurred";
+    console.error("Failed to create payroll run:", error);
     return NextResponse.json(
       {
         success: false,
-        error: 'Failed to create payroll run',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: "Failed to create payroll run",
+        details: message,
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
 
-// GET /api/payroll - List payroll runs
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
-    console.log('📋 GET /api/payroll called - loading from file');
-
-    const payrollRuns = await loadPayrollRuns();
-
-    console.log('📊 Loaded payroll runs:', payrollRuns.length);
-    console.log(
-      '📋 Runs details:',
-      payrollRuns.map((run) => ({
-        id: run.id,
-        runNumber: run.runNumber,
-        status: run.status,
-        employeeCount: run.employeeCount,
-      })),
-    );
-
-    // Sort by creation date (newest first) without mutating the source array
-    const sortedRuns = [...payrollRuns].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-
-    return NextResponse.json(sortedRuns, { status: 200 });
-  } catch (error) {
-    console.error('❌ Error fetching payroll runs:', error);
+    console.log("Returning payroll runs:", payrollRuns); // Debug log
+    return NextResponse.json(payrollRuns);
+  } catch (error: unknown) {
+    console.error("Failed to fetch payroll runs:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to fetch payroll runs',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 },
-    );
-  }
-}
-
-// DELETE /api/payroll - Clear all runs (for testing)
-export async function DELETE() {
-  try {
-    const current = await loadPayrollRuns();
-    const count = current.length;
-
-    await savePayrollRuns([]);
-
-    console.log(`🗑️ Cleared ${count} payroll runs`);
-
-    return NextResponse.json(
-      {
-        success: true,
-        message: `Cleared ${count} payroll runs`,
-        cleared: count,
-      },
-      { status: 200 },
-    );
-  } catch (error) {
-    console.error('❌ Error clearing payroll runs:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to clear payroll runs',
-      },
-      { status: 500 },
+      { error: "Failed to fetch payroll runs" },
+      { status: 500 }
     );
   }
 }
