@@ -1,775 +1,542 @@
+// app/dashboard/payroll/[id]/page.tsx
 'use client';
-import type React from 'react';
-import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
 
-// Workflow types (same as before)
-type WorkflowStatus = 
-  | 'draft'         
-  | 'processing'    
-  | 'review'        
-  | 'approved'      
-  | 'submitted'     
-  | 'completed'     
-  | 'cancelled';
+import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import { Inter } from 'next/font/google';
 
-interface WorkflowHistoryEntry {
-  id: string;
-  from_status: WorkflowStatus | null;
-  to_status: WorkflowStatus;
-  changed_by: string;
-  changed_at: string;
-  comment?: string;
-  automated?: boolean;
-}
+const inter = Inter({ subsets: ['latin'] });
 
-interface PayrollRun {
+type Frequency = 'weekly' | 'fortnightly' | 'four_weekly' | 'monthly';
+type Status = 'draft' | 'processing' | 'approved' | 'rti_submitted' | 'completed';
+
+type Run = {
   id: string;
   runNumber: string;
-  name: string;
-  payPeriod: string;
-  payPeriodStart: string;
-  payPeriodEnd: string;
+  periodStart: string;
+  periodEnd: string;
   payDate: string;
-  description: string;
-  status: string;
-  workflow_status?: WorkflowStatus;
-  workflow_history?: WorkflowHistoryEntry[];
-  employeeCount: number;
-  grossPay: number;
-  netPay: number;
-  totalTax: number;
-  totalNI: number;
-  totalPension: number;
-  createdDate: string;
-  createdBy: string;
-  submittedDate?: string;
-  approved_by_user_id?: string;
-  approved_at?: string;
-  submitted_to_hmrc_at?: string;
-}
+  frequency: Frequency;
+  status: Status;
+  createdAt: string;
+  updatedAt: string;
+};
 
-interface PayrollEntry {
-  employeeId: string;
+type Row = {
+  id: string;           // pay_run_employees.id
+  employeeId: string;   // employees.id
   employeeName: string;
   employeeNumber: string;
-  grossPay: number;
-  taxDeduction: number;
-  niDeduction: number;
-  pensionDeduction: number;
-  netPay: number;
-  taxCode: string;
+  email: string;
+  gross: number;
+  deductions: number;
+  net: number;
+};
+
+type ApiResponse = {
+  run: Run;
+  employees: Row[];
+  totals: {
+    total_gross: number;
+    total_deductions: number;
+    total_net: number;
+    employee_count: number;
+  };
+};
+
+const S = {
+  page: {
+    minHeight: '100vh',
+    background:
+      'linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)',
+    padding: '24px 12px',
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  } as CSSProperties,
+  wrap: {
+    maxWidth: '1100px',
+    margin: '0 auto',
+    display: 'grid',
+    gap: '16px',
+  } as CSSProperties,
+  headerRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr auto',
+    alignItems: 'center',
+  } as CSSProperties,
+  title: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    fontSize: '1.5rem',
+    fontWeight: 700,
+    color: 'white',
+  } as CSSProperties,
+  navActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  } as CSSProperties,
+  btn: {
+    backgroundColor: '#1e40af',
+    color: 'white',
+    padding: '10px 14px',
+    borderRadius: '12px',
+    fontWeight: 600,
+    fontSize: '0.95rem',
+  } as CSSProperties,
+  success: {
+    backgroundColor: 'rgba(16,185,129,0.15)',
+    color: '#065f46',
+    border: '1px solid #10b981',
+    borderRadius: '12px',
+    padding: '10px 12px',
+    fontSize: '0.95rem',
+  } as CSSProperties,
+  cardGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '12px',
+  } as CSSProperties,
+  card: {
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: '16px',
+    boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
+    padding: '16px',
+    textAlign: 'center',
+  } as CSSProperties,
+  cardLabel: {
+    marginBottom: '4px',
+    opacity: 0.8,
+    fontSize: '0.85rem',
+  } as CSSProperties,
+  cardValue: {
+    fontSize: '1.6rem',
+    fontWeight: 800,
+  } as CSSProperties,
+  section: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: '16px',
+    boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
+    padding: '16px',
+  } as CSSProperties,
+  tableWrap: {
+    overflowX: 'auto',
+  } as CSSProperties,
+  table: {
+    width: '100%',
+    borderCollapse: 'separate',
+    borderSpacing: 0,
+  } as CSSProperties,
+  th: {
+    textAlign: 'left',
+    padding: '12px',
+    fontSize: '0.9rem',
+    color: '#1e3a8a',
+    borderBottom: '1px solid #e5e7eb',
+    whiteSpace: 'nowrap',
+  } as CSSProperties,
+  td: {
+    padding: '12px',
+    borderBottom: '1px solid #f1f5f9',
+    fontSize: '0.95rem',
+    verticalAlign: 'middle',
+  } as CSSProperties,
+  input: {
+    width: '110px',
+    padding: '8px 10px',
+    borderRadius: '10px',
+    border: '1px solid #cbd5e1',
+    outline: 'none',
+    fontSize: '0.95rem',
+    textAlign: 'right',
+  } as CSSProperties,
+  error: {
+    color: '#b91c1c',
+    fontSize: '0.85rem',
+    marginTop: '8px',
+  } as CSSProperties,
+  footerRow: {
+    display: 'flex',
+    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  } as CSSProperties,
+  footerRight: {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'center',
+  } as CSSProperties,
+  statusPill: {
+    display: 'inline-block',
+    padding: '6px 10px',
+    borderRadius: '999px',
+    backgroundColor: 'rgba(30,64,175,0.15)',
+    color: '#1e40af',
+    fontWeight: 700,
+    fontSize: '0.8rem',
+  } as CSSProperties,
+  meta: { display: 'flex', gap: '12px', flexWrap: 'wrap', color: 'white' } as CSSProperties,
+  metaItem: { display: 'flex', gap: '6px', alignItems: 'center' } as CSSProperties,
+  green: { color: '#059669', fontWeight: 700 } as CSSProperties,
+  blue: { color: '#1e40af', fontWeight: 700 } as CSSProperties,
+};
+
+function gbp(n: number) {
+  return n.toLocaleString('en-GB', { style: 'currency', currency: 'GBP' });
+}
+function toNumberSafe(v: string | number): number {
+  const n = typeof v === 'number' ? v : parseFloat(v.replace(/[^\d.-]/g, ''));
+  return isFinite(n) ? n : 0;
 }
 
-// Workflow configurations
-const WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-  draft: ['processing', 'cancelled'],
-  processing: ['review', 'draft', 'cancelled'], 
-  review: ['approved', 'processing'],
-  approved: ['submitted', 'review'],
-  submitted: ['completed'],
-  completed: [],
-  cancelled: ['draft']
-};
-
-const WORKFLOW_STATUS_CONFIG: Record<WorkflowStatus, {
-  label: string;
-  color: string;
-  bgColor: string;
-  description: string;
-  canEdit: boolean;
-  canDelete: boolean;
-}> = {
-  draft: {
-    label: 'Draft',
-    color: '#92400e',
-    bgColor: '#fef3c7',
-    description: 'Payroll run is being prepared',
-    canEdit: true,
-    canDelete: true
-  },
-  processing: {
-    label: 'Processing', 
-    color: '#1e40af',
-    bgColor: '#dbeafe',
-    description: 'Calculations in progress',
-    canEdit: false,
-    canDelete: false
-  },
-  review: {
-    label: 'Review',
-    color: '#92400e', 
-    bgColor: '#fef3c7',
-    description: 'Ready for approval',
-    canEdit: false,
-    canDelete: false
-  },
-  approved: {
-    label: 'Approved',
-    color: '#166534',
-    bgColor: '#dcfce7', 
-    description: 'Approved for HMRC submission',
-    canEdit: false,
-    canDelete: false
-  },
-  submitted: {
-    label: 'RTI Submitted',
-    color: '#7c3aed',
-    bgColor: '#f3e8ff',
-    description: 'Submitted to HMRC',
-    canEdit: false,
-    canDelete: false
-  },
-  completed: {
-    label: 'Completed',
-    color: '#166534',
-    bgColor: '#dcfce7',
-    description: 'Fully processed and paid',
-    canEdit: false,
-    canDelete: false
-  },
-  cancelled: {
-    label: 'Cancelled', 
-    color: '#dc2626',
-    bgColor: '#fee2e2',
-    description: 'Cancelled payroll run',
-    canEdit: false,
-    canDelete: true
-  }
-};
-
-export default function PayrollRunDetailsPage() {
-  const router = useRouter();
+export default function RunDetailPage() {
   const params = useParams<{ id: string }>();
-  const payrollId = params?.id;
-  
-  const [payrollRun, setPayrollRun] = useState<PayrollRun | null>(null);
-  const [payrollEntries, setPayrollEntries] = useState<PayrollEntry[]>([]);
+  const runId = params?.id as string;
+
+  const [data, setData] = useState<ApiResponse | null>(null);
+  const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showWorkflowHistory, setShowWorkflowHistory] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [validation, setValidation] = useState<Record<string, string>>({});
+  const [approvedMsg, setApprovedMsg] = useState<string | null>(null);
+
+  const load = async () => {
+    setApprovedMsg(null);
+    setErr(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/payroll/${runId}`, { cache: 'no-store' });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `Failed to load run ${runId}`);
+      }
+      const j: ApiResponse = await res.json();
+      setData(j);
+      setRows(j.employees);
+      setDirty(false);
+      setValidation({});
+    } catch (e: any) {
+      setErr(e.message || 'Error loading run');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // Demo payroll run data with workflow status
-      const demoPayrollRuns: PayrollRun[] = [
-        {
-          id: 'pr-001',
-          runNumber: 'PR-2025-001',
-          name: 'Monthly Payroll - July 2025',
-          payPeriod: '01/07/2025 - 31/07/2025',
-          payPeriodStart: '2025-07-01',
-          payPeriodEnd: '2025-07-31',
-          payDate: '2025-07-31',
-          description: 'Regular monthly payroll run',
-          status: 'completed',
-          workflow_status: 'completed',
-          employeeCount: 3,
-          grossPay: 9000.00,
-          netPay: 6850.00,
-          totalTax: 1385.00,
-          totalNI: 780.00,
-          totalPension: 450.00,
-          createdDate: '2025-07-28',
-          createdBy: 'Adam',
-          submittedDate: '2025-08-01',
-          approved_by_user_id: 'Adam',
-          approved_at: '2025-07-30T14:30:00Z',
-          submitted_to_hmrc_at: '2025-08-01T09:00:00Z',
-          workflow_history: [
-            {
-              id: '1',
-              from_status: null,
-              to_status: 'draft',
-              changed_by: 'Adam',
-              changed_at: '2025-07-28T10:00:00Z',
-              comment: 'Payroll run created',
-              automated: true
-            },
-            {
-              id: '2',
-              from_status: 'draft',
-              to_status: 'processing',
-              changed_by: 'Adam',
-              changed_at: '2025-07-29T09:00:00Z',
-              comment: 'Started payroll calculations'
-            },
-            {
-              id: '3',
-              from_status: 'processing',
-              to_status: 'review',
-              changed_by: 'System',
-              changed_at: '2025-07-29T09:15:00Z',
-              comment: 'Calculations completed automatically',
-              automated: true
-            },
-            {
-              id: '4',
-              from_status: 'review',
-              to_status: 'approved',
-              changed_by: 'Adam',
-              changed_at: '2025-07-30T14:30:00Z',
-              comment: 'Reviewed and approved for submission'
-            },
-            {
-              id: '5',
-              from_status: 'approved',
-              to_status: 'submitted',
-              changed_by: 'Adam',
-              changed_at: '2025-08-01T09:00:00Z',
-              comment: 'Submitted to HMRC RTI'
-            },
-            {
-              id: '6',
-              from_status: 'submitted',
-              to_status: 'completed',
-              changed_by: 'System',
-              changed_at: '2025-08-01T10:30:00Z',
-              comment: 'HMRC submission confirmed',
-              automated: true
-            }
-          ]
-        },
-        {
-          id: 'pr-002',
-          runNumber: 'PR-2025-002',
-          name: 'Monthly Payroll - August 2025',
-          payPeriod: '01/08/2025 - 31/08/2025',
-          payPeriodStart: '2025-08-01',
-          payPeriodEnd: '2025-08-31',
-          payDate: '2025-08-31',
-          description: 'Regular monthly payroll run',
-          status: 'review',
-          workflow_status: 'review',
-          employeeCount: 3,
-          grossPay: 9000.00,
-          netPay: 6850.00,
-          totalTax: 1385.00,
-          totalNI: 780.00,
-          totalPension: 450.00,
-          createdDate: '2025-08-28',
-          createdBy: 'Adam',
-          workflow_history: [
-            {
-              id: '1',
-              from_status: null,
-              to_status: 'draft',
-              changed_by: 'Adam',
-              changed_at: '2025-08-28T10:00:00Z',
-              comment: 'Payroll run created'
-            },
-            {
-              id: '2',
-              from_status: 'draft',
-              to_status: 'processing',
-              changed_by: 'Adam',
-              changed_at: '2025-08-29T09:00:00Z',
-              comment: 'Started payroll calculations'
-            },
-            {
-              id: '3',
-              from_status: 'processing',
-              to_status: 'review',
-              changed_by: 'System',
-              changed_at: '2025-08-29T09:15:00Z',
-              comment: 'Calculations completed - ready for review',
-              automated: true
-            }
-          ]
+    if (runId) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId]);
+
+  const totals = useMemo(() => {
+    const tg = rows.reduce((a, r) => a + r.gross, 0);
+    const td = rows.reduce((a, r) => a + r.deductions, 0);
+    const tn = rows.reduce((a, r) => a + r.net, 0);
+    return { tg, td, tn };
+  }, [rows]);
+
+  const onChangeCell = (id: string, field: 'gross' | 'deductions' | 'net', value: string) => {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r;
+        const next = { ...r };
+        const n = toNumberSafe(value);
+        next[field] = n;
+        if (field === 'gross' || field === 'deductions') {
+          next.net = Number((next.gross - next.deductions).toFixed(2));
         }
-      ];
-      
-      // Demo payroll entries data
-      const demoPayrollEntries: { [key: string]: PayrollEntry[] } = {
-        'pr-001': [
-          {
-            employeeId: 'EMP001',
-            employeeName: 'Sarah Johnson',
-            employeeNumber: 'EMP001',
-            grossPay: 2916.67,
-            taxDeduction: 450.00,
-            niDeduction: 280.00,
-            pensionDeduction: 145.83,
-            netPay: 2040.84,
-            taxCode: '1257L'
-          },
-          {
-            employeeId: 'EMP002',
-            employeeName: 'James Wilson',
-            employeeNumber: 'EMP002',
-            grossPay: 2333.33,
-            taxDeduction: 315.00,
-            niDeduction: 200.00,
-            pensionDeduction: 116.67,
-            netPay: 1701.66,
-            taxCode: '1257L'
-          },
-          {
-            employeeId: 'EMP003',
-            employeeName: 'Emma Brown',
-            employeeNumber: 'EMP003',
-            grossPay: 3750.00,
-            taxDeduction: 625.00,
-            niDeduction: 380.00,
-            pensionDeduction: 187.50,
-            netPay: 2557.50,
-            taxCode: '1257L'
-          }
-        ],
-        'pr-002': [
-          {
-            employeeId: 'EMP001',
-            employeeName: 'Sarah Johnson',
-            employeeNumber: 'EMP001',
-            grossPay: 2916.67,
-            taxDeduction: 440.00,
-            niDeduction: 290.00,
-            pensionDeduction: 145.83,
-            netPay: 2040.84,
-            taxCode: '1257L'
-          },
-          {
-            employeeId: 'EMP002',
-            employeeName: 'James Wilson',
-            employeeNumber: 'EMP002',
-            grossPay: 2333.33,
-            taxDeduction: 310.00,
-            niDeduction: 210.00,
-            pensionDeduction: 116.67,
-            netPay: 1696.66,
-            taxCode: '1257L'
-          }
-        ]
-      };
-      
-      const foundPayrollRun = demoPayrollRuns.find(pr => pr.id === payrollId);
-      
-      if (foundPayrollRun) {
-        setPayrollRun(foundPayrollRun);
-        setPayrollEntries(demoPayrollEntries[payrollId || ''] || []);
-      }
-      
-      setLoading(false);
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [payrollId]);
-
-  // Handle workflow status changes
-  const handleStatusChange = async (newStatus: WorkflowStatus) => {
-    if (!payrollRun) return;
-    
-    try {
-      const needsConfirmation = ['cancelled', 'submitted', 'completed'].includes(newStatus);
-      
-      if (needsConfirmation) {
-        const confirmed = confirm(`Are you sure you want to change status to ${newStatus}?`);
-        if (!confirmed) return;
-      }
-
-      // Update payroll run status
-      const updatedRun = {
-        ...payrollRun,
-        workflow_status: newStatus,
-        status: newStatus
-      };
-      
-      setPayrollRun(updatedRun);
-      alert(`✅ Status changed to ${newStatus}`);
-      
-    } catch (error) {
-      console.error('Status change error:', error);
-      alert('❌ Failed to change status');
-    }
-  };
-
-  // Get available workflow transitions
-  const getAvailableTransitions = (currentStatus: WorkflowStatus): WorkflowStatus[] => {
-    return WORKFLOW_TRANSITIONS[currentStatus] || [];
-  };
-
-  // Get workflow status badge
-  const getWorkflowStatusBadge = (status: WorkflowStatus) => {
-    const config = WORKFLOW_STATUS_CONFIG[status] || WORKFLOW_STATUS_CONFIG.draft;
-    
-    return (
-      <span
-        style={{
-          padding: '6px 16px',
-          borderRadius: '12px',
-          fontSize: '14px',
-          fontWeight: 600,
-          textTransform: 'capitalize',
-          backgroundColor: config.bgColor,
-          color: config.color,
-          border: `1px solid ${config.color}`,
-        }}
-        title={config.description}
-      >
-        {config.label}
-      </span>
+        return next;
+      })
     );
+    setDirty(true);
   };
 
-  // Format currency
-  const formatCurrency = (amount: number) => `£${amount.toFixed(2)}`;
-
-  // Format date
-  const formatDate = (dateStr: string) => {
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString('en-GB');
-    } catch (error) {
-      return dateStr;
+  useEffect(() => {
+    const v: Record<string, string> = {};
+    for (const r of rows) {
+      if (r.gross < 0) v[r.id] = 'Gross cannot be negative';
+      else if (r.deductions < 0) v[r.id] = 'Deductions cannot be negative';
+      else if (r.net < 0) v[r.id] = 'Net cannot be negative';
     }
-  };
+    setValidation(v);
+  }, [rows]);
 
-  // Format datetime for workflow history
-  const formatDateTime = (dateStr: string) => {
+  const hasErrors = Object.keys(validation).length > 0;
+
+  const saveChanges = async () => {
     try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString('en-GB') + ' ' + date.toLocaleTimeString('en-GB', {
-        hour: '2-digit',
-        minute: '2-digit'
+      setSaving(true);
+      setErr(null);
+      const payload = {
+        items: rows.map((r) => ({
+          id: r.id,
+          gross: Number(r.gross.toFixed(2)),
+          deductions: Number(r.deductions.toFixed(2)),
+          net: Number(r.net.toFixed(2)),
+        })),
+      };
+      const res = await fetch(`/api/payroll/${runId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-    } catch (error) {
-      return dateStr;
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || 'Failed to save changes');
+      }
+      const j: ApiResponse = await res.json();
+      setData(j);
+      setRows(j.employees);
+      setDirty(false);
+    } catch (e: any) {
+      setErr(e.message || 'Save failed');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const styles = {
-    container: {
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      background: 'linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)',
-      minHeight: '100vh',
-      padding: '40px 20px',
-    } as React.CSSProperties,
-    maxWidth: {
-      maxWidth: '1200px',
-      margin: '0 auto',
-    } as React.CSSProperties,
-    card: {
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      backdropFilter: 'blur(20px)',
-      padding: '24px 32px',
-      borderRadius: '12px',
-      boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)',
-      marginBottom: '24px',
-      border: '1px solid rgba(255, 255, 255, 0.2)',
-    } as React.CSSProperties,
-    title: {
-      fontSize: '28px',
-      fontWeight: 'bold',
-      color: '#1f2937',
-      margin: '0 0 8px 0',
-    } as React.CSSProperties,
-    subtitle: {
-      fontSize: '16px',
-      color: '#6b7280',
-      margin: '0 0 24px 0',
-    } as React.CSSProperties,
-    button: {
-      display: 'inline-block',
-      padding: '12px 24px',
-      backgroundColor: '#10b981',
-      color: '#000000',
-      textDecoration: 'none',
-      borderRadius: '8px',
-      fontSize: '14px',
-      fontWeight: 700,
-      border: 'none',
-      cursor: 'pointer',
-      marginRight: '16px',
-      marginBottom: '16px',
-    } as React.CSSProperties,
-    buttonSecondary: {
-      display: 'inline-block',
-      padding: '8px 16px',
-      backgroundColor: 'rgba(59, 130, 246, 0.1)',
-      color: '#3b82f6',
-      textDecoration: 'none',
-      borderRadius: '8px',
-      fontSize: '12px',
-      fontWeight: 600,
-      border: '1px solid #3b82f6',
-      cursor: 'pointer',
-      marginRight: '8px',
-      marginBottom: '8px',
-    } as React.CSSProperties,
-    table: {
-      width: '100%',
-      borderCollapse: 'collapse' as const,
-      marginTop: '16px',
-    },
-    th: {
-      backgroundColor: '#f9fafb',
-      padding: '12px',
-      textAlign: 'left' as const,
-      fontSize: '14px',
-      fontWeight: 600,
-      color: '#374151',
-      borderBottom: '1px solid #e5e7eb',
-    } as React.CSSProperties,
-    td: {
-      padding: '12px',
-      borderBottom: '1px solid #e5e7eb',
-      fontSize: '14px',
-      color: '#1f2937',
-    } as React.CSSProperties,
-    loading: {
-      textAlign: 'center' as const,
-      padding: '80px 20px',
-      fontSize: '18px',
-      color: '#6b7280',
-    } as React.CSSProperties,
-    brand: { color: '#3b82f6' } as React.CSSProperties,
-    statsGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-      gap: '16px',
-      marginBottom: '24px',
-    } as React.CSSProperties,
-    statCard: {
-      padding: '16px',
-      backgroundColor: '#f8fafc',
-      borderRadius: '8px',
-      border: '1px solid #e2e8f0',
-      textAlign: 'center' as const,
-    } as React.CSSProperties,
-    workflowHistory: {
-      maxHeight: '300px',
-      overflowY: 'auto' as const,
-      border: '1px solid #e5e7eb',
-      borderRadius: '6px',
-      padding: '12px',
-    } as React.CSSProperties,
-    historyEntry: {
-      padding: '8px 12px',
-      marginBottom: '8px',
-      backgroundColor: '#f9fafb',
-      borderRadius: '4px',
-      borderLeft: '3px solid #10b981',
-    } as React.CSSProperties,
+  const canApprove =
+    data &&
+    (data.run.status === 'draft' || data.run.status === 'processing') &&
+    rows.length > 0 &&
+    !dirty &&
+    !hasErrors;
+
+  const approveRun = async () => {
+    try {
+      setSaving(true);
+      setErr(null);
+      const res = await fetch(`/api/payroll/${runId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || 'Failed to approve run');
+      }
+      const j: ApiResponse = await res.json();
+      setData(j);
+      setRows(j.employees);
+      setDirty(false);
+      setApprovedMsg('Run approved. FPS queued in RTI logs.');
+    } catch (e: any) {
+      setErr(e.message || 'Approval failed');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.maxWidth}>
-          <div style={styles.card}>
-            <div style={styles.loading}>🔄 Loading Payroll Run Details...</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!payrollRun) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.maxWidth}>
-          <div style={styles.card}>
-            <h1 style={styles.title}>Payroll Run Not Found</h1>
-            <p style={styles.subtitle}>
-              The payroll run you're looking for doesn't exist or has been removed.
-            </p>
-            <button
-              style={styles.button}
-              onClick={() => router.push('/dashboard/payroll')}
-            >
-              ← Back to Payroll Dashboard
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const currentStatus = (payrollRun.workflow_status || 'draft') as WorkflowStatus;
-  const availableTransitions = getAvailableTransitions(currentStatus);
-  const config = WORKFLOW_STATUS_CONFIG[currentStatus];
+  const exportCsv = () => {
+    const url = `/api/payroll/${runId}/export`;
+    window.location.href = url;
+  };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.maxWidth}>
-        {/* Header */}
-        <div style={styles.card}>
-          <h1 style={styles.title}>
-            💼 <span style={styles.brand}>WageFlow</span> Payroll Run Details
-          </h1>
-          <p style={styles.subtitle}>
-            {payrollRun.name} - {payrollRun.description}
-          </p>
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <button
-              style={styles.buttonSecondary}
-              onClick={() => router.push('/dashboard/payroll')}
-            >
-              ← Back to Payroll
-            </button>
-            {config.canEdit && (
-              <button
-                style={styles.buttonSecondary}
-                onClick={() => alert('Edit functionality coming soon!')}
-              >
-                ✏️ Edit
-              </button>
-            )}
-            <button
-              style={styles.buttonSecondary}
-              onClick={() => setShowWorkflowHistory(!showWorkflowHistory)}
-            >
-              📋 {showWorkflowHistory ? 'Hide' : 'Show'} History
+    <div style={S.page}>
+      <div style={S.wrap}>
+        <div style={S.headerRow}>
+          <div style={S.title}>
+            <span>Payroll Run</span>
+            {data ? <span style={S.statusPill}>{data.run.status.toUpperCase()}</span> : null}
+          </div>
+          <div style={S.navActions}>
+            <Link href="/dashboard/payroll" style={S.btn}>Back to Runs</Link>
+            <button type="button" onClick={exportCsv} style={{ ...S.btn, backgroundColor: '#059669' }}>
+              Export CSV
             </button>
           </div>
         </div>
 
-        {/* Payroll Run Summary */}
-        <div style={styles.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#1f2937', margin: '0' }}>
-              {payrollRun.runNumber}
+        <div style={S.meta}>
+          <div style={S.metaItem}>
+            <span>Run:</span>
+            <span className={inter.className} style={S.blue}>{data?.run.runNumber ?? '—'}</span>
+          </div>
+          <div style={S.metaItem}>
+            <span>Period:</span>
+            <span className={inter.className} style={S.green}>
+              {data ? `${data.run.periodStart} to ${data.run.periodEnd}` : '—'}
+            </span>
+          </div>
+          <div style={S.metaItem}>
+            <span>Pay date:</span>
+            <span className={inter.className} style={S.blue}>{data?.run.payDate ?? '—'}</span>
+          </div>
+        </div>
+
+        {approvedMsg && <div style={S.success}>{approvedMsg}</div>}
+        {err && <div style={S.error}>{err}</div>}
+
+        <div style={S.cardGrid}>
+          <div style={S.card}>
+            <div style={S.cardLabel}>Employees</div>
+            <div className={inter.className} style={S.cardValue}>
+              {data?.totals.employee_count ?? (loading ? '...' : 0)}
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={S.cardLabel}>Total Gross</div>
+            <div className={inter.className} style={S.cardValue}>
+              {gbp(totals.tg)}
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={S.cardLabel}>Total Net</div>
+            <div className={inter.className} style={S.cardValue}>
+              {gbp(totals.tn)}
+            </div>
+          </div>
+        </div>
+
+        <div style={S.section}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
+              Employees in this run
             </h2>
-            {getWorkflowStatusBadge(currentStatus)}
-          </div>
-          
-          <div style={styles.statsGrid}>
-            <div style={styles.statCard}>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Pay Period</div>
-              <div style={{ fontWeight: 'bold' }}>{formatDate(payrollRun.payPeriodStart)} - {formatDate(payrollRun.payPeriodEnd)}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Pay Date</div>
-              <div style={{ fontWeight: 'bold' }}>{formatDate(payrollRun.payDate)}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Employees</div>
-              <div style={{ fontWeight: 'bold' }}>{payrollRun.employeeCount}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Gross Pay</div>
-              <div style={{ fontWeight: 'bold' }}>{formatCurrency(payrollRun.grossPay)}</div>
-            </div>
-            <div style={styles.statCard}>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Net Pay</div>
-              <div style={{ fontWeight: 'bold' }}>{formatCurrency(payrollRun.netPay)}</div>
+            <div style={{ fontSize: '0.9rem', color: '#334155' }}>
+              Edit amounts, save, export CSV, or open a payslip.
             </div>
           </div>
-        </div>
 
-        {/* Workflow Actions */}
-        {availableTransitions.length > 0 && (
-          <div style={styles.card}>
-            <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937', margin: '0 0 16px 0' }}>
-              Workflow Actions
-            </h3>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {availableTransitions.map((nextStatus) => {
-                const nextConfig = WORKFLOW_STATUS_CONFIG[nextStatus];
-                return (
-                  <button
-                    key={nextStatus}
-                    style={{
-                      ...styles.buttonSecondary,
-                      backgroundColor: nextConfig.bgColor,
-                      color: nextConfig.color,
-                      border: `1px solid ${nextConfig.color}`,
-                    }}
-                    onClick={() => handleStatusChange(nextStatus)}
-                  >
-                    → {nextConfig.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>
-              Current: {config.description}
-            </div>
-          </div>
-        )}
-
-        {/* Workflow History */}
-        {showWorkflowHistory && payrollRun.workflow_history && (
-          <div style={styles.card}>
-            <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937', margin: '0 0 16px 0' }}>
-              Workflow History
-            </h3>
-            <div style={styles.workflowHistory}>
-              {payrollRun.workflow_history.map((entry) => (
-                <div key={entry.id} style={styles.historyEntry}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <strong>
-                      {entry.from_status ? `${entry.from_status} → ${entry.to_status}` : `Created as ${entry.to_status}`}
-                    </strong>
-                    <span style={{ fontSize: '12px', color: '#6b7280' }}>
-                      {formatDateTime(entry.changed_at)}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '14px', color: '#4b5563' }}>
-                    By: {entry.changed_by} {entry.automated && '(Automated)'}
-                  </div>
-                  {entry.comment && (
-                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                      {entry.comment}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Employee Breakdown */}
-        <div style={styles.card}>
-          <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937', margin: '0 0 16px 0' }}>
-            Employee Breakdown
-          </h3>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={styles.table}>
+          <div style={S.tableWrap}>
+            <table style={S.table}>
               <thead>
                 <tr>
-                  <th style={styles.th}>Employee</th>
-                  <th style={styles.th}>Gross Pay</th>
-                  <th style={styles.th}>Tax</th>
-                  <th style={styles.th}>National Insurance</th>
-                  <th style={styles.th}>Pension</th>
-                  <th style={styles.th}>Net Pay</th>
-                  <th style={styles.th}>Actions</th>
+                  <th style={S.th}>Employee</th>
+                  <th style={S.th}>Number</th>
+                  <th style={S.th}>Email</th>
+                  <th style={S.th}>Gross</th>
+                  <th style={S.th}>Deductions</th>
+                  <th style={S.th}>Net</th>
+                  <th style={S.th}>Payslip</th>
                 </tr>
               </thead>
               <tbody>
-                {payrollEntries.map((entry) => (
-                  <tr key={entry.employeeId}>
-                    <td style={styles.td}>
-                      <div>
-                        <strong>{entry.employeeName}</strong>
-                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                          {entry.employeeNumber} • {entry.taxCode}
-                        </div>
-                      </div>
+                {loading && (
+                  <tr>
+                    <td style={S.td} colSpan={7}>Loading…</td>
+                  </tr>
+                )}
+                {!loading && rows.length === 0 && (
+                  <tr>
+                    <td style={S.td} colSpan={7}>No employees attached to this run.</td>
+                  </tr>
+                )}
+                {rows.map((r) => (
+                  <tr key={r.id}>
+                    <td style={S.td}>{r.employeeName}</td>
+                    <td style={S.td}>{r.employeeNumber || '—'}</td>
+                    <td style={S.td}>{r.email || '—'}</td>
+                    <td style={S.td}>
+                      <input
+                        className={inter.className}
+                        type="number"
+                        step="0.01"
+                        style={S.input}
+                        value={isFinite(r.gross) ? r.gross : 0}
+                        onChange={(e) => onChangeCell(r.id, 'gross', e.target.value)}
+                      />
                     </td>
-                    <td style={styles.td}>{formatCurrency(entry.grossPay)}</td>
-                    <td style={styles.td}>{formatCurrency(entry.taxDeduction)}</td>
-                    <td style={styles.td}>{formatCurrency(entry.niDeduction)}</td>
-                    <td style={styles.td}>{formatCurrency(entry.pensionDeduction)}</td>
-                    <td style={styles.td}>
-                      <strong>{formatCurrency(entry.netPay)}</strong>
+                    <td style={S.td}>
+                      <input
+                        className={inter.className}
+                        type="number"
+                        step="0.01"
+                        style={S.input}
+                        value={isFinite(r.deductions) ? r.deductions : 0}
+                        onChange={(e) => onChangeCell(r.id, 'deductions', e.target.value)}
+                      />
                     </td>
-                    <td style={styles.td}>
-                      <button
-                        style={{
-                          ...styles.buttonSecondary,
-                          fontSize: '11px',
-                          padding: '4px 8px',
-                        }}
-                        onClick={() => router.push(`/dashboard/employees/${entry.employeeId}`)}
-                      >
-                        View Employee
-                      </button>
+                    <td style={S.td}>
+                      <input
+                        className={inter.className}
+                        type="number"
+                        step="0.01"
+                        style={S.input}
+                        value={isFinite(r.net) ? r.net : 0}
+                        onChange={(e) => onChangeCell(r.id, 'net', e.target.value)}
+                      />
+                      {validation[r.id] && <div style={S.error}>{validation[r.id]}</div>}
+                    </td>
+                    <td style={S.td}>
+                      <Link href={`/dashboard/payroll/${runId}/payslip/${r.employeeId}`} style={{ ...S.btn, padding: '6px 10px' }}>
+                        View
+                      </Link>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div style={{ marginTop: 12, fontSize: '0.9rem', color: '#334155' }}>
+            Live totals reflect your edits. Net defaults to Gross minus Deductions.
+          </div>
+        </div>
+
+        <div style={S.footerRow}>
+          <div />
+          <div style={S.footerRight}>
+            <button
+              type="button"
+              onClick={saveChanges}
+              disabled={!dirty || hasErrors || saving}
+              style={{
+                ...S.btn,
+                backgroundColor: !dirty || hasErrors || saving ? '#1e40af' : '#059669',
+                opacity: !dirty || hasErrors ? 0.6 : 1,
+                cursor: !dirty || hasErrors ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button
+              type="button"
+              onClick={approveRun}
+              disabled={
+                !(
+                  data &&
+                  (data.run.status === 'draft' || data.run.status === 'processing') &&
+                  rows.length > 0 &&
+                  !dirty &&
+                  !hasErrors
+                ) || saving
+              }
+              style={{
+                ...S.btn,
+                backgroundColor: '#059669',
+                opacity:
+                  !(
+                    data &&
+                    (data.run.status === 'draft' || data.run.status === 'processing') &&
+                    rows.length > 0 &&
+                    !dirty &&
+                    !hasErrors
+                  ) || saving
+                    ? 0.6
+                    : 1,
+                cursor:
+                  !(
+                    data &&
+                    (data.run.status === 'draft' || data.run.status === 'processing') &&
+                    rows.length > 0 &&
+                    !dirty &&
+                    !hasErrors
+                  ) || saving
+                    ? 'not-allowed'
+                    : 'pointer',
+              }}
+              title="Approve and queue FPS"
+            >
+              {saving ? 'Working…' : 'Approve run'}
+            </button>
           </div>
         </div>
       </div>

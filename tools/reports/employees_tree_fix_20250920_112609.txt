@@ -1,0 +1,6 @@
+﻿FIX REPORT
+Project root: C:\Users\adamm\Projects\wageflow01
+Employees root: C:\Users\adamm\Projects\wageflow01\app\dashboard\employees
+
+Unexpected files: 0
+Unexpected folders (moved): 0

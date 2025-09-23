@@ -1,0 +1,94 @@
+-- 20250920191500_employees_fix_fk_and_drop_employee_id.sql
+-- Goal: move any FK off employees.employee_id to employees.id, then drop employees.employee_id.
+
+create extension if not exists pgcrypto;
+
+-- Ensure employees.id exists and has a default
+alter table public.employees
+  add column if not exists id uuid;
+alter table public.employees
+  alter column id set default gen_random_uuid();
+
+-- Best-effort backfill id from employee_id if id is null
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='employees' and column_name='employee_id'
+  ) then
+    update public.employees
+      set id = coalesce(id, nullif(employee_id::text,'')::uuid)
+    where id is null and employee_id is not null;
+  end if;
+end $$;
+
+-- Drop the FK that references employees.employee_id (if present) BEFORE touching keys
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conname = 'pay_run_employees_employee_id_fkey'
+  ) then
+    alter table public.pay_run_employees
+      drop constraint pay_run_employees_employee_id_fkey;
+  end if;
+end $$;
+
+-- Align pay_run_employees.employee_id type to uuid
+do $$
+declare dt text;
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='pay_run_employees' and column_name='employee_id'
+  ) then
+    select data_type into dt
+    from information_schema.columns
+    where table_schema='public' and table_name='pay_run_employees' and column_name='employee_id';
+
+    if dt is not null and dt <> 'uuid' then
+      alter table public.pay_run_employees
+        alter column employee_id type uuid using nullif(employee_id::text,'')::uuid;
+    end if;
+  end if;
+end $$;
+
+-- Ensure there is a key on employees.id that FKs can target
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid='public.employees'::regclass
+      and contype in ('p','u')
+      and conkey = array[
+        (select attnum from pg_attribute where attrelid='public.employees'::regclass and attname='id')
+      ]
+  ) then
+    alter table public.employees add constraint uq_employees_id unique (id);
+  end if;
+end $$;
+
+-- Recreate the FK to point at employees.id
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='pay_run_employees' and column_name='employee_id'
+  ) then
+    alter table public.pay_run_employees
+      add constraint pay_run_employees_employee_id_fkey
+      foreign key (employee_id) references public.employees(id) on delete restrict;
+  end if;
+end $$;
+
+-- Finally drop the stray employees.employee_id column
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='employees' and column_name='employee_id'
+  ) then
+    alter table public.employees drop column employee_id;
+  end if;
+end $$;

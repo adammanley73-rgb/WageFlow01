@@ -1,0 +1,31 @@
+-- 20250920192600_employees_rename_employee_id_legacy_simple.sql
+-- Rename stray employees.employee_id to employee_legacy_id and make it nullable
+-- so inserts don't fail. No loops. No index fuss.
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name   = 'employees'
+      and column_name  = 'employee_id'
+  ) then
+    alter table public.employees
+      rename column employee_id to employee_legacy_id;
+
+    -- If it was NOT NULL, drop that so new inserts don't fail
+    if exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name   = 'employees'
+        and column_name  = 'employee_legacy_id'
+        and is_nullable  = 'NO'
+    ) then
+      alter table public.employees
+        alter column employee_legacy_id drop not null;
+    end if;
+  end if;
+end
+$$;

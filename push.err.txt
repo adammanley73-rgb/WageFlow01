@@ -1,0 +1,12 @@
+Initialising login role...
+Connecting to remote database...
+Skipping migration 20250920190000_employees_fix_id.sql.skip... (file name must match pattern "<timestamp>_name.sql")
+Skipping migration 20250920190500_employees_fix_id_fk.sql.skip... (file name must match pattern "<timestamp>_name.sql")
+Skipping migration 20250920191500_employees_fix_fk_and_drop_employee_id.sql.skip... (file name must match pattern "<timestamp>_name.sql")
+Skipping migration 20250920192500_employees_rename_employee_id_legacy.sql.skip... (file name must match pattern "<timestamp>_name.sql")
+Skipping migration 20250920192600_employees_rename_employee_id_legacy_simple.sql.skip... (file name must match pattern "<timestamp>_name.sql")
+Do you want to push these migrations to the remote database?
+ • 20250923091500_add_company_id_and_counts_view.sql
+
+ [Y/n] y
+Applying migration 20250923091500_add_company_id_and_counts_view.sql...
