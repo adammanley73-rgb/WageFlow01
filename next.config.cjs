@@ -1,10 +1,7 @@
-// next.config.cjs
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  reactStrictMode: true,
-  experimental: {
-    appDir: true
+// postcss.config.cjs
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {}
   }
 };
-
-module.exports = nextConfig;
