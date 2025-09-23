@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest",
-    "dev:api": "ts-node --transpile-only server/index.ts"
+    "dev:api": "node --loader ts-node/esm server/index.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
