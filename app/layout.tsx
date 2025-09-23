@@ -1,18 +1,25 @@
-﻿'use client';
-import { SessionProvider } from 'next-auth/react';
+﻿// app/layout.tsx
+import "./globals.css";
+import type { Metadata } from "next";
+import type { ReactNode } from "react";
+import { Manrope } from "next/font/google";
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+const manrope = Manrope({
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["300", "400", "500", "600", "700", "800"],
+  variable: "--font-sans",
+});
+
+export const metadata: Metadata = {
+  title: "WageFlow",
+  description: "Payroll and HR dashboard",
+};
+
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <SessionProvider>
-          {children}
-        </SessionProvider>
-      </body>
+      <body className={`${manrope.className} antialiased`}>{children}</body>
     </html>
   );
 }

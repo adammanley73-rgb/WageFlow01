@@ -1,39 +1,22 @@
+import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import type { NextRequest } from 'next/server';
-
 export function middleware(req: NextRequest) {
+  const bypass =
+    process.env.AUTH_BYPASS === '1' ||
+    process.env.NEXT_PUBLIC_AUTH_BYPASS === '1';
 
-// NextAuth cookies. If you later use a custom cookie, update this check accordingly.
+  // If bypass is on, any visit to /login goes to /dashboard
+  if (bypass && req.nextUrl.pathname === '/login') {
+    const url = req.nextUrl.clone();
+    url.pathname = '/dashboard';
+    url.search = '';
+    return NextResponse.redirect(url);
+  }
 
-const sessionCookie =
-
-req.cookies.get('next-auth.session-token') ||
-
-req.cookies.get('__Secure-next-auth.session-token');
-
-const { pathname, search } = req.nextUrl;
-
-const isDashboard = pathname.startsWith('/dashboard');
-
-// Protect /dashboard only. Never intercept /login.
-
-if (isDashboard && !sessionCookie) {
-
-const loginUrl = new URL('/login', req.url);
-
-loginUrl.searchParams.set('callbackUrl', pathname + search);
-
-return NextResponse.redirect(loginUrl);
-
-}
-
-return NextResponse.next();
-
+  return NextResponse.next();
 }
 
 export const config = {
-
-matcher: ['/dashboard/:path*'],
-
+  matcher: ['/login'],
 };

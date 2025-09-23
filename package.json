@@ -12,7 +12,8 @@
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
     "@radix-ui/react-slot": "^1.0.2",
-    "@supabase/supabase-js": "^2.57.2",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/supabase-js": "^2.57.4",
     "@types/next-auth": "^3.13.0",
     "@types/node": "^20",
     "@types/react": "^18",
