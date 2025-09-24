@@ -6,9 +6,14 @@ const profile = (process.env.BUILD_PROFILE || 'preview').toLowerCase();
 export function middleware(req: NextRequest) {
   if (profile !== 'prod') {
     const p = req.nextUrl.pathname;
-    if (p.startsWith('/api/absence/')) {
+
+    // Blanket disable unfinished APIs on Preview
+    if (
+      p.startsWith('/api/absence/') ||
+      p.startsWith('/api/employees/')
+    ) {
       return NextResponse.json(
-        { ok: false, error: 'absence APIs disabled on preview' },
+        { ok: false, error: 'endpoint disabled on preview' },
         { status: 404 }
       );
     }
@@ -16,4 +21,7 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ['/api/:path*'] };
+// Apply only to API routes
+export const config = {
+  matcher: ['/api/:path*'],
+};
