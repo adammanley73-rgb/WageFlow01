@@ -9,7 +9,6 @@ export async function GET(_req: Request, _ctx: Params) {
   if (env.preview) {
     return NextResponse.json({ ok: false, error: 'employees/details disabled on preview' }, { status: 404 });
   }
-  // Prod placeholder, no DB yet
   return NextResponse.json({ ok: true, item: null }, { status: 200 });
 }
 

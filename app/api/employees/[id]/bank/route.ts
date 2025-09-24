@@ -3,11 +3,12 @@ import { env } from '@lib/env';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+type Params = { params: { id: string } };
+
+export async function GET(_req: Request, _ctx: Params) {
   if (env.preview) {
     return NextResponse.json({ ok: false, error: 'employees/bank disabled on preview' }, { status: 404 });
   }
-  // Prod placeholder: no DB access yet
   return NextResponse.json({ ok: true, items: [] }, { status: 200 });
 }
 
