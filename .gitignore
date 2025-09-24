@@ -9,3 +9,5 @@ dist
 coverage
 .DS_Store
 Thumbs.db
+
+app/api/employees[id]/
