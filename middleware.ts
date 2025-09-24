@@ -6,22 +6,11 @@ const profile = (process.env.BUILD_PROFILE || 'preview').toLowerCase();
 export function middleware(req: NextRequest) {
   if (profile !== 'prod') {
     const p = req.nextUrl.pathname;
-
-    // Blanket disable unfinished APIs on Preview
-    if (
-      p.startsWith('/api/absence/') ||
-      p.startsWith('/api/employees/')
-    ) {
-      return NextResponse.json(
-        { ok: false, error: 'endpoint disabled on preview' },
-        { status: 404 }
-      );
+    if (p.startsWith('/api/absence/') || p.startsWith('/api/employees/')) {
+      return NextResponse.json({ ok: false, error: 'endpoint disabled on preview' }, { status: 404 });
     }
   }
   return NextResponse.next();
 }
 
-// Apply only to API routes
-export const config = {
-  matcher: ['/api/:path*'],
-};
+export const config = { matcher: ['/api/:path*'] };
