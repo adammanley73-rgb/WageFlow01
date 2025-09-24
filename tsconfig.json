@@ -6,21 +6,27 @@
     "jsx": "preserve",
     "lib": ["DOM", "ES2022"],
     "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    "allowJs": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "strict": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true
+    "incremental": true,
+    "noEmit": true,
+    "plugins": [{ "name": "next" }]
   },
   "include": [
-    "app/**/*",
-    "components/**/*",
-    "lib/**/*",
-    "server/**/*",
-    "tests/**/*",
-    "next-env.d.ts"
-  ]
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
 }
