@@ -1,6 +1,4 @@
 /* @ts-nocheck */
-export function computeSAP(i:any = {}) { return { amount: 0 }; }
-export function getSAPSchedule(i:any = {}) { return []; }
-export function buildSAPSchedule(i:any = {}) { return []; }
-const SAP = { computeSAP, getSAPSchedule, buildSAPSchedule };
-export default SAP;
+export function calculateSAP(){ return { weeks: [], total: 0 }; }
+export function getSAPSchedule(){ return []; }
+export function buildSAPSchedule(){ return []; }
