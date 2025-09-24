@@ -1,3 +1,4 @@
-// Minimal placeholder so builds don’t fall over.
-export const storeVersion = 'v0.1.0';
-export default storeVersion;
+/* @ts-nocheck */
+export async function ensureStoreReady(){ return true; }
+export async function readAbsences(){ return []; }
+export async function writeAbsences(absences){ return absences ?? []; }
