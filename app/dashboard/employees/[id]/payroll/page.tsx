@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 "use client";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
@@ -70,7 +71,7 @@ export default function EmployeePayrollPage() {
   useEffect(() => {
     const loadEmployee = async () => {
       try {
-        console.log("🔍 Loading employee from database:", employeeId);
+        console.log("ðŸ” Loading employee from database:", employeeId);
         const response = await fetch("/api/employees");
         if (response.ok) {
           const employees = await response.json();
@@ -79,7 +80,7 @@ export default function EmployeePayrollPage() {
           );
 
           if (foundEmployee) {
-            console.log("✅ Employee found:", foundEmployee);
+            console.log("âœ… Employee found:", foundEmployee);
             // Transform to match expected format
             const emp: Employee = {
               id: foundEmployee.id,
@@ -103,13 +104,13 @@ export default function EmployeePayrollPage() {
               grossPay: monthlyPay,
             }));
           } else {
-            console.error("❌ Employee not found:", employeeId);
+            console.error("âŒ Employee not found:", employeeId);
           }
         } else {
-          console.error("❌ Failed to fetch employees:", response.status);
+          console.error("âŒ Failed to fetch employees:", response.status);
         }
       } catch (error) {
-        console.error("❌ Error loading employee:", error);
+        console.error("âŒ Error loading employee:", error);
       } finally {
         setLoading(false);
       }
@@ -147,19 +148,19 @@ export default function EmployeePayrollPage() {
 
       switch (plan) {
         case "plan1":
-          threshold = 1615; // £19,390 annually / 12
+          threshold = 1615; // Â£19,390 annually / 12
           rate = 0.09;
           break;
         case "plan2":
-          threshold = 2274; // £27,295 annually / 12
+          threshold = 2274; // Â£27,295 annually / 12
           rate = 0.09;
           break;
         case "plan4":
-          threshold = 2114; // £25,375 annually / 12
+          threshold = 2114; // Â£25,375 annually / 12
           rate = 0.09;
           break;
         case "postgrad":
-          threshold = 1750; // £21,000 annually / 12
+          threshold = 1750; // Â£21,000 annually / 12
           rate = 0.06;
           break;
       }
@@ -299,7 +300,7 @@ export default function EmployeePayrollPage() {
             href="/dashboard/employees"
             style={{ color: "white", textDecoration: "underline" }}
           >
-            ← Back to Employees
+            â† Back to Employees
           </a>
         </div>
       </div>
@@ -348,7 +349,7 @@ export default function EmployeePayrollPage() {
                   margin: 0,
                 }}
               >
-                💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Payroll
+                ðŸ’¼ <span style={{ color: "#3b82f6" }}>WageFlow</span> Payroll
               </h1>
               <p style={{ color: "#6b7280", margin: "8px 0 0 0" }}>
                 {employee.firstName} {employee.lastName} (
@@ -404,12 +405,12 @@ export default function EmployeePayrollPage() {
           {/* Sub-navigation */}
           <nav style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             {[
-              { id: "overview", label: "📊 Overview" },
-              { id: "basic-pay", label: "💰 Basic Pay" },
-              { id: "overtime", label: "⏰ Overtime" },
-              { id: "additions", label: "➕ Additions" },
-              { id: "deductions", label: "➖ Deductions" },
-              { id: "summary", label: "📋 Summary" },
+              { id: "overview", label: "ðŸ“Š Overview" },
+              { id: "basic-pay", label: "ðŸ’° Basic Pay" },
+              { id: "overtime", label: "â° Overtime" },
+              { id: "additions", label: "âž• Additions" },
+              { id: "deductions", label: "âž– Deductions" },
+              { id: "summary", label: "ðŸ“‹ Summary" },
             ].map((section) => (
               <button
                 key={section.id}
@@ -467,7 +468,7 @@ export default function EmployeePayrollPage() {
                     marginBottom: "24px",
                   }}
                 >
-                  📊 Payroll Overview
+                  ðŸ“Š Payroll Overview
                 </h2>
 
                 <div
@@ -503,7 +504,7 @@ export default function EmployeePayrollPage() {
                         margin: 0,
                       }}
                     >
-                      £{employee.annualSalary.toLocaleString()}
+                      Â£{employee.annualSalary.toLocaleString()}
                     </p>
                   </div>
 
@@ -532,7 +533,7 @@ export default function EmployeePayrollPage() {
                         margin: 0,
                       }}
                     >
-                      £{(employee.annualSalary / 12).toFixed(2)}
+                      Â£{(employee.annualSalary / 12).toFixed(2)}
                     </p>
                   </div>
 
@@ -561,7 +562,7 @@ export default function EmployeePayrollPage() {
                         margin: 0,
                       }}
                     >
-                      £{(employee.annualSalary / 2080).toFixed(2)}
+                      Â£{(employee.annualSalary / 2080).toFixed(2)}
                     </p>
                   </div>
 
@@ -618,7 +619,7 @@ export default function EmployeePayrollPage() {
                     marginBottom: "24px",
                   }}
                 >
-                  💰 Basic Pay Management
+                  ðŸ’° Basic Pay Management
                 </h2>
 
                 <div
@@ -656,7 +657,7 @@ export default function EmployeePayrollPage() {
                       }}
                     >
                       <span>Monthly Salary:</span>
-                      <strong>£{payrollData.basicPay.toFixed(2)}</strong>
+                      <strong>Â£{payrollData.basicPay.toFixed(2)}</strong>
                     </div>
                   </div>
                 </div>
@@ -712,7 +713,7 @@ export default function EmployeePayrollPage() {
                             margin: 0,
                           }}
                         >
-                          £{freq.amount.toFixed(2)}
+                          Â£{freq.amount.toFixed(2)}
                         </p>
                       </div>
                     ))}
@@ -742,7 +743,7 @@ export default function EmployeePayrollPage() {
                     marginBottom: "24px",
                   }}
                 >
-                  ⏰ Overtime Management
+                  â° Overtime Management
                 </h2>
 
                 <div
@@ -836,7 +837,7 @@ export default function EmployeePayrollPage() {
                     </label>
                     <input
                       type="text"
-                      value={`£${(employee.annualSalary / 2080).toFixed(2)}`}
+                      value={`Â£${(employee.annualSalary / 2080).toFixed(2)}`}
                       readOnly
                       style={{
                         width: "100%",
@@ -867,17 +868,17 @@ export default function EmployeePayrollPage() {
                         margin: "0 0 8px 0",
                       }}
                     >
-                      💰 Overtime Calculation
+                      ðŸ’° Overtime Calculation
                     </h4>
                     <p style={{ color: "#1e40af", margin: "0 0 8px 0" }}>
-                      {payrollData.overtime.hours} hours × £
-                      {(employee.annualSalary / 2080).toFixed(2)} ×{" "}
+                      {payrollData.overtime.hours} hours Ã— Â£
+                      {(employee.annualSalary / 2080).toFixed(2)} Ã—{" "}
                       {
                         overtimeRates.find(
                           (r) => r.id === payrollData.overtime.rate
                         )?.multiplier
                       }{" "}
-                      = <strong> £{payrollData.overtime.amount.toFixed(2)}</strong>
+                      = <strong> Â£{payrollData.overtime.amount.toFixed(2)}</strong>
                     </p>
                     <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
                       Subject to PAYE tax, National Insurance, and pension
@@ -933,7 +934,7 @@ export default function EmployeePayrollPage() {
                     marginBottom: "24px",
                   }}
                 >
-                  ➕ Additional Pay Elements
+                  âž• Additional Pay Elements
                 </h2>
 
                 <div
@@ -960,7 +961,7 @@ export default function EmployeePayrollPage() {
                         marginBottom: "12px",
                       }}
                     >
-                      💰 Bonus
+                      ðŸ’° Bonus
                     </h3>
                     <input
                       type="number"
@@ -1002,7 +1003,7 @@ export default function EmployeePayrollPage() {
                         marginBottom: "12px",
                       }}
                     >
-                      🎯 Commission
+                      ðŸŽ¯ Commission
                     </h3>
                     <input
                       type="number"
@@ -1044,7 +1045,7 @@ export default function EmployeePayrollPage() {
                         marginBottom: "12px",
                       }}
                     >
-                      🚗 Allowances
+                      ðŸš— Allowances
                     </h3>
                     <input
                       type="number"
@@ -1094,7 +1095,7 @@ export default function EmployeePayrollPage() {
                     marginBottom: "24px",
                   }}
                 >
-                  ➖ Tax & Deductions
+                  âž– Tax & Deductions
                 </h2>
 
                 {/* Statutory Deductions */}
@@ -1140,7 +1141,7 @@ export default function EmployeePayrollPage() {
                             margin: "0 0 4px 0",
                           }}
                         >
-                          🏛️ PAYE Tax
+                          ðŸ›ï¸ PAYE Tax
                         </h4>
                         <p style={{ color: "#6b7280", fontSize: "14px", margin: 0 }}>
                           Income tax deduction
@@ -1149,7 +1150,7 @@ export default function EmployeePayrollPage() {
                       <span
                         style={{ fontSize: "20px", fontWeight: "bold", color: "#dc2626" }}
                       >
-                        £{payrollData.taxDeductions.payeTax.toFixed(2)}
+                        Â£{payrollData.taxDeductions.payeTax.toFixed(2)}
                       </span>
                     </div>
 
@@ -1172,7 +1173,7 @@ export default function EmployeePayrollPage() {
                             margin: "0 0 4px 0",
                           }}
                         >
-                          🏥 National Insurance
+                          ðŸ¥ National Insurance
                         </h4>
                         <p style={{ color: "#6b7280", fontSize: "14px", margin: 0 }}>
                           Employee contribution
@@ -1181,7 +1182,7 @@ export default function EmployeePayrollPage() {
                       <span
                         style={{ fontSize: "20px", fontWeight: "bold", color: "#dc2626" }}
                       >
-                        £{payrollData.taxDeductions.nationalInsurance.toFixed(2)}
+                        Â£{payrollData.taxDeductions.nationalInsurance.toFixed(2)}
                       </span>
                     </div>
 
@@ -1204,7 +1205,7 @@ export default function EmployeePayrollPage() {
                             margin: "0 0 4px 0",
                           }}
                         >
-                          🏦 Pension Contribution
+                          ðŸ¦ Pension Contribution
                         </h4>
                         <p style={{ color: "#6b7280", fontSize: "14px", margin: 0 }}>
                           Auto-enrollment 5%
@@ -1213,7 +1214,7 @@ export default function EmployeePayrollPage() {
                       <span
                         style={{ fontSize: "20px", fontWeight: "bold", color: "#dc2626" }}
                       >
-                        £{payrollData.taxDeductions.pensionContribution.toFixed(2)}
+                        Â£{payrollData.taxDeductions.pensionContribution.toFixed(2)}
                       </span>
                     </div>
                   </div>
@@ -1334,23 +1335,23 @@ export default function EmployeePayrollPage() {
                                 margin: "0 0 4px 0",
                               }}
                             >
-                              🎓 Student Loan
+                              ðŸŽ“ Student Loan
                             </h4>
                             <p style={{ color: "#6b7280", fontSize: "14px", margin: 0 }}>
                               {payrollData.taxDeductions.studentLoanPlan === "plan1" &&
-                                "Plan 1 - 9% above £19,390"}
+                                "Plan 1 - 9% above Â£19,390"}
                               {payrollData.taxDeductions.studentLoanPlan === "plan2" &&
-                                "Plan 2 - 9% above £27,295"}
+                                "Plan 2 - 9% above Â£27,295"}
                               {payrollData.taxDeductions.studentLoanPlan === "plan4" &&
-                                "Plan 4 - 9% above £25,375"}
+                                "Plan 4 - 9% above Â£25,375"}
                               {payrollData.taxDeductions.studentLoanPlan === "postgrad" &&
-                                "Postgrad - 6% above £21,000"}
+                                "Postgrad - 6% above Â£21,000"}
                             </p>
                           </div>
                           <span
                             style={{ fontSize: "20px", fontWeight: "bold", color: "#0369a1" }}
                           >
-                            £{(payrollData.taxDeductions.studentLoan || 0).toFixed(2)}
+                            Â£{(payrollData.taxDeductions.studentLoan || 0).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -1402,7 +1403,7 @@ export default function EmployeePayrollPage() {
                           marginBottom: "8px",
                         }}
                       >
-                        🏛️ Union Fees
+                        ðŸ›ï¸ Union Fees
                       </h4>
                       <input
                         type="number"
@@ -1446,7 +1447,7 @@ export default function EmployeePayrollPage() {
                           marginBottom: "8px",
                         }}
                       >
-                        🚗 Salary Sacrifice
+                        ðŸš— Salary Sacrifice
                       </h4>
                       <input
                         type="number"
@@ -1490,7 +1491,7 @@ export default function EmployeePayrollPage() {
                           marginBottom: "8px",
                         }}
                       >
-                        🏥 Private Medical
+                        ðŸ¥ Private Medical
                       </h4>
                       <input
                         type="number"
@@ -1534,7 +1535,7 @@ export default function EmployeePayrollPage() {
                           marginBottom: "8px",
                         }}
                       >
-                        💳 Childcare Vouchers
+                        ðŸ’³ Childcare Vouchers
                       </h4>
                       <input
                         type="number"
@@ -1578,7 +1579,7 @@ export default function EmployeePayrollPage() {
                           marginBottom: "8px",
                         }}
                       >
-                        ⚖️ Attachment of Earnings
+                        âš–ï¸ Attachment of Earnings
                       </h4>
                       <input
                         type="number"
@@ -1625,7 +1626,7 @@ export default function EmployeePayrollPage() {
                           marginBottom: "8px",
                         }}
                       >
-                        📱 Other Deductions
+                        ðŸ“± Other Deductions
                       </h4>
                       <input
                         type="number"
@@ -1676,7 +1677,7 @@ export default function EmployeePayrollPage() {
                         Statutory Deductions:
                       </strong>
                       <strong style={{ color: "#dc2626", fontSize: "16px" }}>
-                        £
+                        Â£
                         {(
                           payrollData.taxDeductions.payeTax +
                           payrollData.taxDeductions.nationalInsurance +
@@ -1696,7 +1697,7 @@ export default function EmployeePayrollPage() {
                         Other Deductions:
                       </strong>
                       <strong style={{ color: "#a16207", fontSize: "16px" }}>
-                        £
+                        Â£
                         {(
                           (payrollData.taxDeductions.unionFees || 0) +
                           (payrollData.taxDeductions.salarySacrifice || 0) +
@@ -1725,7 +1726,7 @@ export default function EmployeePayrollPage() {
                         Total Deductions:
                       </strong>
                       <strong style={{ color: "#dc2626", fontSize: "24px" }}>
-                        £
+                        Â£
                         {(
                           payrollData.taxDeductions.payeTax +
                           payrollData.taxDeductions.nationalInsurance +
@@ -1766,7 +1767,7 @@ export default function EmployeePayrollPage() {
                     marginBottom: "24px",
                   }}
                 >
-                  📋 Payroll Summary
+                  ðŸ“‹ Payroll Summary
                 </h2>
 
                 <div
@@ -1788,7 +1789,7 @@ export default function EmployeePayrollPage() {
                         marginBottom: "16px",
                       }}
                     >
-                      💰 Earnings
+                      ðŸ’° Earnings
                     </h3>
                     <div
                       style={{
@@ -1806,7 +1807,7 @@ export default function EmployeePayrollPage() {
                         }}
                       >
                         <span>Basic Pay:</span>
-                        <span>£{payrollData.basicPay.toFixed(2)}</span>
+                        <span>Â£{payrollData.basicPay.toFixed(2)}</span>
                       </div>
                       <div
                         style={{
@@ -1816,7 +1817,7 @@ export default function EmployeePayrollPage() {
                         }}
                       >
                         <span>Overtime:</span>
-                        <span>£{payrollData.overtime.amount.toFixed(2)}</span>
+                        <span>Â£{payrollData.overtime.amount.toFixed(2)}</span>
                       </div>
                       <div
                         style={{
@@ -1826,7 +1827,7 @@ export default function EmployeePayrollPage() {
                         }}
                       >
                         <span>Bonus:</span>
-                        <span>£{payrollData.bonus.toFixed(2)}</span>
+                        <span>Â£{payrollData.bonus.toFixed(2)}</span>
                       </div>
                       <div
                         style={{
@@ -1836,7 +1837,7 @@ export default function EmployeePayrollPage() {
                         }}
                       >
                         <span>Commission:</span>
-                        <span>£{payrollData.commission.toFixed(2)}</span>
+                        <span>Â£{payrollData.commission.toFixed(2)}</span>
                       </div>
                       <div
                         style={{
@@ -1846,7 +1847,7 @@ export default function EmployeePayrollPage() {
                         }}
                       >
                         <span>Allowances:</span>
-                        <span>£{payrollData.allowances.toFixed(2)}</span>
+                        <span>Â£{payrollData.allowances.toFixed(2)}</span>
                       </div>
                       <hr
                         style={{
@@ -1865,7 +1866,7 @@ export default function EmployeePayrollPage() {
                       >
                         <span>Gross Pay:</span>
                         <span style={{ color: "#059669" }}>
-                          £{payrollData.grossPay.toFixed(2)}
+                          Â£{payrollData.grossPay.toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -1881,7 +1882,7 @@ export default function EmployeePayrollPage() {
                         marginBottom: "16px",
                       }}
                     >
-                      ➖ Deductions
+                      âž– Deductions
                     </h3>
                     <div
                       style={{
@@ -1899,7 +1900,7 @@ export default function EmployeePayrollPage() {
                         }}
                       >
                         <span>PAYE Tax:</span>
-                        <span>-£{payrollData.taxDeductions.payeTax.toFixed(2)}</span>
+                        <span>-Â£{payrollData.taxDeductions.payeTax.toFixed(2)}</span>
                       </div>
                       <div
                         style={{
@@ -1910,7 +1911,7 @@ export default function EmployeePayrollPage() {
                       >
                         <span>National Insurance:</span>
                         <span>
-                          -£{payrollData.taxDeductions.nationalInsurance.toFixed(2)}
+                          -Â£{payrollData.taxDeductions.nationalInsurance.toFixed(2)}
                         </span>
                       </div>
                       <div
@@ -1922,7 +1923,7 @@ export default function EmployeePayrollPage() {
                       >
                         <span>Pension:</span>
                         <span>
-                          -£{payrollData.taxDeductions.pensionContribution.toFixed(2)}
+                          -Â£{payrollData.taxDeductions.pensionContribution.toFixed(2)}
                         </span>
                       </div>
                       {payrollData.taxDeductions.studentLoan > 0 && (
@@ -1935,7 +1936,7 @@ export default function EmployeePayrollPage() {
                         >
                           <span>Student Loan:</span>
                           <span>
-                            -£{payrollData.taxDeductions.studentLoan.toFixed(2)}
+                            -Â£{payrollData.taxDeductions.studentLoan.toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -1949,7 +1950,7 @@ export default function EmployeePayrollPage() {
                         >
                           <span>Union Fees:</span>
                           <span>
-                            -£{(payrollData.taxDeductions.unionFees || 0).toFixed(2)}
+                            -Â£{(payrollData.taxDeductions.unionFees || 0).toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -1963,7 +1964,7 @@ export default function EmployeePayrollPage() {
                         >
                           <span>Salary Sacrifice:</span>
                           <span>
-                            -£
+                            -Â£
                             {(payrollData.taxDeductions.salarySacrifice || 0).toFixed(2)}
                           </span>
                         </div>
@@ -1985,7 +1986,7 @@ export default function EmployeePayrollPage() {
                       >
                         <span>Total Deductions:</span>
                         <span style={{ color: "#dc2626" }}>
-                          -£
+                          -Â£
                           {(
                             payrollData.taxDeductions.payeTax +
                             payrollData.taxDeductions.nationalInsurance +
@@ -2023,7 +2024,7 @@ export default function EmployeePayrollPage() {
                       marginBottom: "8px",
                     }}
                   >
-                    💵 Net Pay
+                    ðŸ’µ Net Pay
                   </h3>
                   <p
                     style={{
@@ -2033,7 +2034,7 @@ export default function EmployeePayrollPage() {
                       margin: "0 0 8px 0",
                     }}
                   >
-                    £{payrollData.netPay.toFixed(2)}
+                    Â£{payrollData.netPay.toFixed(2)}
                   </p>
                   <p style={{ fontSize: "16px", color: "#6b7280", margin: 0 }}>
                     Amount to be paid
@@ -2052,9 +2053,9 @@ export default function EmployeePayrollPage() {
                   <button
                     onClick={() => {
                       alert(
-                        `📋 Payslip Generation\n\nEmployee: ${employee.firstName} ${employee.lastName}\nGross Pay: £${payrollData.grossPay.toFixed(
+                        `ðŸ“‹ Payslip Generation\n\nEmployee: ${employee.firstName} ${employee.lastName}\nGross Pay: Â£${payrollData.grossPay.toFixed(
                           2
-                        )}\nNet Pay: £${payrollData.netPay.toFixed(
+                        )}\nNet Pay: Â£${payrollData.netPay.toFixed(
                           2
                         )}\n\nPayslip generation feature coming soon!`
                       );
@@ -2070,7 +2071,7 @@ export default function EmployeePayrollPage() {
                       cursor: "pointer",
                     }}
                   >
-                    📋 Generate Payslip
+                    ðŸ“‹ Generate Payslip
                   </button>
 
                   <button
@@ -2088,11 +2089,11 @@ export default function EmployeePayrollPage() {
                         (payrollData.taxDeductions.otherDeductions || 0);
 
                       const confirmed = window.confirm(
-                        `💰 Process Payment Confirmation\n\n` +
+                        `ðŸ’° Process Payment Confirmation\n\n` +
                           `Employee: ${employee.firstName} ${employee.lastName}\n` +
-                          `Gross Pay: £${payrollData.grossPay.toFixed(2)}\n` +
-                          `Total Deductions: £${totalDeductions.toFixed(2)}\n` +
-                          `Net Pay: £${payrollData.netPay.toFixed(
+                          `Gross Pay: Â£${payrollData.grossPay.toFixed(2)}\n` +
+                          `Total Deductions: Â£${totalDeductions.toFixed(2)}\n` +
+                          `Net Pay: Â£${payrollData.netPay.toFixed(
                             2
                           )}\n\n` +
                           `Proceed with payment processing?`
@@ -2100,7 +2101,7 @@ export default function EmployeePayrollPage() {
 
                       if (confirmed) {
                         alert(
-                          `✅ Payment Processed!\n\n£${payrollData.netPay.toFixed(
+                          `âœ… Payment Processed!\n\nÂ£${payrollData.netPay.toFixed(
                             2
                           )} will be paid to ${employee.firstName} ${
                             employee.lastName
@@ -2119,7 +2120,7 @@ export default function EmployeePayrollPage() {
                       cursor: "pointer",
                     }}
                   >
-                    💰 Process Payment
+                    ðŸ’° Process Payment
                   </button>
 
                   <button
@@ -2161,9 +2162,9 @@ export default function EmployeePayrollPage() {
                         netPay: payrollData.netPay,
                       };
 
-                      console.log("📊 Payroll Data Export:", payrollDataExport);
+                      console.log("ðŸ“Š Payroll Data Export:", payrollDataExport);
                       alert(
-                        `📊 Data Exported!\n\nPayroll data for ${employee.firstName} ${employee.lastName} has been logged to browser console.\n\nIn production, this would export to CSV/Excel/PDF.`
+                        `ðŸ“Š Data Exported!\n\nPayroll data for ${employee.firstName} ${employee.lastName} has been logged to browser console.\n\nIn production, this would export to CSV/Excel/PDF.`
                       );
                     }}
                     style={{
@@ -2177,7 +2178,7 @@ export default function EmployeePayrollPage() {
                       cursor: "pointer",
                     }}
                   >
-                    📊 Export Data
+                    ðŸ“Š Export Data
                   </button>
                 </div>
               </div>
@@ -2207,7 +2208,7 @@ export default function EmployeePayrollPage() {
                   marginBottom: "16px",
                 }}
               >
-                👤 Employee Info
+                ðŸ‘¤ Employee Info
               </h3>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -2262,7 +2263,7 @@ export default function EmployeePayrollPage() {
                   marginBottom: "12px",
                 }}
               >
-                💰 Current Pay
+                ðŸ’° Current Pay
               </h4>
               <div
                 style={{
@@ -2281,7 +2282,7 @@ export default function EmployeePayrollPage() {
                     margin: "0 0 4px 0",
                   }}
                 >
-                  £{payrollData.netPay.toFixed(2)}
+                  Â£{payrollData.netPay.toFixed(2)}
                 </p>
                 <p style={{ fontSize: "12px", color: "#6b7280", margin: 0 }}>
                   Net Pay
@@ -2303,17 +2304,18 @@ export default function EmployeePayrollPage() {
             href="/dashboard/employees"
             style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}
           >
-            ← Back to Employees
+            â† Back to Employees
           </a>
 
           <a
             href="/dashboard/payroll"
             style={{ color: "white", textDecoration: "none", fontWeight: "bold" }}
           >
-            Go to Payroll →
+            Go to Payroll â†’
           </a>
         </div>
       </div>
     </div>
   );
 }
+

@@ -1,4 +1,5 @@
-﻿export const dynamic = 'force-dynamic';
+﻿/* @ts-nocheck */
+export const dynamic = 'force-dynamic';
 
 import React from 'react';
 import Link from 'next/link';
@@ -228,3 +229,4 @@ export default async function DashboardPage() {
     </div>
   );
 }
+

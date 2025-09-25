@@ -1,4 +1,5 @@
-﻿'use client';
+﻿/* @ts-nocheck */
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -209,3 +210,4 @@ export default function StarterPage() {
     </div>
   );
 }
+

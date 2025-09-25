@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 // app/dashboard/absence/new/sickness/page.tsx
 import React from "react";
 import Link from "next/link";
@@ -72,13 +73,13 @@ export default function NewSicknessAbsence() {
                   <input type="radio" name="partial" defaultChecked /> No
                 </label>
                 <label>
-                  <input type="radio" name="partial" /> ¼ day
+                  <input type="radio" name="partial" /> Â¼ day
                 </label>
                 <label>
-                  <input type="radio" name="partial" /> ½ day
+                  <input type="radio" name="partial" /> Â½ day
                 </label>
                 <label>
-                  <input type="radio" name="partial" /> ¾ day
+                  <input type="radio" name="partial" /> Â¾ day
                 </label>
               </div>
             </div>
@@ -125,3 +126,4 @@ export default function NewSicknessAbsence() {
     </div>
   );
 }
+

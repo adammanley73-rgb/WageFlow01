@@ -1,20 +1,17 @@
+// File: next.config.cjs
+
 /** @type {import('next').NextConfig} */
-const profile = (process.env.BUILD_PROFILE || 'preview').toLowerCase();
+const isPreview = process.env.BUILD_PROFILE === "preview";
 
-const isPreview = profile !== 'prod';
-
-const nextConfig = {
+module.exports = {
   reactStrictMode: true,
-  typescript: {
-    ignoreBuildErrors: isPreview, // strict in prod
-  },
-  eslint: {
-    ignoreDuringBuilds: isPreview, // strict in prod
-  },
-  experimental: {},
-  headers: async () => {
-    return [];
+
+  // Only relax lint/TS for preview builds
+  eslint: { ignoreDuringBuilds: isPreview },
+  typescript: { ignoreBuildErrors: isPreview },
+
+  // Keep webpack simple for preview; aliases handled via ts/jsconfig
+  webpack: (config) => {
+    return config;
   },
 };
-
-module.exports = nextConfig;

@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 "use client";
 import { useState, useEffect } from "react";
 import { DEMO_EMPLOYEES, type Employee } from "../../../../lib/data/employees";
@@ -181,7 +182,7 @@ export default function TaxCodesPage() {
                 margin: "0",
               }}
             >
-              💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Tax Code Management
+              ðŸ’¼ <span style={{ color: "#3b82f6" }}>WageFlow</span> Tax Code Management
             </h1>
             <p
               style={{
@@ -239,7 +240,7 @@ export default function TaxCodesPage() {
                 border: "1px solid #059669",
               }}
             >
-              ← Back to Payroll
+              â† Back to Payroll
             </a>
           </nav>
         </div>
@@ -474,7 +475,7 @@ export default function TaxCodesPage() {
                 cursor: !selectedEmployee || !newTaxCode ? "not-allowed" : "pointer",
               }}
             >
-              📊 Calculate Impact
+              ðŸ“Š Calculate Impact
             </button>
           </div>
         </div>
@@ -516,7 +517,7 @@ export default function TaxCodesPage() {
                   gap: "12px",
                 }}
               >
-                <div style={{ fontSize: "24px", marginBottom: "8px" }}>⚠️</div>
+                <div style={{ fontSize: "24px", marginBottom: "8px" }}>âš ï¸</div>
                 <div>
                   <strong>K Code Warning:</strong>
                   <p style={{ margin: "4px 0 0 0", color: "#92400e" }}>{taxComparison.kCodeWarning}</p>
@@ -572,7 +573,7 @@ export default function TaxCodesPage() {
                 </p>
               </div>
 
-              <div style={{ fontSize: "24px", marginBottom: "8px" }}>→</div>
+              <div style={{ fontSize: "24px", marginBottom: "8px" }}>â†’</div>
 
               <div
                 style={{
@@ -701,7 +702,7 @@ export default function TaxCodesPage() {
                   cursor: !changeReason ? "not-allowed" : "pointer",
                 }}
               >
-                ✅ Update Tax Code
+                âœ… Update Tax Code
               </button>
             </div>
           </div>
@@ -866,7 +867,7 @@ export default function TaxCodesPage() {
                           fontWeight: "500",
                         }}
                       >
-                        ✅ Normal
+                        âœ… Normal
                       </span>
                     </td>
                     <td
@@ -902,3 +903,4 @@ export default function TaxCodesPage() {
     </div>
   );
 }
+

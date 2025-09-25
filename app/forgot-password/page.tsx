@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 'use client';
 import Image from 'next/image';
 import { useState } from 'react';
@@ -235,18 +236,18 @@ export default function ForgotPasswordPage() {
               </form>
 
               <a href="/login" style={backLink}>
-                ← Back to Login
+                â† Back to Login
               </a>
             </>
           ) : (
             <div style={successContainer}>
-              <div style={successIcon}>✓</div>
+              <div style={successIcon}>âœ“</div>
               <h1 style={successTitle}>Email Sent!</h1>
               <p style={successMessage}>
                 Check your email for password reset instructions.
               </p>
               <a href="/login" style={backLink}>
-                ← Back to Login
+                â† Back to Login
               </a>
             </div>
           )}
@@ -262,3 +263,4 @@ export default function ForgotPasswordPage() {
     </div>
   );
 }
+

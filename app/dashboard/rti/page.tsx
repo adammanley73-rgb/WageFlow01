@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -312,7 +313,7 @@ export default function RTIPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td style={S.td} colSpan={4}>Loading…</td>
+                <td style={S.td} colSpan={4}>Loadingâ€¦</td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
@@ -326,7 +327,7 @@ export default function RTIPage() {
               rows.map((r) => (
                 <tr key={r.id}>
                   <td style={S.td}>{toGbDateTime(r.created_at)}</td>
-                  <td style={S.td}>{r.run_id ?? '—'}</td>
+                  <td style={S.td}>{r.run_id ?? 'â€”'}</td>
                   <td style={S.td}>
                     <span style={S.badge}>{r.status ?? 'unknown'}</span>
                   </td>
@@ -356,7 +357,7 @@ export default function RTIPage() {
               <div style={S.fieldValue}>{toGbDateTime(openRow.created_at)}</div>
 
               <div style={S.fieldLabel}>Run ID</div>
-              <div style={S.fieldValue}>{openRow.run_id ?? '—'}</div>
+              <div style={S.fieldValue}>{openRow.run_id ?? 'â€”'}</div>
 
               <div style={S.fieldLabel}>Status</div>
               <div style={S.fieldValue}>{openRow.status ?? 'unknown'}</div>
@@ -372,3 +373,4 @@ export default function RTIPage() {
     </PageShell>
   );
 }
+

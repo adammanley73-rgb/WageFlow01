@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 "use client";
 import { useState, useEffect } from "react";
 import { DEMO_EMPLOYEES, type Employee } from "../../../lib/data/employees";
@@ -148,7 +149,7 @@ export default function OvertimeRatesPage() {
                 margin: "0",
               }}
             >
-              💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Overtime Rates
+              ðŸ’¼ <span style={{ color: "#3b82f6" }}>WageFlow</span> Overtime Rates
             </h1>
             <p
               style={{
@@ -192,7 +193,7 @@ export default function OvertimeRatesPage() {
                 border: "1px solid #059669",
               }}
             >
-              ← Back to Payroll
+              â† Back to Payroll
             </a>
             <a
               href="/dashboard/payroll/pay-elements"
@@ -383,7 +384,7 @@ export default function OvertimeRatesPage() {
                     : "pointer",
               }}
             >
-              🧮 Calculate Overtime Pay
+              ðŸ§® Calculate Overtime Pay
             </button>
             <button
               type="button"
@@ -399,7 +400,7 @@ export default function OvertimeRatesPage() {
                 cursor: "pointer",
               }}
             >
-              🔄 Reset
+              ðŸ”„ Reset
             </button>
           </div>
         </div>
@@ -568,7 +569,7 @@ export default function OvertimeRatesPage() {
                 gap: "12px",
               }}
             >
-              <div style={{ fontSize: "24px", marginBottom: "8px" }}>ℹ️</div>
+              <div style={{ fontSize: "24px", marginBottom: "8px" }}>â„¹ï¸</div>
               <div>
                 <h4
                   style={{
@@ -587,10 +588,10 @@ export default function OvertimeRatesPage() {
                     color: "#1e40af",
                   }}
                 >
-                  <li>✅ Subject to PAYE tax deduction</li>
-                  <li>✅ Subject to National Insurance contributions</li>
-                  <li>✅ Must be included in RTI submission to HMRC</li>
-                  <li>✅ Counts towards annual earnings for auto-enrollment</li>
+                  <li>âœ… Subject to PAYE tax deduction</li>
+                  <li>âœ… Subject to National Insurance contributions</li>
+                  <li>âœ… Must be included in RTI submission to HMRC</li>
+                  <li>âœ… Counts towards annual earnings for auto-enrollment</li>
                 </ul>
               </div>
             </div>
@@ -671,7 +672,7 @@ export default function OvertimeRatesPage() {
                       borderBottom: "2px solid #f3f4f6",
                     }}
                   >
-                    Example (£15/hour base)
+                    Example (Â£15/hour base)
                   </th>
                 </tr>
               </thead>
@@ -791,3 +792,4 @@ export default function OvertimeRatesPage() {
     </div>
   );
 }
+

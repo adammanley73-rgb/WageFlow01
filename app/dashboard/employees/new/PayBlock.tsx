@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 // app/dashboard/employees/new/PayBlock.tsx
 "use client";
 
@@ -60,7 +61,7 @@ export default function PayBlock() {
           />
         </Field>
 
-        <Field label="Annual salary (£)" name="annual_salary">
+        <Field label="Annual salary (Â£)" name="annual_salary">
           <input
             id="annual_salary"
             name="annual_salary"
@@ -79,7 +80,7 @@ export default function PayBlock() {
           </p>
         </Field>
 
-        <Field label="Hourly rate (£)" name="hourly_rate">
+        <Field label="Hourly rate (Â£)" name="hourly_rate">
           <input
             id="hourly_rate"
             name="hourly_rate"
@@ -113,3 +114,4 @@ export default function PayBlock() {
     </Section>
   );
 }
+

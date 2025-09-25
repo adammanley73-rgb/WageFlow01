@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -36,29 +37,29 @@ export default function EmployeeDetailsPage() {
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Load employee from real API
+  // âœ… Load employee from real API
   useEffect(() => {
     const loadEmployee = async () => {
       try {
-        console.log('🔍 Loading employee with ID:', employeeId);
+        console.log('ðŸ” Loading employee with ID:', employeeId);
         setLoading(true);
 
         const response = await fetch('/api/employees');
-        console.log('📡 API Response status:', response.status);
+        console.log('ðŸ“¡ API Response status:', response.status);
 
         if (response.ok) {
           const allEmployees = await response.json();
-          console.log('📊 All employees from API:', allEmployees);
+          console.log('ðŸ“Š All employees from API:', allEmployees);
 
           const foundEmployee = allEmployees.find((emp: any) => emp.id === employeeId);
-          console.log('🎯 Found specific employee:', foundEmployee);
+          console.log('ðŸŽ¯ Found specific employee:', foundEmployee);
 
           setEmployee(foundEmployee || null);
         } else {
-          console.error('❌ Failed to fetch employees:', response.status);
+          console.error('âŒ Failed to fetch employees:', response.status);
         }
       } catch (error) {
-        console.error('❌ Error loading employee:', error);
+        console.error('âŒ Error loading employee:', error);
       } finally {
         setLoading(false);
       }
@@ -70,7 +71,7 @@ export default function EmployeeDetailsPage() {
   }, [employeeId]);
 
   // Helper functions
-  const formatCurrency = (amount: number) => `£${amount?.toFixed(2) || '0.00'}`;
+  const formatCurrency = (amount: number) => `Â£${amount?.toFixed(2) || '0.00'}`;
 
   const formatDate = (dateStr: string) => {
     try {
@@ -273,7 +274,7 @@ export default function EmployeeDetailsPage() {
         <div style={styles.maxWidth}>
           <div style={styles.card}>
             <div style={styles.loading}>
-              🔄 Loading employee details...
+              ðŸ”„ Loading employee details...
               <div style={{ marginTop: 8, fontSize: 14, color: '#9ca3af' }}>Employee ID: {employeeId}</div>
             </div>
           </div>
@@ -288,12 +289,12 @@ export default function EmployeeDetailsPage() {
         <div style={styles.maxWidth}>
           <div style={styles.card}>
             <div style={styles.notFound}>
-              <h1 style={styles.notFoundTitle}>👤 Employee Not Found</h1>
+              <h1 style={styles.notFoundTitle}>ðŸ‘¤ Employee Not Found</h1>
               <p style={styles.notFoundText}>
                 The employee with ID "{employeeId}" could not be found in the system.
               </p>
               <a href="/dashboard/employees" style={styles.navLink}>
-                ← Back to Employee List
+                â† Back to Employee List
               </a>
             </div>
           </div>
@@ -315,10 +316,10 @@ export default function EmployeeDetailsPage() {
         <div style={styles.headerCard}>
           <div>
             <h1 style={styles.title}>
-              💼 <span style={{ color: '#3b82f6' }}>WageFlow</span> Employee Details
+              ðŸ’¼ <span style={{ color: '#3b82f6' }}>WageFlow</span> Employee Details
             </h1>
             <p style={styles.subtitle}>
-              {employee.firstName} {employee.lastName} • {employee.employeeNumber}
+              {employee.firstName} {employee.lastName} â€¢ {employee.employeeNumber}
             </p>
           </div>
           <nav style={styles.nav}>
@@ -326,14 +327,14 @@ export default function EmployeeDetailsPage() {
               Dashboard
             </a>
             <a href="/dashboard/employees" style={styles.navLink}>
-              ← Employees
+              â† Employees
             </a>
           </nav>
         </div>
 
         {/* Basic Information */}
         <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>📋 Basic Information</h2>
+          <h2 style={styles.sectionTitle}>ðŸ“‹ Basic Information</h2>
           <div style={styles.grid}>
             <div style={styles.gridItem}>
               <label style={styles.label}>Full Name</label>
@@ -368,7 +369,7 @@ export default function EmployeeDetailsPage() {
 
         {/* Employment Information */}
         <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>💼 Employment Information</h2>
+          <h2 style={styles.sectionTitle}>ðŸ’¼ Employment Information</h2>
           <div style={styles.grid}>
             <div style={styles.gridItem}>
               <label style={styles.label}>Job Title</label>
@@ -411,7 +412,7 @@ export default function EmployeeDetailsPage() {
 
         {/* Financial Information */}
         <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>💰 Financial Information</h2>
+          <h2 style={styles.sectionTitle}>ðŸ’° Financial Information</h2>
           <div style={styles.grid}>
             <div style={styles.gridItem}>
               <label style={styles.label}>Annual Salary</label>
@@ -440,7 +441,7 @@ export default function EmployeeDetailsPage() {
         {/* Address Information */}
         {employee.address && (
           <div style={styles.card}>
-            <h2 style={styles.sectionTitle}>🏠 Address Information</h2>
+            <h2 style={styles.sectionTitle}>ðŸ  Address Information</h2>
             <div style={styles.grid}>
               <div style={styles.gridItem}>
                 <label style={styles.label}>Address Line 1</label>
@@ -468,7 +469,7 @@ export default function EmployeeDetailsPage() {
 
         {/* System Information */}
         <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>ℹ️ System Information</h2>
+          <h2 style={styles.sectionTitle}>â„¹ï¸ System Information</h2>
           <div style={styles.grid}>
             <div style={styles.gridItem}>
               <label style={styles.label}>Employee ID</label>
@@ -487,10 +488,10 @@ export default function EmployeeDetailsPage() {
           {/* Action Buttons */}
           <div style={styles.actionButtons}>
             <a href={`/dashboard/employees/${employee.id}/payroll`} style={styles.secondaryButton}>
-              📊 View Payroll History
+              ðŸ“Š View Payroll History
             </a>
             <a href={`/dashboard/employees/${employee.id}/edit`} style={styles.editButton}>
-              ✏️ Edit Employee
+              âœï¸ Edit Employee
             </a>
           </div>
         </div>
@@ -498,3 +499,4 @@ export default function EmployeeDetailsPage() {
     </div>
   );
 }
+

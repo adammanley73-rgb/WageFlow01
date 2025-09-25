@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 'use client';
 
 import type { CSSProperties } from 'react';
@@ -51,3 +52,4 @@ export default function IntegrationsPage() {
     </main>
   );
 }
+

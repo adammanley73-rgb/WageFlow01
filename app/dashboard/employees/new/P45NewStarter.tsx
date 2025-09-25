@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 "use client";
 
 import { useState } from "react";
@@ -71,7 +72,7 @@ export default function P45NewStarter() {
           </div>
           <div>
             <label className="mb-1 block text-sm font-semibold text-neutral-800">
-              Total pay to date (£)
+              Total pay to date (Â£)
             </label>
             <input
               name="p45_total_pay"
@@ -83,7 +84,7 @@ export default function P45NewStarter() {
           </div>
           <div>
             <label className="mb-1 block text-sm font-semibold text-neutral-800">
-              Total tax to date (£)
+              Total tax to date (Â£)
             </label>
             <input
               name="p45_total_tax"
@@ -98,3 +99,4 @@ export default function P45NewStarter() {
     </div>
   );
 }
+

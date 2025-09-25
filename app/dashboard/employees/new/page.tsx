@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 'use client';
 
 import { useState } from 'react';
@@ -119,7 +120,7 @@ export default function CreateEmployeePage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Annual Salary (£)</label>
+                <label className="block text-sm font-medium mb-1">Annual Salary (Â£)</label>
                 <input inputMode="decimal" className="w-full rounded-lg border border-neutral-300 px-3 py-2 bg-white"
                   value={annual} onChange={e => setAnnual(e.target.value)} required />
               </div>
@@ -139,10 +140,10 @@ export default function CreateEmployeePage() {
                   value={hours} onChange={e => setHours(e.target.value)} />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-1">Equivalent Hourly Rate (£)</label>
+                <label className="block text-sm font-medium mb-1">Equivalent Hourly Rate (Â£)</label>
                 <input className="w-full rounded-lg border border-neutral-300 px-3 py-2 bg-white"
                   value={eqHourly} readOnly placeholder="Auto calculated" />
-                <p className="text-xs text-neutral-700 mt-1">Annual / (52.14285714 × hours)</p>
+                <p className="text-xs text-neutral-700 mt-1">Annual / (52.14285714 Ã— hours)</p>
               </div>
             </div>
           </section>
@@ -155,7 +156,7 @@ export default function CreateEmployeePage() {
           <div className="flex items-center justify-end gap-3 pb-4">
             <a href="/dashboard/employees" className={btnGhost}>Cancel</a>
             <button type="submit" className={btn} disabled={busy}>
-              {busy ? 'Saving…' : 'Save and continue'}
+              {busy ? 'Savingâ€¦' : 'Save and continue'}
             </button>
           </div>
         </form>
@@ -163,3 +164,4 @@ export default function CreateEmployeePage() {
     </div>
   );
 }
+

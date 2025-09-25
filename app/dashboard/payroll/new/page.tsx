@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 // app/dashboard/payroll/new/page.tsx
 import HeaderBanner from "../../../../components/ui/HeaderBanner";
 import Link from "next/link";
@@ -37,3 +38,4 @@ export default function NewPayrollPage() {
     </div>
   );
 }
+

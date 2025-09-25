@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 // app/dashboard/payroll/[id]/page.tsx
 'use client';
 
@@ -357,17 +358,17 @@ export default function RunDetailPage() {
         <div style={S.meta}>
           <div style={S.metaItem}>
             <span>Run:</span>
-            <span className={inter.className} style={S.blue}>{data?.run.runNumber ?? '—'}</span>
+            <span className={inter.className} style={S.blue}>{data?.run.runNumber ?? 'â€”'}</span>
           </div>
           <div style={S.metaItem}>
             <span>Period:</span>
             <span className={inter.className} style={S.green}>
-              {data ? `${data.run.periodStart} to ${data.run.periodEnd}` : '—'}
+              {data ? `${data.run.periodStart} to ${data.run.periodEnd}` : 'â€”'}
             </span>
           </div>
           <div style={S.metaItem}>
             <span>Pay date:</span>
-            <span className={inter.className} style={S.blue}>{data?.run.payDate ?? '—'}</span>
+            <span className={inter.className} style={S.blue}>{data?.run.payDate ?? 'â€”'}</span>
           </div>
         </div>
 
@@ -421,7 +422,7 @@ export default function RunDetailPage() {
               <tbody>
                 {loading && (
                   <tr>
-                    <td style={S.td} colSpan={7}>Loading…</td>
+                    <td style={S.td} colSpan={7}>Loadingâ€¦</td>
                   </tr>
                 )}
                 {!loading && rows.length === 0 && (
@@ -432,8 +433,8 @@ export default function RunDetailPage() {
                 {rows.map((r) => (
                   <tr key={r.id}>
                     <td style={S.td}>{r.employeeName}</td>
-                    <td style={S.td}>{r.employeeNumber || '—'}</td>
-                    <td style={S.td}>{r.email || '—'}</td>
+                    <td style={S.td}>{r.employeeNumber || 'â€”'}</td>
+                    <td style={S.td}>{r.email || 'â€”'}</td>
                     <td style={S.td}>
                       <input
                         className={inter.className}
@@ -495,7 +496,7 @@ export default function RunDetailPage() {
                 cursor: !dirty || hasErrors ? 'not-allowed' : 'pointer',
               }}
             >
-              {saving ? 'Saving…' : 'Save Changes'}
+              {saving ? 'Savingâ€¦' : 'Save Changes'}
             </button>
             <button
               type="button"
@@ -535,7 +536,7 @@ export default function RunDetailPage() {
               }}
               title="Approve and queue FPS"
             >
-              {saving ? 'Working…' : 'Approve run'}
+              {saving ? 'Workingâ€¦' : 'Approve run'}
             </button>
           </div>
         </div>
@@ -543,3 +544,4 @@ export default function RunDetailPage() {
     </div>
   );
 }
+

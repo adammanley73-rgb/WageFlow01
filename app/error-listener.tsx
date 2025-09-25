@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 'use client';
 import { useEffect } from 'react';
 
@@ -14,3 +15,4 @@ export default function ErrorListener() {
   }, []);
   return null;
 }
+

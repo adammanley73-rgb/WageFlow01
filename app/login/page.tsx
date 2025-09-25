@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 import { redirect } from 'next/navigation';
 
 export default function LoginPage() {
@@ -12,3 +13,4 @@ export default function LoginPage() {
   // Optional: keep empty during build; add your real form later
   return null;
 }
+

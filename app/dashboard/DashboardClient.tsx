@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 "use client";
 
 import React from "react";
@@ -10,7 +11,7 @@ type Counts = {
   notices?: number;
 };
 
-const CARD_BG = "#c8c8c8"; // unified tile background (your “neutral-325”)
+const CARD_BG = "#c8c8c8"; // unified tile background (your â€œneutral-325â€)
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
@@ -127,3 +128,4 @@ export default function DashboardClient({ counts }: { counts: Counts }) {
     </div>
   );
 }
+

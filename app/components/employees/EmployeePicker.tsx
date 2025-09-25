@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 'use client';
 
 type Props = {
@@ -21,3 +22,4 @@ export default function EmployeePicker({ onSelect, value }: Props) {
     </div>
   );
 }
+

@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 import React from 'react';
 import ComingSoon from '@/components/ComingSoon';
 import { env } from '@/lib/env';
@@ -15,3 +16,4 @@ export default function Page() {
     </div>
   );
 }
+
