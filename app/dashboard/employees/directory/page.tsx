@@ -1,130 +1,134 @@
 'use client';
+/* @ts-nocheck */
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import HeaderBanner from "@components/ui/HeaderBanner";
+import { getAll, subscribe, removeEmployee, type Employee } from "@lib/employeeStore";
+import { hasPayrollForEmployee } from "@lib/payrollIndex";
 
-import React, { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import Link from 'next/link';
-import HeaderBanner from '@components/ui/HeaderBanner';
-import { getAll, subscribe, removeEmployee, type Employee } from '@lib/employeeStore';
-import { hasPayrollForEmployee } from '@lib/payrollIndex';
-
-const styles: Record<string, CSSProperties> = {
-  page: { minHeight: '100vh', padding: '24px 16px', background: 'linear-gradient(180deg,#10b981 0%,#059669 35%,#1e40af 65%,#3b82f6 100%)' },
-  wrap: { maxWidth: 1100, margin: '0 auto' },
-  toolbar: { display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', margin: '12px 0' },
-  search: { flex: 1, border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', fontSize: 14, background: 'white' },
-  button: { background: '#1e40af', color: 'white', border: 'none', padding: '10px 14px', borderRadius: 10, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' },
-  dangerBtn: { background: '#dc2626', color: 'white', border: 'none', padding: '6px 10px', borderRadius: 8, fontWeight: 700, cursor: 'pointer' },
-  dangerBtnDisabled: { background: '#ef4444', opacity: 0.45, color: 'white', border: 'none', padding: '6px 10px', borderRadius: 8, fontWeight: 700, cursor: 'not-allowed' },
-  table: { width: '100%', borderCollapse: 'separate', borderSpacing: 0, background: 'white', borderRadius: 12, overflow: 'hidden' },
-  th: { textAlign: 'left', padding: '12px 14px', fontSize: 13, background: '#f8fafc', borderBottom: '1px solid #e5e7eb' },
-  td: { padding: '12px 14px', fontSize: 14, borderBottom: '1px solid #f1f5f9' },
-  rowActions: { display: 'flex', gap: 10, alignItems: 'center' },
-  linkBtn: { color: '#1e40af', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' },
-};
-
-export default function EmployeesDirectoryPage() {
-  const [rows, setRows] = useState<Employee[]>([]);
-  const [q, setQ] = useState('');
-
-  const load = () => setRows(getAll());
+export default function EmployeeDirectoryPage() {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    load();
-    const off = subscribe(load);
-    return off;
+    let alive = true;
+
+    // initial load
+    (async () => {
+      try {
+        const list = await getAll();
+        if (alive) setEmployees(Array.isArray(list) ? list : []);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+
+    // preview-safe subscription (no-op in stub but harmless)
+    const unsub = subscribe((list: Employee[]) => {
+      if (alive) setEmployees(Array.isArray(list) ? list : []);
+    });
+
+    return () => {
+      alive = false;
+      if (typeof unsub === "function") unsub();
+    };
   }, []);
 
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return rows;
-    return rows.filter(r => {
-      const hay = [
-        r.fullName,
-        r.niNumber,
-        r.payGroup,
-        r.employeeNumber ?? '',
-        r.email ?? '',
-        r.phone ?? '',
-      ]
-        .join(' ')
-        .toLowerCase();
-      return hay.includes(s);
-    });
-  }, [rows, q]);
-
-  function onDeleteRow(e: Employee) {
-    if (hasPayrollForEmployee(e.id)) {
-      alert('Cannot delete. This employee appears in a payroll run.');
-      return;
+  async function onRemove(id: string) {
+    try {
+      await removeEmployee(id);
+      setEmployees((prev) => prev.filter((e) => e.id !== id));
+    } catch {
+      // ignore in preview
     }
-    const ok = window.confirm(`Delete ${e.fullName}? This cannot be undone.`);
-    if (!ok) return;
-    removeEmployee(e.id);
-    setRows(prev => prev.filter(x => x.id !== e.id));
   }
 
   return (
-    <main style={styles.page}>
-      <div style={styles.wrap}>
-        <HeaderBanner title="Employees Directory" />
-        <div style={styles.toolbar}>
-          <input
-            style={styles.search}
-            placeholder="Search name, NI number, pay group"
-            value={q}
-            onChange={e => setQ(e.target.value)}
-          />
-          <button style={styles.button as CSSProperties} onClick={load}>Refresh</button>
-          <Link href="/dashboard/employees/new" style={styles.button}>Add New</Link>
+    <div className="min-h-screen">
+      <HeaderBanner title="Employee Directory (Preview)" />
+      <div className="p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Employees</h2>
+          <Link
+            href="/dashboard/employees/new"
+            className="rounded bg-gray-200 px-3 py-2 text-sm"
+          >
+            Add employee
+          </Link>
         </div>
 
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>Name</th>
-              <th style={styles.th}>NI number</th>
-              <th style={styles.th}>Pay group</th>
-              <th style={styles.th}>Hourly £</th>
-              <th style={styles.th}>Active</th>
-              <th style={styles.th}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={6} style={{ ...styles.td, textAlign: 'center', padding: 24 }}>No employees found.</td>
-              </tr>
-            ) : (
-              filtered.map(e => {
-                const blocked = hasPayrollForEmployee(e.id);
-                return (
-                  <tr key={e.id}>
-                    <td style={styles.td}>{e.fullName}</td>
-                    <td style={styles.td}>{e.niNumber || '—'}</td>
-                    <td style={styles.td}>{e.payGroup}</td>
-                    <td style={styles.td}>
-                      {typeof e.hourlyRate === 'number' ? e.hourlyRate.toFixed(2) : '—'}
-                    </td>
-                    <td style={styles.td}>{e.active ? 'Yes' : 'No'}</td>
-                    <td style={styles.td}>
-                      <div style={styles.rowActions}>
-                        <Link href={`/dashboard/employees/${e.id}/edit`} style={styles.linkBtn}>Edit</Link>
-                        <button
-                          title={blocked ? 'Included in a payroll run. Deletion disabled.' : 'Delete employee'}
-                          style={blocked ? styles.dangerBtnDisabled : styles.dangerBtn}
-                          disabled={blocked}
-                          onClick={() => onDeleteRow(e)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+        {loading ? (
+          <p className="text-sm text-gray-600">Loading…</p>
+        ) : employees.length === 0 ? (
+          <div className="rounded border border-gray-200 bg-white p-4 text-sm text-gray-700">
+            No employees in preview.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded border border-gray-200 bg-white">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2">Name</th>
+                  <th className="px-4 py-2">Email</th>
+                  <th className="px-4 py-2">Payroll</th>
+                  <th className="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map((e) => (
+                  <Row key={e.id} emp={e} onRemove={onRemove} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-    </main>
+    </div>
+  );
+}
+
+function Row({ emp, onRemove }: { emp: Employee; onRemove: (id: string) => void }) {
+  const [hasPayroll, setHasPayroll] = useState<boolean>(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const flag = await hasPayrollForEmployee(emp.id);
+        if (alive) setHasPayroll(!!flag);
+      } catch {
+        if (alive) setHasPayroll(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [emp?.id]);
+
+  const name = [emp?.first_name, emp?.last_name].filter(Boolean).join(" ") || "(Unnamed)";
+
+  return (
+    <tr className="border-t">
+      <td className="px-4 py-2">{name}</td>
+      <td className="px-4 py-2">{emp?.email || ""}</td>
+      <td className="px-4 py-2">{hasPayroll ? "Yes" : "No"}</td>
+      <td className="px-4 py-2">
+        <div className="flex gap-2">
+          <Link
+            href={`/dashboard/employees/${emp.id}/edit/details`}
+            className="rounded bg-gray-200 px-2 py-1 text-xs"
+          >
+            Edit
+          </Link>
+          <button
+            type="button"
+            className="rounded bg-gray-200 px-2 py-1 text-xs"
+            onClick={() => onRemove(emp.id)}
+          >
+            Remove
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }

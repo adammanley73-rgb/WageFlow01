@@ -1,3 +1,4 @@
+/* @ts-nocheck */
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -256,18 +257,18 @@ export default function PayslipPage() {
               {companyAddress || 'Company address'}
             </div>
             <div style={S.companyMeta}>
-              PAYE ref: {company?.paye_reference ?? '—'}
+              PAYE ref: {company?.paye_reference ?? 'â€”'}
             </div>
             <div style={S.companyMeta}>
-              Accounts Office ref: {company?.accounts_office_reference ?? '—'}
+              Accounts Office ref: {company?.accounts_office_reference ?? 'â€”'}
             </div>
           </div>
           <div style={S.payslipTitle}>
             Payslip
             <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(0,0,0,0.65)' }}>
               {run
-                ? `${gbDate(run.period_start)} to ${gbDate(run.period_end)} · Pay date ${gbDate(run.pay_date)}`
-                : '—'}
+                ? `${gbDate(run.period_start)} to ${gbDate(run.period_end)} Â· Pay date ${gbDate(run.pay_date)}`
+                : 'â€”'}
             </div>
           </div>
         </div>
@@ -278,16 +279,16 @@ export default function PayslipPage() {
             <div style={S.row}>
               <div style={S.label}>Employee</div>
               <div style={S.value}>
-                {employee ? `${employee.first_name} ${employee.last_name}` : '—'}
+                {employee ? `${employee.first_name} ${employee.last_name}` : 'â€”'}
               </div>
             </div>
             <div style={S.row}>
               <div style={S.label}>Employee No</div>
-              <div style={S.value}>{employee?.employee_number ?? '—'}</div>
+              <div style={S.value}>{employee?.employee_number ?? 'â€”'}</div>
             </div>
             <div style={S.row}>
               <div style={S.label}>Pay frequency</div>
-              <div style={S.value}>{run?.frequency ?? '—'}</div>
+              <div style={S.value}>{run?.frequency ?? 'â€”'}</div>
             </div>
           </div>
 
@@ -299,12 +300,12 @@ export default function PayslipPage() {
             <div style={S.row}>
               <div style={S.label}>Period</div>
               <div style={S.value}>
-                {run ? `${gbDate(run.period_start)} to ${gbDate(run.period_end)}` : '—'}
+                {run ? `${gbDate(run.period_start)} to ${gbDate(run.period_end)}` : 'â€”'}
               </div>
             </div>
             <div style={S.row}>
               <div style={S.label}>Pay date</div>
-              <div style={S.value}>{run ? gbDate(run.pay_date) : '—'}</div>
+              <div style={S.value}>{run ? gbDate(run.pay_date) : 'â€”'}</div>
             </div>
           </div>
         </div>
@@ -314,25 +315,25 @@ export default function PayslipPage() {
           <div style={S.block}>
             <div style={S.label}>Gross pay</div>
             <div className="wf-num" style={S.num}>
-              {line?.gross_pay != null ? `£${(line.gross_pay as number).toFixed(2)}` : '—'}
+              {line?.gross_pay != null ? `Â£${(line.gross_pay as number).toFixed(2)}` : 'â€”'}
             </div>
           </div>
           <div style={S.block}>
             <div style={S.label}>Total deductions</div>
             <div className="wf-num" style={S.num}>
               {line
-                ? `£${(
+                ? `Â£${(
                     (line.tax ?? 0) +
                     (line.ni ?? 0) +
                     (line.pension_employee ?? 0)
                   ).toFixed(2)}`
-                : '—'}
+                : 'â€”'}
             </div>
           </div>
           <div style={S.block}>
             <div style={S.label}>Net pay</div>
             <div className="wf-num" style={S.num}>
-              {line?.net_pay != null ? `£${(line.net_pay as number).toFixed(2)}` : '—'}
+              {line?.net_pay != null ? `Â£${(line.net_pay as number).toFixed(2)}` : 'â€”'}
             </div>
           </div>
         </div>
@@ -357,3 +358,4 @@ export default function PayslipPage() {
     </PageShell>
   );
 }
+

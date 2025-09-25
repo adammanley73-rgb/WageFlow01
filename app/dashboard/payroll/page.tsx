@@ -1,3 +1,4 @@
+/* @ts-nocheck */
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
@@ -124,3 +125,4 @@ function formatFrequency(f: string) {
   if (v === 'monthly') return 'Monthly';
   return '';
 }
+

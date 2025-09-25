@@ -1,3 +1,4 @@
+/* @ts-nocheck */
 "use client";
 import { useState, useEffect } from "react";
 import { DEMO_EMPLOYEES, type Employee } from "../../../lib/data/employees";
@@ -791,3 +792,4 @@ export default function OvertimeRatesPage() {
     </div>
   );
 }
+

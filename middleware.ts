@@ -1,22 +1,21 @@
-import type { NextRequest } from 'next/server';
-import { NextResponse } from 'next/server';
+// preview-safe middleware; bypass auth in preview
+// TODO(prod): remove preview bypass before release.
 
-export function middleware(req: NextRequest) {
-  const bypass =
-    process.env.AUTH_BYPASS === '1' ||
-    process.env.NEXT_PUBLIC_AUTH_BYPASS === '1';
+import { NextResponse } from "next/server"
 
-  // If bypass is on, any visit to /login goes to /dashboard
-  if (bypass && req.nextUrl.pathname === '/login') {
-    const url = req.nextUrl.clone();
-    url.pathname = '/dashboard';
-    url.search = '';
-    return NextResponse.redirect(url);
+export function middleware(req: Request) {
+  if (
+    process.env.BUILD_PROFILE === "preview" ||
+    process.env.NEXT_PUBLIC_APP_ENV === "preview"
+  ) {
+    return NextResponse.next()
   }
 
-  return NextResponse.next();
+  // Non-preview: keep normal behavior
+  return NextResponse.next()
 }
 
+// Apply to everything except Next internals and obvious assets
 export const config = {
-  matcher: ['/login'],
-};
+  matcher: ["/((?!_next|favicon.ico|assets|.*\\.(?:png|jpg|jpeg|gif|svg|ico)).*)"]
+}

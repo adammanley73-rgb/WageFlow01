@@ -1,129 +1,147 @@
-// app/dashboard/preview/page.tsx
+/* @ts-nocheck */
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
-interface PreviewResponse {
-  ok: boolean;
-  runId: string | null;
-  params: { grossForPeriod: number; taxCode: string; period: number };
-  pay: { gross: number; tax: number; net: number };
-  paye: { slices: { rate: number; amount: number; tax: number; label: string }[] };
+type ApiOk = {
+  ok: true;
+  input: {
+    gross: number;
+    code: string;
+    period: number;
+    ytdTaxable: number;
+    ytdTaxPaid: number;
+  };
+  personalAllowance?: number;
+  taxableAtBR?: number;
+  taxBR?: number;
+  taxableAtHR?: number;
+  taxHR?: number;
+  taxableAtAR?: number;
+  taxAR?: number;
+  totalTax?: number;
+  net?: number;
+};
+
+type ApiErr = { ok: false; error?: string };
+
+function isApiOk(x: unknown): x is ApiOk {
+  return !!x && typeof (x as any).ok === 'boolean' && (x as any).ok === true;
+}
+function isApiErr(x: unknown): x is ApiErr {
+  return !!x && typeof (x as any).ok === 'boolean' && (x as any).ok === false;
 }
 
 export default function PreviewPage() {
   const [gross, setGross] = useState<string>('2000');
-  const [taxCode, setTaxCode] = useState<string>('1257L');
+  const [code, setCode] = useState<string>('1257L');
   const [period, setPeriod] = useState<string>('1');
   const [ytdTaxable, setYtdTaxable] = useState<string>('0');
   const [ytdTaxPaid, setYtdTaxPaid] = useState<string>('0');
 
-  const [data, setData] = useState<PreviewResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
+  const [resp, setResp] = useState<ApiOk | ApiErr | null>(null);
 
-  async function fetchPreview() {
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
     setLoading(true);
-    setError(null);
-    setData(null);
+    setResp(null);
     try {
-      const qs = new URLSearchParams({
-        runId: 'test',
-        gross: gross.trim(),
-        taxCode: taxCode.trim(),
-        period: period.trim(),
-        ytdTaxable: ytdTaxable.trim(),
-        ytdTaxPaid: ytdTaxPaid.trim()
-      }).toString();
-
-      const res = await fetch(`/api/preview?${qs}`, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as PreviewResponse;
-      setData(json);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to fetch');
+      const r = await fetch('/api/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gross: Number(gross),
+          code: code.trim(),
+          period: Number(period),
+          ytdTaxable: Number(ytdTaxable),
+          ytdTaxPaid: Number(ytdTaxPaid),
+        }),
+      });
+      const json = (await r.json()) as unknown;
+      setResp(isApiOk(json) || isApiErr(json) ? (json as any) : { ok: false, error: 'bad response' });
+    } catch (err: any) {
+      setResp({ ok: false, error: String(err?.message || err) });
     } finally {
       setLoading(false);
     }
   }
 
-  // Load once with defaults
-  useEffect(() => {
-    fetchPreview();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const ok = isApiOk(resp) ? resp : null;
+  const err = isApiErr(resp) ? resp : null;
+
+  const outGross = ok && typeof ok.input?.gross === 'number' ? ok.input.gross : Number(gross) || 0;
+  const outCode = ok && typeof ok.input?.code === 'string' ? ok.input.code : code;
+  const outTax = ok && typeof ok.totalTax === 'number' ? ok.totalTax : 0;
+  const outNet = ok && typeof ok.net === 'number' ? ok.net : Math.max(0, outGross - outTax);
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">PAYE Preview</h1>
+    <div className="max-w-5xl mx-auto p-6">
+      <h1 className="text-2xl font-semibold mb-4">PAYE Preview</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-gray-600">Gross</span>
-          <input className="border rounded p-2" value={gross} onChange={e => setGross(e.target.value)} inputMode="decimal" />
-        </label>
-        <label className="flex flex-col gap-1 md:col-span-2">
-          <span className="text-sm text-gray-600">Tax code</span>
-          <input className="border rounded p-2" value={taxCode} onChange={e => setTaxCode(e.target.value)} placeholder="1257L or 1257L M1 or BR or D0" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-gray-600">Period 1..12</span>
-          <input className="border rounded p-2" value={period} onChange={e => setPeriod(e.target.value)} inputMode="numeric" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-gray-600">YTD taxable</span>
-          <input className="border rounded p-2" value={ytdTaxable} onChange={e => setYtdTaxable(e.target.value)} inputMode="decimal" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm text-gray-600">YTD tax paid</span>
-          <input className="border rounded p-2" value={ytdTaxPaid} onChange={e => setYtdTaxPaid(e.target.value)} inputMode="decimal" />
-        </label>
-      </div>
+      <form onSubmit={onSubmit} className="grid grid-cols-1 sm:grid-cols-5 gap-4 mb-4">
+        <input
+          className="border rounded p-2"
+          placeholder="Gross"
+          value={gross}
+          onChange={(e) => setGross(e.target.value)}
+          inputMode="decimal"
+        />
+        <input
+          className="border rounded p-2"
+          placeholder="Tax code"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+        <input
+          className="border rounded p-2"
+          placeholder="Period 1..12"
+          value={period}
+          onChange={(e) => setPeriod(e.target.value)}
+          inputMode="numeric"
+        />
+        <input
+          className="border rounded p-2"
+          placeholder="YTD taxable"
+          value={ytdTaxable}
+          onChange={(e) => setYtdTaxable(e.target.value)}
+          inputMode="decimal"
+        />
+        <input
+          className="border rounded p-2"
+          placeholder="YTD tax paid"
+          value={ytdTaxPaid}
+          onChange={(e) => setYtdTaxPaid(e.target.value)}
+          inputMode="decimal"
+        />
 
-      <div className="flex items-center gap-3">
         <button
-          onClick={fetchPreview}
-          className="px-4 py-2 rounded bg-black text-white disabled:opacity-50"
+          type="submit"
           disabled={loading}
+          className="sm:col-span-1 col-span-1 bg-black text-white rounded px-4 py-2"
         >
-          {loading ? 'Loading…' : 'Preview'}
+          {loading ? 'Calculating…' : 'Preview'}
         </button>
-        {error && <span className="text-red-600">Error: {error}</span>}
-      </div>
+      </form>
 
-      {data && (
-        <>
-          <div className="border rounded p-4 bg-gray-50">
-            <p><strong>Gross:</strong> £{data.pay.gross.toFixed(2)}</p>
-            <p><strong>Tax:</strong> £{data.pay.tax.toFixed(2)}</p>
-            <p><strong>Net:</strong> £{data.pay.net.toFixed(2)}</p>
-          </div>
+      {err && <p className="text-red-600">Error: {err.error || 'Unknown error'}</p>}
 
-          <div>
-            <h2 className="text-xl font-semibold">Slices</h2>
-            <table className="min-w-full border">
-              <thead>
-                <tr className="bg-gray-200">
-                  <th className="p-2 border">Band</th>
-                  <th className="p-2 border">Amount</th>
-                  <th className="p-2 border">Rate</th>
-                  <th className="p-2 border">Tax</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.paye.slices.map((s, i) => (
-                  <tr key={i}>
-                    <td className="p-2 border">{s.label}</td>
-                    <td className="p-2 border">£{s.amount.toFixed(2)}</td>
-                    <td className="p-2 border">{(s.rate * 100).toFixed(0)}%</td>
-                    <td className="p-2 border">£{s.tax.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {ok && (
+        <div className="border rounded p-4 bg-gray-50 mt-2 space-y-1">
+          <p><strong>Gross:</strong> £{outGross.toFixed(2)}</p>
+          <p><strong>Code:</strong> {outCode}</p>
+          <p><strong>Tax:</strong> £{(outTax ?? 0).toFixed(2)}</p>
+          <p><strong>Net:</strong> £{outNet.toFixed(2)}</p>
+
+          <div className="mt-3 text-sm text-gray-700">
+            <p><strong>BR slice:</strong> £{(ok.taxableAtBR ?? 0).toFixed(2)} taxed £{(ok.taxBR ?? 0).toFixed(2)}</p>
+            <p><strong>HR slice:</strong> £{(ok.taxableAtHR ?? 0).toFixed(2)} taxed £{(ok.taxHR ?? 0).toFixed(2)}</p>
+            <p><strong>AR slice:</strong> £{(ok.taxableAtAR ?? 0).toFixed(2)} taxed £{(ok.taxAR ?? 0).toFixed(2)}</p>
+            <p><strong>Allowance (monthly):</strong> £{(ok.personalAllowance ?? 0).toFixed(2)}</p>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
 }
+

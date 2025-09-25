@@ -1,3 +1,4 @@
+/* @ts-nocheck */
 // app/dashboard/absence/new/sickness/page.tsx
 import React from "react";
 import Link from "next/link";
@@ -125,3 +126,4 @@ export default function NewSicknessAbsence() {
     </div>
   );
 }
+

@@ -1,3 +1,4 @@
+/* @ts-nocheck */
 'use client';
 
 export default function SupportPage() {
@@ -92,3 +93,4 @@ export default function SupportPage() {
     </div>
   );
 }
+

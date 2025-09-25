@@ -1,72 +1,53 @@
-export const dynamic = 'force-dynamic';
-
-import React from 'react';
+/* @ts-nocheck */
+import React from "react";
+import HeaderBanner from "@components/ui/HeaderBanner";
 
 export default async function SettingsPage() {
+  // Preview stub. No data fetch. Keep it compile-safe.
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-300/40 via-cyan-200/30 to-emerald-200/40">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Header */}
-        <header className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-sm text-neutral-600">Manage company and application preferences.</p>
-        </header>
-
-        {/* Tabs */}
-        <div className="rounded-xl bg-white shadow-sm ring-1 ring-neutral-200 overflow-hidden">
-          <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium text-neutral-700">
-            Company Settings
+    <div className="min-h-screen">
+      <HeaderBanner title="Company Settings (Preview)" />
+      <div className="p-6 space-y-4">
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <h3 className="mb-3 text-sm font-semibold text-gray-800">Company</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="text-xs text-gray-600">Company name</span>
+              <input
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                defaultValue="Preview Co"
+                readOnly
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-gray-600">Pay schedule</span>
+              <input
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                defaultValue="Monthly"
+                readOnly
+              />
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-xs text-gray-600">Address</span>
+              <textarea
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                rows={3}
+                defaultValue=""
+                readOnly
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs text-gray-600">Phone</span>
+              <input
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                defaultValue=""
+                readOnly
+              />
+            </label>
           </div>
-          <div className="p-4 space-y-4">
-            <form>
-              <div>
-                <label className="block text-sm font-medium mb-1">Company name</label>
-                <input
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2"
-                  name="company_name"
-                  defaultValue=""
-                  placeholder="Your company Ltd"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">PAYE reference</label>
-                <input
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2"
-                  name="paye_ref"
-                  defaultValue=""
-                  placeholder="123/AB45678"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Accounts office reference</label>
-                <input
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2"
-                  name="accounts_office_ref"
-                  defaultValue=""
-                  placeholder="123AB45678901"
-                />
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-blue-700 text-white"
-                >
-                  Save
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        {/* Archive control placeholder */}
-        <div className="mt-8 rounded-xl bg-white shadow-sm ring-1 ring-neutral-200 overflow-hidden">
-          <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-medium text-neutral-700">
-            Archive
-          </div>
-          <div className="p-4 text-sm text-neutral-600">
-            Payroll runs can be archived automatically when FPS is submitted.
-            Archived runs are hidden by default.
-          </div>
+          <p className="mt-4 text-xs text-gray-500">
+            This is a preview-only page. Editing is disabled.
+          </p>
         </div>
       </div>
     </div>

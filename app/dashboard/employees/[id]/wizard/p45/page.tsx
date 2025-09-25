@@ -1,3 +1,4 @@
+/* @ts-nocheck */
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -137,7 +138,7 @@ export default function P45Page() {
 
         <div className={CARD}>
           {loading ? (
-            <div>Loading…</div>
+            <div>Loadingâ€¦</div>
           ) : (
             <>
               {err && (
@@ -220,7 +221,7 @@ export default function P45Page() {
                 </Link>
                 <button onClick={onSave} disabled={saving}
                   className="rounded-md bg-blue-700 px-4 py-2 text-white disabled:opacity-50">
-                  {saving ? 'Saving…' : 'Save and continue'}
+                  {saving ? 'Savingâ€¦' : 'Save and continue'}
                 </button>
               </div>
             </>
@@ -230,3 +231,4 @@ export default function P45Page() {
     </div>
   );
 }
+

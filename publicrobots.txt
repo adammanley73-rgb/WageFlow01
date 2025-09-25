@@ -1,0 +1,3 @@
+# Disallow indexing of preview deployments
+User-agent: *
+Disallow: /

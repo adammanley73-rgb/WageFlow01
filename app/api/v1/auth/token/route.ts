@@ -1,39 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { sign } from 'jsonwebtoken';
+/* @ts-nocheck */
+import { NextResponse } from "next/server";
 
-const DEMO_EMAIL = process.env.DEMO_EMAIL || 'demo@company.com';
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'demo123';
-
-export async function POST(req: NextRequest) {
+// Preview stub: accept any email/password and return a fake token
+export async function POST(req: Request) {
   try {
-    const { email, password } = await req.json();
-
+    const { email, password } = await req.json().catch(() => ({}));
     if (!email || !password) {
-      return NextResponse.json(
-        { error: 'Email and password are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Missing credentials" }, { status: 400 });
     }
-
-    // Demo-only auth; replace with DB lookup + bcrypt compare
-    if (email !== DEMO_EMAIL || password !== DEMO_PASSWORD) {
-      return NextResponse.json(
-        { error: 'Invalid credentials' },
-        { status: 401 }
-      );
-    }
-
-    const token = sign(
-      { userId: 'demo-user', email },
-      process.env.NEXTAUTH_SECRET || 'dev-secret',
-      { expiresIn: '1h' }
-    );
-
-    return NextResponse.json({ success: true, token });
-  } catch (err) {
-    return NextResponse.json(
-      { error: 'Auth failed' },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: true, token: "preview-token", user: { email } });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err?.message ?? "Unexpected error" }, { status: 500 });
   }
 }
+

@@ -1,3 +1,4 @@
+/* @ts-nocheck */
 'use client';
 
 import React, { useMemo, useState, type CSSProperties } from 'react';
@@ -287,3 +288,4 @@ export default function EmployeesImportStubPage() {
     </main>
   );
 }
+

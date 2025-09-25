@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "framework": "nextjs",
+  "buildCommand": "BUILD_PROFILE=preview npm run build",
+  "routes": [
+    { "src": "/(.*)", "dest": "/$1" }
+  ]
+}

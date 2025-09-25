@@ -1,4 +1,4 @@
-﻿// app/page.tsx
+// app/page.tsx
 export default function HomePage() {
   return (
     <main style={{ padding: 24 }}>

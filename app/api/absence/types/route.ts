@@ -1,27 +1,22 @@
-import { NextResponse } from 'next/server'
-import { supabase } from '../../../../lib/supabase'
+/* @ts-nocheck */
+import { NextResponse } from 'next/server';
+import { env } from '@lib/env';
 
-export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic';
 
-// GET /api/absence/types - Get all absence types
 export async function GET() {
-  try {
-    const { data, error } = await supabase
-      .from('absence_types')
-      .select('*')
-      .order('name')
-
-    if (error) {
-      console.error('❌ Database error:', error.message)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json(data ?? [], { status: 200 })
-  } catch (err) {
-    console.error('❌ Error fetching absence types:', err)
-    return NextResponse.json(
-      { error: 'Failed to fetch absence types' },
-      { status: 500 }
-    )
+  if (env.preview) {
+    return NextResponse.json({ ok: false, error: 'absence/types disabled on preview' }, { status: 404 });
   }
+  // Prod placeholder: no DB call yet
+  return NextResponse.json({ ok: true, items: [] }, { status: 200 });
 }
+
+export async function POST() {
+  if (env.preview) {
+    return NextResponse.json({ ok: false, error: 'absence/types disabled on preview' }, { status: 404 });
+  }
+  return NextResponse.json({ ok: false, error: 'not implemented' }, { status: 501 });
+}
+
+

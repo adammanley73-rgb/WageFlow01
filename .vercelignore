@@ -1,0 +1,47 @@
+# .vercelignore  (place this file in the repository root)
+
+# Local caches and build output
+.next/
+out/
+dist/
+coverage/
+
+# Backups from preview-purge scripts
+backup_preview/
+
+# Local env and secrets
+.env*
+!.env.example
+
+# Editor/OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Git metadata
+.git/
+.gitignore
+
+# Tests and snapshots
+__tests__/
+**/*.spec.ts
+**/*.spec.tsx
+**/*.test.ts
+**/*.test.tsx
+__snapshots__/
+
+# CLI scripts and local helpers (not needed in runtime)
+scripts/
+**/*.ps1
+**/*.sh
+**/*.bat
+**/*.cmd
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
