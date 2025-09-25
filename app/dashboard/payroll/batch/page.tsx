@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -544,13 +544,13 @@ export default function BatchPayrollPage() {
       if (response.ok) {
         await response.json();
         alert(
-          `âœ… ${
+          `✅ ${
             selectedPayFrequency.charAt(0).toUpperCase() +
             selectedPayFrequency.slice(1)
-          } Batch Payroll Created!\n\nðŸ“Š Summary:\nâ€¢ Pay Frequency: ${
+          } Batch Payroll Created!\n\n📊 Summary:\n• Pay Frequency: ${
             selectedPayFrequency.charAt(0).toUpperCase() +
             selectedPayFrequency.slice(1)
-          }\nâ€¢ ${selectedEntries.length} employees processed\nâ€¢ Total Net Pay: Â£${payrollRun.totals.netPay.toFixed(
+          }\n• ${selectedEntries.length} employees processed\n• Total Net Pay: £${payrollRun.totals.netPay.toFixed(
             2
           )}`
         );
@@ -560,7 +560,7 @@ export default function BatchPayrollPage() {
       }
     } catch (error) {
       console.error("Batch payroll processing failed:", error);
-      alert("âŒ Failed to create batch payroll run. Please try again.");
+      alert("❌ Failed to create batch payroll run. Please try again.");
     } finally {
       setProcessing(false);
     }
@@ -618,7 +618,7 @@ export default function BatchPayrollPage() {
         <div style={styles.headerCard}>
           <div style={styles.headerRow}>
             <div>
-              <h1 style={styles.h1}>ðŸ“Š Batch Payroll Processing</h1>
+              <h1 style={styles.h1}>📊 Batch Payroll Processing</h1>
               <p style={styles.subtitle}>
                 Process payroll for employees by their individual pay
                 frequencies
@@ -628,13 +628,13 @@ export default function BatchPayrollPage() {
               onClick={() => router.push("/dashboard/payroll")}
               style={styles.backBtn}
             >
-              â† Back to Payroll
+              ← Back to Payroll
             </button>
           </div>
 
           {/* Pay Frequency Filter Selection */}
           <div style={styles.filterCard}>
-            <h3 style={styles.filterTitle}>ðŸ” Filter by Pay Frequency</h3>
+            <h3 style={styles.filterTitle}>🔍 Filter by Pay Frequency</h3>
             <div style={styles.radioRow}>
               <label style={styles.radioLabel}>
                 <input
@@ -648,7 +648,7 @@ export default function BatchPayrollPage() {
                   style={{ margin: 0 }}
                 />
                 <span style={styles.radioText}>
-                  ðŸ“… Weekly ({frequencyCounts.weekly} employees)
+                  📅 Weekly ({frequencyCounts.weekly} employees)
                 </span>
               </label>
               <label style={styles.radioLabel}>
@@ -663,7 +663,7 @@ export default function BatchPayrollPage() {
                   style={{ margin: 0 }}
                 />
                 <span style={styles.radioText}>
-                  ðŸ“… Bi-Weekly ({frequencyCounts["bi-weekly"]} employees)
+                  📅 Bi-Weekly ({frequencyCounts["bi-weekly"]} employees)
                 </span>
               </label>
               <label style={styles.radioLabel}>
@@ -678,7 +678,7 @@ export default function BatchPayrollPage() {
                   style={{ margin: 0 }}
                 />
                 <span style={styles.radioText}>
-                  ðŸ—“ï¸ Monthly ({frequencyCounts.monthly} employees)
+                  🗓️ Monthly ({frequencyCounts.monthly} employees)
                 </span>
               </label>
             </div>
@@ -750,7 +750,7 @@ export default function BatchPayrollPage() {
             </div>
             <div style={styles.statCardGreen}>
               <div style={styles.statBigGreen}>
-                Â£
+                £
                 {selectedTotals.grossPay.toLocaleString("en-GB", {
                   minimumFractionDigits: 2,
                 })}
@@ -759,7 +759,7 @@ export default function BatchPayrollPage() {
             </div>
             <div style={styles.statCardBlue}>
               <div style={styles.statBigBlue}>
-                Â£
+                £
                 {selectedTotals.netPay.toLocaleString("en-GB", {
                   minimumFractionDigits: 2,
                 })}
@@ -798,7 +798,7 @@ export default function BatchPayrollPage() {
             {matchingEmployees.length === 0 ? (
               <div style={styles.noEmployeesWrap}>
                 <div style={styles.noEmployeesTitle}>
-                  ðŸ“… No {selectedPayFrequency} employees found
+                  📅 No {selectedPayFrequency} employees found
                 </div>
                 <p style={{ fontSize: "12px", color: "#6b7280" }}>
                   There are no employees with {selectedPayFrequency} pay
@@ -844,7 +844,7 @@ export default function BatchPayrollPage() {
                             {entry.employee.firstName} {entry.employee.lastName}
                           </div>
                           <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                            {entry.employee.employeeNumber} â€¢ Â£
+                            {entry.employee.employeeNumber} • £
                             {entry.employee.annualSalary?.toLocaleString(
                               "en-GB"
                             ) || 0}
@@ -858,13 +858,13 @@ export default function BatchPayrollPage() {
                         </span>
                       </td>
                       <td style={styles.tdMoneyRightGreen}>
-                        Â£{entry.grossPay.toFixed(2)}
+                        £{entry.grossPay.toFixed(2)}
                       </td>
                       <td style={styles.tdMoneyRightRed}>
-                        -Â£{entry.totalDeductions.toFixed(2)}
+                        -£{entry.totalDeductions.toFixed(2)}
                       </td>
                       <td style={styles.tdMoneyRightBlue}>
-                        Â£{entry.netPay.toFixed(2)}
+                        £{entry.netPay.toFixed(2)}
                       </td>
                     </tr>
                   ))}
@@ -887,15 +887,15 @@ export default function BatchPayrollPage() {
               }
             >
               {processing
-                ? "ðŸ”„ Processing..."
-                : `ðŸš€ Process ${selectedCount} ${selectedPayFrequency} Employee${
+                ? "🔄 Processing..."
+                : `🚀 Process ${selectedCount} ${selectedPayFrequency} Employee${
                     selectedCount !== 1 ? "s" : ""
                   }`}
             </button>
 
             <p style={styles.processHint}>
               This will create a {selectedPayFrequency} payroll run for{" "}
-              {selectedCount} selected employees with total net pay of Â£
+              {selectedCount} selected employees with total net pay of £
               {selectedTotals.netPay.toFixed(2)}
             </p>
           </div>

@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 import { NextResponse } from "next/server";
 
 // Preview stub: accept any email/password and return a fake token

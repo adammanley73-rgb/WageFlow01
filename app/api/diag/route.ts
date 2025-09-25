@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // app/api/_diag/env/route.ts
 import { NextResponse } from 'next/server';
 

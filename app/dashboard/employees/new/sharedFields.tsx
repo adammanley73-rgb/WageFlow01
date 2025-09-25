@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // app/dashboard/employees/new/sharedFields.tsx
 import * as React from "react";
 

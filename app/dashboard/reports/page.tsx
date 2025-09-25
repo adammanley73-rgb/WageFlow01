@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -28,9 +28,9 @@ const fmtCurrency = (n: number) =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 2 }).format(n);
 
 const fmtDate = (iso?: string) => {
-  if (!iso) return 'â€”';
+  if (!iso) return '—';
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return 'â€”';
+  if (Number.isNaN(d.getTime())) return '—';
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
@@ -122,9 +122,9 @@ export default function ReportsPage() {
         'Run Number',
         'Pay Date',
         'Status',
-        'Total Gross (Â£)',
-        'Total Deductions (Â£)',
-        'Total Net (Â£)',
+        'Total Gross (£)',
+        'Total Deductions (£)',
+        'Total Net (£)',
       ];
       const rows = runs.map((r) => {
         const gross = r.totalGrossPay ?? 0;
@@ -166,7 +166,7 @@ export default function ReportsPage() {
             className="px-3 py-2 rounded-xl bg-[#1e40af] text-white text-sm font-medium disabled:opacity-50"
             title="Export payroll summary as CSV"
           >
-            {csvBusy ? 'Exportingâ€¦' : 'Export CSV'}
+            {csvBusy ? 'Exporting…' : 'Export CSV'}
           </button>
         </div>
       </div>
@@ -191,7 +191,7 @@ export default function ReportsPage() {
       <div className="rounded-2xl bg-white border border-neutral-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Payroll Summary</h2>
-          {runsLoading && <span className="text-sm text-neutral-500">Loadingâ€¦</span>}
+          {runsLoading && <span className="text-sm text-neutral-500">Loading…</span>}
         </div>
 
         <div className="overflow-x-auto">
@@ -220,9 +220,9 @@ export default function ReportsPage() {
                   const ded = r.totalDeductions ?? Math.max(0, gross - net);
                   return (
                     <tr key={r.id} className="border-t border-neutral-200">
-                      <td className="px-4 py-2">{r.runNumber ?? 'â€”'}</td>
+                      <td className="px-4 py-2">{r.runNumber ?? '—'}</td>
                       <td className="px-4 py-2">{fmtDate(r.payDate)}</td>
-                      <td className="px-4 py-2">{r.status ?? 'â€”'}</td>
+                      <td className="px-4 py-2">{r.status ?? '—'}</td>
                       <td className="px-4 py-2 text-right">{fmtCurrency(gross)}</td>
                       <td className="px-4 py-2 text-right">{fmtCurrency(ded)}</td>
                       <td className="px-4 py-2 text-right">{fmtCurrency(net)}</td>
@@ -239,7 +239,7 @@ export default function ReportsPage() {
       <div className="rounded-2xl bg-white border border-neutral-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
           <h2 className="text-lg font-semibold">RTI Submission Log</h2>
-          {rtiLoading && <span className="text-sm text-neutral-500">Loadingâ€¦</span>}
+          {rtiLoading && <span className="text-sm text-neutral-500">Loading…</span>}
         </div>
 
         <div className="overflow-x-auto">
@@ -265,11 +265,11 @@ export default function ReportsPage() {
                 rti.map((x) => (
                   <tr key={x.id} className="border-t border-neutral-200">
                     <td className="px-4 py-2">{x.type}</td>
-                    <td className="px-4 py-2">{x.period ?? 'â€”'}</td>
+                    <td className="px-4 py-2">{x.period ?? '—'}</td>
                     <td className="px-4 py-2">{fmtDate(x.submittedAt)}</td>
-                    <td className="px-4 py-2">{x.reference ?? 'â€”'}</td>
-                    <td className="px-4 py-2">{x.status ?? 'â€”'}</td>
-                    <td className="px-4 py-2">{x.message ?? 'â€”'}</td>
+                    <td className="px-4 py-2">{x.reference ?? '—'}</td>
+                    <td className="px-4 py-2">{x.status ?? '—'}</td>
+                    <td className="px-4 py-2">{x.message ?? '—'}</td>
                   </tr>
                 ))
               )}

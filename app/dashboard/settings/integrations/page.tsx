@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 'use client';
 
 import type { CSSProperties } from 'react';
@@ -19,7 +19,7 @@ export default function IntegrationsPage() {
   return (
     <main style={S.page}>
       <div style={S.wrap}>
-        <HeaderBanner title="Settings" current="settings" />
+        <HeaderBanner title="Settings" currentSection="settings" />
 
         <section style={S.grid} aria-labelledby="int-title">
           <h2 id="int-title" style={{ position: 'absolute', left: -9999 }}>Integrations</h2>

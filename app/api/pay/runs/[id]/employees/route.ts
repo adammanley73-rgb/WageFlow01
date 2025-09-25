@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 import { NextResponse } from "next/server";
 import { getAdmin } from "@lib/admin";
 

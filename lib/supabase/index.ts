@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 export const supabase = {
   from() { return { select: async () => ({ data: [], error: null }) }; }
 };

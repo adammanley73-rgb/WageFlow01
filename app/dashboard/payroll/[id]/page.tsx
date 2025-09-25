@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // app/dashboard/payroll/[id]/page.tsx
 'use client';
 

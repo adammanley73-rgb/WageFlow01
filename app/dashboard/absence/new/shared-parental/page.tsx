@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -256,7 +256,7 @@ export default function NewPaternityAbsencePage() {
 
       setInfo(
         spp
-          ? `Saved. SPP total Â£${spp.total.toFixed(2)} with ${spp.schedule.length} weeks.`
+          ? `Saved. SPP total £${spp.total.toFixed(2)} with ${spp.schedule.length} weeks.`
           : "Saved. SPP schedule not available in this build."
       );
     } catch {
@@ -269,7 +269,7 @@ export default function NewPaternityAbsencePage() {
   if (!hydrated) {
     return (
       <div className="p-4">
-        <div className="text-sm text-gray-500">Loadingâ€¦</div>
+        <div className="text-sm text-gray-500">Loading…</div>
       </div>
     );
   }
@@ -365,7 +365,7 @@ export default function NewPaternityAbsencePage() {
             disabled={saving}
             className="px-4 py-2 rounded-md bg-blue-700 text-white font-medium disabled:opacity-60"
           >
-            {saving ? "Savingâ€¦" : "Save"}
+            {saving ? "Saving…" : "Save"}
           </button>
           <button type="button" onClick={resetForm} className="px-4 py-2 rounded-md border">
             Reset

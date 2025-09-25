@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 'use client';
 
 import React, { useEffect, useState, type CSSProperties } from 'react';
@@ -113,15 +113,15 @@ export default function AbsencePage() {
         <div style={styles.tilesRow}>
           <div style={styles.tile}>
             <div style={styles.tileTitle}>Open Cases</div>
-            <Safe v={hydrated ? open : 'â€”'} />
+            <Safe v={hydrated ? open : '—'} />
           </div>
           <div style={styles.tile}>
             <div style={styles.tileTitle}>Employees Off Today</div>
-            <Safe v={hydrated ? today : 'â€”'} />
+            <Safe v={hydrated ? today : '—'} />
           </div>
           <div style={styles.tile}>
             <div style={styles.tileTitle}>This Month</div>
-            <Safe v={hydrated ? month : 'â€”'} />
+            <Safe v={hydrated ? month : '—'} />
           </div>
         </div>
 

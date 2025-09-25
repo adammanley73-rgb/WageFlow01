@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -142,7 +142,7 @@ export default function PaySchedulesPage() {
             opacity: '0.9'
           }}
         >
-          â† Back to Payroll Dashboard
+          ← Back to Payroll Dashboard
         </Link>
         <h1
           style={{
@@ -153,7 +153,7 @@ export default function PaySchedulesPage() {
             textShadow: '0 2px 4px rgba(0,0,0,0.3)'
           }}
         >
-          ðŸ“… Pay Schedules
+          📅 Pay Schedules
         </h1>
         <p
           style={{

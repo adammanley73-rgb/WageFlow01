@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 "use client";
 
 import React from "react";
@@ -11,7 +11,7 @@ type Counts = {
   notices?: number;
 };
 
-const CARD_BG = "#c8c8c8"; // unified tile background (your â€œneutral-325â€)
+const CARD_BG = "#c8c8c8"; // unified tile background (your “neutral-325”)
 
 function Card({ children }: { children: React.ReactNode }) {
   return (

@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
@@ -83,7 +83,7 @@ export default async function PayrollPage() {
                       <td className="px-4 py-3">{r.run_name}</td>
                       <td className="px-4 py-3 capitalize">{formatFrequency(r.frequency)}</td>
                       <td className="px-4 py-3">
-                        {formatDate(r.period_start)} â€“ {formatDate(r.period_end)}
+                        {formatDate(r.period_start)} – {formatDate(r.period_end)}
                       </td>
                       <td className="px-4 py-3">{formatDate(r.pay_date)}</td>
                       <td className="px-4 py-3 text-right">

@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 import React from "react";
 import HeaderBanner from "@components/ui/HeaderBanner";
 

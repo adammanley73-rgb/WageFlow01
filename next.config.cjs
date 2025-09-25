@@ -1,17 +1,22 @@
-// File: next.config.cjs
-
-/** @type {import('next').NextConfig} */
+/* next.config.cjs */
 const isPreview = process.env.BUILD_PROFILE === "preview";
 
-module.exports = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   reactStrictMode: true,
+  typescript: { ignoreBuildErrors: !!isPreview },
+  eslint: { ignoreDuringBuilds: !!isPreview },
+  poweredByHeader: false,
 
-  // Only relax lint/TS for preview builds
-  eslint: { ignoreDuringBuilds: isPreview },
-  typescript: { ignoreBuildErrors: isPreview },
-
-  // Keep webpack simple for preview; aliases handled via ts/jsconfig
   webpack: (config) => {
+    // Never resolve anything from any backup_preview folder
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      backup_preview: false,
+      "scripts/backup_preview": false
+    };
     return config;
-  },
+  }
 };
+
+module.exports = nextConfig;

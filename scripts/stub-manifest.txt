@@ -1,0 +1,13 @@
+# scripts\stub-manifest.txt
+# Relative paths from repo root to files that have a .preview.stub sibling.
+
+app\api\preview\route.ts
+app\api\pay\runs\route.ts
+app\api\settings\company\route.ts
+lib\employeeStore.ts
+lib\payrollIndex.ts
+lib\statutory\awe.ts
+lib\statutory\smp.ts
+lib\statutory\spp.ts
+lib\statutory\spbp.ts
+app\dashboard\preview\page.tsx

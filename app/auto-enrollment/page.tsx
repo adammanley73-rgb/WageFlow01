@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
 import { DEMO_EMPLOYEES, type Employee } from "../lib/data/employees";
@@ -347,7 +347,7 @@ function BeautifulDashboard({
         enrollDate,
         contributions,
         formattedDob: dob ? formatDateUK(dob) : "Invalid",
-        formattedSalary: `Â£${e.annualSalary.toLocaleString()}`,
+        formattedSalary: `£${e.annualSalary.toLocaleString()}`,
       };
     });
   }, [employees]);
@@ -409,8 +409,8 @@ function BeautifulDashboard({
                   <td style={S.td}>
                     {row.contributions.employer > 0 ? (
                       <div>
-                        <div style={S.amtEmployer}>Employer: Â£{(row.contributions.employer / 12).toFixed(2)}</div>
-                        <div style={S.amtEmployee}>Employee: Â£{(row.contributions.employee / 12).toFixed(2)}</div>
+                        <div style={S.amtEmployer}>Employer: £{(row.contributions.employer / 12).toFixed(2)}</div>
+                        <div style={S.amtEmployee}>Employee: £{(row.contributions.employee / 12).toFixed(2)}</div>
                       </div>
                     ) : (
                       <span style={S.empMeta}>Not applicable</span>
@@ -434,21 +434,21 @@ function BeautifulDashboard({
                               <strong>Annual Salary:</strong> {row.formattedSalary}
                             </div>
                             <div>
-                              <strong>Qualifying Earnings:</strong> Â£{row.contributions.qe.toLocaleString()}
+                              <strong>Qualifying Earnings:</strong> £{row.contributions.qe.toLocaleString()}
                             </div>
                           </div>
 
                           {row.status === "Eligible" && (
                             <div style={S.boxEligible}>
                               <p style={S.boxP}>
-                                <strong>âœ… Action Required:</strong> This employee must be auto-enrolled into your
+                                <strong>✅ Action Required:</strong> This employee must be auto-enrolled into your
                                 workplace pension scheme by {row.enrollDate}.
                               </p>
                               <div style={S.contribList}>
-                                <div>Annual Employee Contribution: Â£{row.contributions.employee.toFixed(2)}</div>
-                                <div>Annual Employer Contribution: Â£{row.contributions.employer.toFixed(2)}</div>
+                                <div>Annual Employee Contribution: £{row.contributions.employee.toFixed(2)}</div>
+                                <div>Annual Employer Contribution: £{row.contributions.employer.toFixed(2)}</div>
                                 <div>
-                                  <strong>Total Annual: Â£{row.contributions.total.toFixed(2)}</strong>
+                                  <strong>Total Annual: £{row.contributions.total.toFixed(2)}</strong>
                                 </div>
                               </div>
                             </div>
@@ -457,7 +457,7 @@ function BeautifulDashboard({
                           {row.status === "Entitled" && (
                             <div style={S.boxEntitled}>
                               <p style={S.boxP}>
-                                <strong>âšª Optional:</strong> This employee can opt-in to your workplace pension scheme if
+                                <strong>⚪ Optional:</strong> This employee can opt-in to your workplace pension scheme if
                                 they wish.
                               </p>
                             </div>
@@ -466,7 +466,7 @@ function BeautifulDashboard({
                           {row.status === "Non-Eligible" && (
                             <div style={S.boxNon}>
                               <p style={S.boxP}>
-                                <strong>âŒ No Action:</strong> This employee does not meet the auto-enrollment criteria.
+                                <strong>❌ No Action:</strong> This employee does not meet the auto-enrollment criteria.
                               </p>
                             </div>
                           )}
@@ -524,7 +524,7 @@ export default function AutoEnrollmentPage() {
         <div style={S.headerCard}>
           <div>
             <h1 style={S.headerTitle}>
-              ðŸ’¼ <span style={{ color: "#3b82f6" }}>WageFlow</span> Auto-Enrollment
+              💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Auto-Enrollment
             </h1>
             <p style={S.headerSubtitle}>Workplace pension auto-enrollment compliance dashboard</p>
           </div>

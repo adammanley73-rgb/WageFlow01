@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 "use client";
 import { useState, useEffect } from "react";
 import { DEMO_EMPLOYEES, type Employee } from "../../../lib/data/employees";
@@ -150,13 +150,13 @@ export default function PayElementsPage() {
   const getTypeIcon = (type: string) => {
     switch (type) {
       case "earnings":
-        return "ðŸ’°";
+        return "💰";
       case "benefit":
-        return "ðŸ¥";
+        return "🏥";
       case "deduction":
-        return "âž–";
+        return "➖";
       default:
-        return "ðŸ“‹";
+        return "📋";
     }
   };
 
@@ -259,7 +259,7 @@ export default function PayElementsPage() {
                 margin: "0",
               }}
             >
-              ðŸ’¼ <span style={{ color: "#3b82f6" }}>WageFlow</span> Pay Elements
+              💼 <span style={{ color: "#3b82f6" }}>WageFlow</span> Pay Elements
             </h1>
             <p
               style={{
@@ -304,7 +304,7 @@ export default function PayElementsPage() {
                 border: "1px solid #059669",
               }}
             >
-              â† Back to Payroll
+              ← Back to Payroll
             </a>
             <a
               href="/dashboard/payroll/overtime-rates"
@@ -445,7 +445,7 @@ export default function PayElementsPage() {
                   marginBottom: "8px",
                 }}
               >
-                Amount (Â£) *
+                Amount (£) *
               </label>
               <input
                 type="number"
@@ -495,7 +495,7 @@ export default function PayElementsPage() {
                     : "pointer",
               }}
             >
-              ðŸ§® Calculate Impact
+              🧮 Calculate Impact
             </button>
             <button
               type="button"
@@ -511,7 +511,7 @@ export default function PayElementsPage() {
                 cursor: "pointer",
               }}
             >
-              ðŸ”„ Reset
+              🔄 Reset
             </button>
           </div>
         </div>
@@ -761,7 +761,7 @@ export default function PayElementsPage() {
                 cursor: "pointer",
               }}
             >
-              âž• Create New Element
+              ➕ Create New Element
             </button>
           </div>
 
@@ -857,9 +857,9 @@ export default function PayElementsPage() {
                       outline: "none",
                     }}
                   >
-                    <option value="earnings">ðŸ’° Earnings</option>
-                    <option value="benefit">ðŸ¥ Benefit</option>
-                    <option value="deduction">âž– Deduction</option>
+                    <option value="earnings">💰 Earnings</option>
+                    <option value="benefit">🏥 Benefit</option>
+                    <option value="deduction">➖ Deduction</option>
                   </select>
                 </div>
 
@@ -873,7 +873,7 @@ export default function PayElementsPage() {
                       marginBottom: "8px",
                     }}
                   >
-                    Default Value (Â£)
+                    Default Value (£)
                   </label>
                   <input
                     type="number"
@@ -1055,7 +1055,7 @@ export default function PayElementsPage() {
                     cursor: !newElement.name ? "not-allowed" : "pointer",
                   }}
                 >
-                  âœ… Create Element
+                  ✅ Create Element
                 </button>
               </div>
             </div>
@@ -1303,19 +1303,19 @@ export default function PayElementsPage() {
             }}
           >
             <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
-              <strong>ðŸ’° Earnings:</strong> Taxable income including allowances,
+              <strong>💰 Earnings:</strong> Taxable income including allowances,
               bonuses, and commissions
             </p>
             <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
-              <strong>ðŸ¥ Benefits:</strong> Benefits-in-kind that require P11D
+              <strong>🏥 Benefits:</strong> Benefits-in-kind that require P11D
               reporting (e.g., company cars, medical insurance)
             </p>
             <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
-              <strong>âž– Deductions:</strong> Post-tax deductions like union dues,
+              <strong>➖ Deductions:</strong> Post-tax deductions like union dues,
               charity donations, or loan repayments
             </p>
             <p style={{ fontSize: "14px", color: "#6b7280", margin: 0 }}>
-              <strong>ðŸ“‹ PAYE Treatment:</strong> Most earnings and benefits are
+              <strong>📋 PAYE Treatment:</strong> Most earnings and benefits are
               subject to PAYE tax and National Insurance
             </p>
           </div>

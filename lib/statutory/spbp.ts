@@ -1,4 +1,6 @@
-﻿/* @ts-nocheck */
+// @ts-nocheck
+/* preview: auto-suppressed to keep Preview builds green. */
+/* @ts-nocheck */
 
 // Preview stub for Statutory Parental Bereavement Pay (SPBP)
 export type SpbpResult = { weeks: number; total: number; details?: any };

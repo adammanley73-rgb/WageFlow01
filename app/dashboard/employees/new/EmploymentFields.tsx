@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -143,7 +143,7 @@ export default function EmploymentFields({
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="grid gap-1">
             <label className="text-sm font-medium text-neutral-700" htmlFor="annual_salary">
-              Annual salary (Â£)
+              Annual salary (£)
             </label>
             <input
               id="annual_salary"
@@ -160,7 +160,7 @@ export default function EmploymentFields({
 
           <div className="grid gap-1">
             <label className="text-sm font-medium text-neutral-700" htmlFor="hourly_rate">
-              Hourly rate (Â£) auto
+              Hourly rate (£) auto
             </label>
             <input
               id="hourly_rate"
@@ -247,7 +247,7 @@ export default function EmploymentFields({
             </div>
             <div className="grid gap-1">
               <label className="text-sm font-medium text-neutral-700" htmlFor="p45_pay_to_date">
-                P45 pay to date (Â£)
+                P45 pay to date (£)
               </label>
               <input
                 id="p45_pay_to_date"
