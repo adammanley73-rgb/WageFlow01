@@ -1,16 +1,20 @@
-// middleware.ts
-// Preview-safe. Drop the NextRequest type to avoid TS treating it as a value.
+// middleware.ts - preview-safe
+import type { NextRequest } from "next/server"
+import { NextResponse } from "next/server"
 
-import { NextResponse } from "next/server";
-
-const profile = (process.env.BUILD_PROFILE || "preview").toLowerCase();
-
-export function middleware(req: any) {
-  if (profile !== "prod") {
-    const p = req.nextUrl?.pathname || "/";
-    if (p.startsWith("/api/absence/") || p.startsWith("/api/employees/")) {
-      return NextResponse.json({ ok: true, preview: true }, { status: 200 });
-    }
+export function middleware(req: NextRequest) {
+  // Public preview: skip all auth if profile is preview
+  if (process.env.BUILD_PROFILE === "preview" || process.env.NEXT_PUBLIC_APP_ENV === "preview") {
+    return NextResponse.next()
   }
-  return NextResponse.next();
+
+  // If you have real auth, keep it for non-preview here.
+  return NextResponse.next()
+}
+
+export const config = {
+  matcher: [
+    // keep your existing routes or make it global
+    "/((?!_next|favicon.ico|api/ping).*)"
+  ]
 }
