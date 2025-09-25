@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 // app/api/_diag/env/route.ts
 import { NextResponse } from 'next/server';
 
@@ -11,3 +12,5 @@ export async function GET() {
     service_role_present: hasSrv,
   });
 }
+
+

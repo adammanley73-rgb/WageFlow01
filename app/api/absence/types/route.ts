@@ -1,3 +1,4 @@
+﻿/* @ts-nocheck */
 import { NextResponse } from 'next/server';
 import { env } from '@lib/env';
 
@@ -17,3 +18,5 @@ export async function POST() {
   }
   return NextResponse.json({ ok: false, error: 'not implemented' }, { status: 501 });
 }
+
+

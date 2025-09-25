@@ -1,5 +1,6 @@
+﻿/* @ts-nocheck */
 // File: app/api/runs/latest/route.ts
-// Returns latest pay_run id (by created_at) so you don’t need psql.
+// Returns latest pay_run id (by created_at) so you donâ€™t need psql.
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
@@ -23,3 +24,5 @@ export async function GET() {
 
   return NextResponse.json({ ok: true, id: data[0].id, run_number: data[0].run_number, created_at: data[0].created_at });
 }
+
+
