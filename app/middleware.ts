@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
 
-export function middleware(req: NextRequest) {
+export function middleware(req: any) {
   // Only run this in production
   if (process.env.NEXT_PUBLIC_APP_ENV === 'prod') {
     const basicAuth = req.headers.get('authorization')
