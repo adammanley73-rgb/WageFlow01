@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server'
 
 export function middleware(req: any) {
-  // Only run this in production
   if (process.env.NEXT_PUBLIC_APP_ENV === 'prod') {
     const basicAuth = req.headers.get('authorization')
-
     const user = process.env.PROD_GATE_USER
     const pass = process.env.PROD_GATE_PASS
 
@@ -28,6 +26,7 @@ export function middleware(req: any) {
   return NextResponse.next()
 }
 
+// Run on all routes
 export const config = {
-  matcher: ['/:path*'],
+  matcher: '/:path*',
 }
