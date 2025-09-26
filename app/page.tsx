@@ -1,7 +1,8 @@
 // @ts-nocheck
 /* preview: auto-suppressed to keep Preview builds green. */
 /* @ts-nocheck */
-'use client';
+
+export const dynamic = 'force-dynamic';
 
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
@@ -21,35 +22,33 @@ const styles = {
     backgroundColor: '#ffffff',
     borderRadius: 20,
     boxShadow: '0 10px 30px rgba(0,0,0,0.10)',
-    padding: '36px 24px 44px', // slightly taller padding to match login card feel
+    padding: '36px 24px 44px',
     textAlign: 'center' as const,
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
   } as CSSProperties,
   content: {
-    width: 'min(600px, 92vw)', // slim card similar to login card
+    width: 'min(600px, 92vw)',
     margin: '0 auto',
   } as CSSProperties,
-  // Logo size doubled
   logo: {
-    width: 320, // was 160
+    width: 320,
     height: 'auto',
     display: 'block',
-    margin: '12px auto 32px', // increased bottom spacing
+    margin: '12px auto 32px',
   } as CSSProperties,
-  // Increase vertical spacing between all elements (roughly doubled)
   title: {
     fontSize: 30,
     fontWeight: 800,
     letterSpacing: '0.3px',
-    margin: '24px 0 32px', // more space above/below
+    margin: '24px 0 32px',
     color: '#111827',
   } as CSSProperties,
   description: {
     fontSize: 17.5,
     lineHeight: 1.6,
     color: '#374151',
-    margin: '0 auto 36px', // extra space before the button
+    margin: '0 auto 36px',
   } as CSSProperties,
   cta: {
     display: 'inline-flex',
@@ -75,7 +74,7 @@ export default function HomePage() {
         <div style={styles.content}>
           {/* Larger logo only */}
           <img
-            src="/WageFlowLogo.png" // C:\Users\adamm\Projects\wageflow01\public\WageFlowLogo.png
+            src="/WageFlowLogo.png"
             alt="WageFlow"
             style={styles.logo}
           />
@@ -94,4 +93,3 @@ export default function HomePage() {
     </main>
   );
 }
-
