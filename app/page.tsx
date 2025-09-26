@@ -2,10 +2,12 @@
 /* preview: auto-suppressed to keep Preview builds green. */
 /* @ts-nocheck */
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
 
-import type { CSSProperties } from 'react';
-import Link from 'next/link';
+import type { CSSProperties } from 'react'
+import Link from 'next/link'
 
 const styles = {
   page: {
@@ -65,7 +67,7 @@ const styles = {
     textDecoration: 'none',
     boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
   } as CSSProperties,
-} as const;
+} as const
 
 export default function HomePage() {
   return (
@@ -73,11 +75,7 @@ export default function HomePage() {
       <div style={styles.card}>
         <div style={styles.content}>
           {/* Larger logo only */}
-          <img
-            src="/WageFlowLogo.png"
-            alt="WageFlow"
-            style={styles.logo}
-          />
+          <img src="/WageFlowLogo.png" alt="WageFlow" style={styles.logo} />
 
           <h2 style={styles.title}>UK Payroll Management Demo</h2>
           <p style={styles.description}>
@@ -91,5 +89,5 @@ export default function HomePage() {
         </div>
       </div>
     </main>
-  );
+  )
 }
