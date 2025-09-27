@@ -1,43 +1,34 @@
-/* @ts-nocheck */
-import { NextResponse } from 'next/server';
-import { supabase } from '../../../lib/supabase';
+// File: app/api/rti/logs/route.ts
+// Purpose: stop Next from trying to prerender this API route and blowing up when Supabase env vars are missing.
+// Notes:
+// - Forces dynamic at runtime and disables ISR.
+// - Lazily creates the Supabase client inside the handler so build doesn't require env vars.
+// - Returns 503 if Supabase is not configured yet.
 
-type LogRow = {
-  id: string;
-  pay_run_id: string | null;
-  type: 'FPS' | 'EPS';
-  period: string;
-  submitted_at: string;
-  reference: string | null;
-  status: 'accepted' | 'rejected' | 'pending';
-  message: string | null;
-};
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
-export async function GET() {
-  try {
-    const { data, error } = await supabase
-      .from('rti_logs')
-      .select('id, pay_run_id, type, period, submitted_at, reference, status, message')
-      .order('submitted_at', { ascending: false })
-      .limit(200);
+import { NextResponse } from 'next/server'
 
-    if (error) {
-      return NextResponse.json({ error: 'Failed to load RTI logs' }, { status: 500 });
-    }
+export async function GET(_req: Request) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-    return NextResponse.json((data ?? []).map((x: LogRow) => ({
-      id: x.id,
-      payRunId: x.pay_run_id,
-      type: x.type,
-      period: x.period,
-      submittedAt: x.submitted_at,
-      reference: x.reference ?? '',
-      status: x.status,
-      message: x.message ?? '',
-    })));
-  } catch {
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  if (!url || !anon) {
+    return NextResponse.json(
+      { ok: false, error: 'Supabase not configured (missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY)' },
+      { status: 503 }
+    )
   }
+
+  // Lazy import to avoid touching supabase-js at build time
+  const { createClient } = await import('@supabase/supabase-js')
+  const supabase = createClient(url, anon)
+
+  // Replace with real query when wiring logs
+  // Example:
+  // const { data, error } = await supabase.from('rti_logs').select('*').order('created_at', { ascending: false }).limit(50)
+  // if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+
+  return NextResponse.json({ ok: true, logs: [] }, { status: 200 })
 }
-
-

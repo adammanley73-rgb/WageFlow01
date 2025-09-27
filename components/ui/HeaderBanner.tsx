@@ -18,7 +18,7 @@ const chipBase =
   "inline-flex items-center justify-center rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 transition-colors w-32 text-center";
 const container =
   "mx-auto mb-6 mt-2 w-full max-w-6xl rounded-xl border border-neutral-200 bg-white p-6 shadow-sm";
-const titleCls = "text-4xl font-semibold tracking-tight text-neutral-900";
+const titleCls = "text-5xl font-extrabold tracking-tight text-neutral-900"; // larger title
 const row = "flex items-center justify-between gap-4";
 const left = "flex items-center gap-4";
 const logoCls = "h-16 w-16 rounded-lg object-contain bg-transparent";
@@ -34,13 +34,11 @@ function chipsFor(section: Section): { label: string; href: string; key: Section
     ];
   }
 
-  // Non-dashboard pages: show Dashboard first, then the others except the current section.
   const all: { label: string; href: string; key: Section }[] = [
     { label: "Dashboard", href: "/dashboard", key: "dashboard" },
     { label: "Employees", href: "/dashboard/employees", key: "employees" },
     { label: "Payroll", href: "/dashboard/payroll", key: "payroll" },
     { label: "Absence", href: "/dashboard/absence", key: "absence" },
-    // Settings intentionally omitted off-dashboard as per spec.
   ];
   return all.filter((c) => c.key !== section);
 }
