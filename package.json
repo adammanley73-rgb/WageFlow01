@@ -2,7 +2,6 @@
   "name": "wageflow01",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,26 +11,27 @@
     "dev:api": "tsx server/index.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
+    "@supabase/supabase-js": "^2.45.3",
     "@vercel/analytics": "^1.5.0",
-    "autoprefixer": "^10.4.20",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "next": "14.2.32",
     "next-auth": "^4.24.11",
-    "postcss": "^8.4.47",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^3.3.1",
-    "tailwindcss": "^3.4.14"
+    "sharp": "^0.34.4",
+    "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.11.30",
     "@types/react": "19.1.13",
+    "autoprefixer": "^10.4.20",
+    "next": "^14.2.3",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
     "tsx": "^4.19.0",
     "typescript": "5.9.2",
     "vitest": "^3.2.4"

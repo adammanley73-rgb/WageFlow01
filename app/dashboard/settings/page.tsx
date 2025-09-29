@@ -1,55 +1,48 @@
-/* @ts-nocheck */
-import React from "react";
-import HeaderBanner from "@components/ui/HeaderBanner";
+/* app/dashboard/settings/page.tsx */
+import PageTemplate from "@/components/layout/PageTemplate";
 
-export default async function SettingsPage() {
-  // Preview stub. No data fetch. Keep it compile-safe.
+export default function SettingsPage() {
   return (
-    <div className="min-h-screen">
-      <HeaderBanner title="Company Settings (Preview)" />
-      <div className="p-6 space-y-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <h3 className="mb-3 text-sm font-semibold text-gray-800">Company</h3>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="text-xs text-gray-600">Company name</span>
-              <input
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                defaultValue="Preview Co"
-                readOnly
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-gray-600">Pay schedule</span>
-              <input
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                defaultValue="Monthly"
-                readOnly
-              />
-            </label>
-            <label className="block md:col-span-2">
-              <span className="text-xs text-gray-600">Address</span>
-              <textarea
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                rows={3}
-                defaultValue=""
-                readOnly
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-gray-600">Phone</span>
-              <input
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                defaultValue=""
-                readOnly
-              />
-            </label>
+    <PageTemplate
+      title="Settings"
+      currentSection="Settings"
+      stats={[]}
+      actions={[]}
+    >
+      <div className="rounded-xl bg-white ring-1 ring-neutral-200 p-6">
+        <h2 className="text-lg font-semibold text-neutral-900">Company details</h2>
+        <form className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-neutral-700">Company name</span>
+            <input className="h-10 rounded-md border border-neutral-300 px-3" placeholder="The Business Consortium Ltd" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-neutral-700">PAYE reference</span>
+            <input className="h-10 rounded-md border border-neutral-300 px-3" placeholder="123/AB456" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-neutral-700">Accounts office ref</span>
+            <input className="h-10 rounded-md border border-neutral-300 px-3" placeholder="123PA00012345" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-neutral-700">Address line 1</span>
+            <input className="h-10 rounded-md border border-neutral-300 px-3" placeholder="1 Example Street" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-neutral-700">City</span>
+            <input className="h-10 rounded-md border border-neutral-300 px-3" placeholder="Derby" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-neutral-700">Postcode</span>
+            <input className="h-10 rounded-md border border-neutral-300 px-3" placeholder="DE1 1AA" />
+          </label>
+          <div className="sm:col-span-2 mt-2 flex justify-end">
+            <button type="button" className="inline-flex h-10 items-center justify-center rounded-md bg-emerald-600 px-4 text-white text-sm hover:-translate-y-0.5 transition-transform">
+              Save
+            </button>
           </div>
-          <p className="mt-4 text-xs text-gray-500">
-            This is a preview-only page. Editing is disabled.
-          </p>
-        </div>
+        </form>
       </div>
-    </div>
+    </PageTemplate>
   );
 }

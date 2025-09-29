@@ -1,35 +1,31 @@
-/* @ts-nocheck */
-import React from "react";
-import Link from "next/link";
-import HeaderBanner from "@components/ui/HeaderBanner";
+/* app/dashboard/employees/page.tsx */
+import PageTemplate from "@/components/layout/PageTemplate";
+import EmployeesTable from "@/components/tables/EmployeesTable";
 
-export default async function EmployeesPage({
-  searchParams,
-}: {
-  searchParams?: { m?: string; d?: string };
-}) {
+export default function EmployeesPage() {
   return (
-    <div className="min-h-screen">
-      <HeaderBanner title="Employees (Preview)" />
-      <div className="p-6 space-y-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
-          Preview stub. Employee data is disabled in preview mode.
-        </div>
-        <div className="flex gap-2">
-          <Link
-            href="/dashboard/employees/directory"
-            className="rounded bg-gray-200 px-4 py-2 text-sm"
-          >
-            Open directory
-          </Link>
-          <Link
+    <PageTemplate
+      title="Employees"
+      currentSection="Employees"
+      stats={[
+        { label: "Active employees", value: 42 },
+        { label: "New starters", value: 3 },
+        { label: "Leavers", value: 1 }
+      ]}
+      statCols={3}
+      actions={[]}
+    >
+      <div className="mt-2">
+        <EmployeesTable />
+        <div className="mt-4 flex justify-end">
+          <a
             href="/dashboard/employees/new"
-            className="rounded bg-gray-200 px-4 py-2 text-sm"
+            className="inline-flex h-10 items-center justify-center rounded-md bg-[#1e40af] px-4 text-white text-sm hover:-translate-y-0.5 transition-transform"
           >
-            Add employee
-          </Link>
+            Create employee
+          </a>
         </div>
       </div>
-    </div>
+    </PageTemplate>
   );
 }
