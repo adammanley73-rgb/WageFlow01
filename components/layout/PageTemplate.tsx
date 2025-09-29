@@ -23,46 +23,72 @@ export type PageTemplateProps = {
   children?: ReactNode;
 };
 
-/** One tile to rule them all: exact same grey + height for BOTH rows */
+/** Unified visuals: same grey & height for both rows */
 const TILE_MIN_H = "min-h-[8.5rem]";
 const TILE_SHARED =
   "rounded-2xl ring-1 border !bg-neutral-300 !ring-neutral-400 !border-neutral-400";
 
-/** BaseTile ensures identical visuals for stat tiles and action tiles */
+/** Base shell: no centering here; children control layout */
 function BaseTile({ children }: { children: ReactNode }) {
   return (
     <div
-      className={`${TILE_SHARED} ${TILE_MIN_H} p-6 flex flex-col items-center justify-center text-center`}
-      // belt-and-braces in case some legacy CSS leaks through
-      style={{ backgroundColor: "#d4d4d4" /* neutral-300 fallback */ }}
+      className={`${TILE_SHARED} ${TILE_MIN_H} p-6`}
+      style={{ backgroundColor: "#d4d4d4" }} // fallback for neutral-300
     >
       {children}
     </div>
   );
 }
 
+/** Stat tiles remain vertically centered */
 function StatTile({ label, value }: StatSpec) {
   return (
     <BaseTile>
-      <div className="text-sm font-semibold text-neutral-900">{label}</div>
-      <div
-        className={`${inter.variable} mt-2 text-[27px] leading-none font-semibold`}
-        style={{ fontFamily: "var(--font-inter)" }}
-      >
-        {value}
+      <div className="flex h-full w-full flex-col items-center justify-center text-center">
+        <div className="text-sm font-semibold text-neutral-900">{label}</div>
+        <div
+          className={`${inter.variable} mt-2 text-[27px] leading-none font-semibold`}
+          style={{ fontFamily: "var(--font-inter)" }}
+        >
+          {value}
+        </div>
       </div>
     </BaseTile>
   );
 }
 
+/**
+ * Action tiles:
+ * - Title row has fixed height so baselines match.
+ * - Description block has fixed min-height and is TOP-aligned,
+ *   so the first line of text starts at the same Y across all tiles.
+ */
 function ActionTile({ title, description, href }: ActionSpec) {
-  const content = (
+  const body = (
     <BaseTile>
-      <div className="text-base font-semibold text-neutral-900">{title}</div>
-      {description ? <div className="mt-1 text-sm text-neutral-800">{description}</div> : null}
+      <div className="flex h-full w-full flex-col items-center text-center">
+        {/* fixed title row height */}
+        <div className="text-base font-semibold text-neutral-900 min-h-[24px] flex items-end">
+          {title}
+        </div>
+
+        {/* descriptor starts at consistent position; no vertical centering */}
+        <div className="mt-2 text-sm text-neutral-800 leading-snug min-h-[40px] w-full">
+          {description ?? ""}
+        </div>
+
+        {/* optional space-filler to keep total height even if description is short */}
+        <div className="mt-auto" />
+      </div>
     </BaseTile>
   );
-  return href ? <Link href={href} className="block hover:-translate-y-0.5 transition-transform">{content}</Link> : content;
+  return href ? (
+    <Link href={href} className="block hover:-translate-y-0.5 transition-transform">
+      {body}
+    </Link>
+  ) : (
+    body
+  );
 }
 
 export default function PageTemplate({
@@ -86,7 +112,7 @@ export default function PageTemplate({
       ? [...baseChips, { label: "Settings", href: "/dashboard/settings", key: "Settings" }]
       : baseChips;
 
-  const visibleChips = chips.filter(c => c.key !== currentSection);
+  const visibleChips = chips.filter((c) => c.key !== currentSection);
 
   return (
     <div
@@ -96,13 +122,19 @@ export default function PageTemplate({
       <div className="mx-auto max-w-6xl px-4 py-6">
         <header className="rounded-2xl bg-white px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Image src="/WageFlowLogo.png" alt="WageFlow" width={64} height={64} className="h-16 w-16 object-contain" />
+            <Image
+              src="/WageFlowLogo.png"
+              alt="WageFlow"
+              width={64}
+              height={64}
+              className="h-16 w-16 object-contain"
+            />
             <h1 className="text-4xl font-semibold" style={{ color: "#1e40af" }}>
               {title}
             </h1>
           </div>
           <nav className="flex items-center gap-2">
-            {visibleChips.map(chip => (
+            {visibleChips.map((chip) => (
               <Link
                 key={chip.key}
                 href={chip.href}
