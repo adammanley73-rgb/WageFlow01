@@ -1,79 +1,25 @@
-﻿// app/dashboard/page.tsx
-'use client';
+﻿/* app/dashboard/page.tsx */
+import PageTemplate from "@/components/layout/PageTemplate";
 
-import Link from 'next/link';
-import PageTemplate from '@/components/layout/PageTemplate';
-
-function StatCard(props: { title: string; value: number | string; cta: { label: string; href: string } }) {
+export default function DashboardPage() {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl bg-neutral-300 p-5 text-center ring-1 ring-neutral-400">
-      <div className="text-lg font-medium text-neutral-800">{props.title}</div>
-      <div className="mt-2 text-[32px] leading-none font-semibold [font-family:var(--font-inter,inherit)]">
-        {props.value}
-      </div>
-      <div className="mt-4">
-        <Link
-          href={props.cta.href}
-          className="inline-flex h-10 items-center justify-center rounded-xl bg-blue-700 px-4 text-white ring-1 ring-blue-900/20 shadow-sm transition-transform duration-150 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        >
-          {props.cta.label}
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-function ActionCard(props: { title: string; desc: string; cta: { label: string; href: string } }) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-2xl bg-neutral-300 p-5 text-center ring-1 ring-neutral-400">
-      <div className="text-lg font-medium text-neutral-800">{props.title}</div>
-      <p className="mt-2 text-sm text-neutral-700 max-w-[28ch]">{props.desc}</p>
-      <div className="mt-4">
-        <Link
-          href={props.cta.href}
-          className="inline-flex h-10 items-center justify-center rounded-xl bg-blue-700 px-4 text-white ring-1 ring-blue-900/20 shadow-sm transition-transform duration-150 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        >
-          {props.cta.label}
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-export default function Page() {
-  return (
-    <PageTemplate currentSection="Dashboard" hideCurrentChip showSettingsChip={true}>
-      {/* Top row: 4 stat cards with inline buttons */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <StatCard title="Employees" value={0} cta={{ label: 'View Employees', href: '/dashboard/employees' }} />
-        <StatCard title="Payroll Runs" value={0} cta={{ label: 'Go to Payroll', href: '/dashboard/payroll' }} />
-        <StatCard title="Pending Tasks" value={0} cta={{ label: 'View Tasks', href: '/dashboard/tasks' }} />
-        <StatCard title="Notices" value={0} cta={{ label: 'View Notices', href: '/dashboard/notices' }} />
-      </div>
-
-      {/* Bottom row: 4 action cards with descriptions and buttons */}
-      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-4">
-        <ActionCard
-          title="New Employee Wizard"
-          desc="Create a new employee record."
-          cta={{ label: 'Open Wizard', href: '/dashboard/employees/new' }}
-        />
-        <ActionCard
-          title="View Employees"
-          desc="Browse and edit your employee list."
-          cta={{ label: 'View Employees', href: '/dashboard/employees' }}
-        />
-        <ActionCard
-          title="Run Payroll"
-          desc="Start a weekly or monthly run."
-          cta={{ label: 'Go to Payroll', href: '/dashboard/payroll' }}
-        />
-        <ActionCard
-          title="Record Absence"
-          desc="Log sickness or annual leave."
-          cta={{ label: 'Go to Absences', href: '/dashboard/absence' }}
-        />
-      </div>
-    </PageTemplate>
+    <PageTemplate
+      title="Dashboard"
+      currentSection="Dashboard"
+      stats={[
+        { label: "Employees", value: 0 },
+        { label: "Payroll Runs", value: 0 },
+        { label: "Pending Tasks", value: 0 },
+        { label: "Notices", value: 0 }
+      ]}
+      statCols={4}
+      actions={[
+        { title: "New Employee Wizard", description: "Create a new employee record", href: "/dashboard/employees/new" },
+        { title: "View Employees", description: "Browse and edit your employee list", href: "/dashboard/employees" },
+        { title: "Run Payroll", description: "Start a weekly or monthly run", href: "/dashboard/payroll" },
+        { title: "Record Absence", description: "Log sickness or annual leave", href: "/dashboard/absence" }
+      ]}
+      actionCols={4}
+    />
   );
 }

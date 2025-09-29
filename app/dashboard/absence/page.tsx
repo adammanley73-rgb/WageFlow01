@@ -1,26 +1,22 @@
-﻿// app/dashboard/absence/page.tsx
-'use client';
+/* app/dashboard/absence/page.tsx */
+import PageTemplate from "@/components/layout/PageTemplate";
 
-import PageTemplate from '@/components/layout/PageTemplate';
-
-export default function Page() {
+export default function AbsencePage() {
   return (
     <PageTemplate
+      title="Absence"
       currentSection="Absence"
-      hideCurrentChip
-      showSettingsChip={false}
-      statColsMd={4}
-      actionColsMd={2}
-      statTiles={[
-        { label: 'Sickness',     value: 0 },
-        { label: 'Parental',     value: 0 },
-        { label: 'Annual leave', value: 0 },
-        { label: 'Other',        value: 0 },
+      stats={[
+        { label: "Active absences", value: 4 },
+        { label: "Awaiting approval", value: 1 },
+        { label: "This month", value: 7 }
       ]}
-      actionTiles={[
-        { label: 'New absence', href: '/dashboard/absence/new' },
-        { label: 'Absence list', href: '/dashboard/absence/list' },
+      statCols={3}
+      actions={[
+        { title: "New absence", description: "Create a new absence", href: "/dashboard/absence/new" },
+        { title: "View list", description: "See all absences", href: "/dashboard/absence/list" }
       ]}
+      actionCols={2}
     />
   );
 }

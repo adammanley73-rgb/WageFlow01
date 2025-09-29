@@ -1,136 +1,156 @@
-﻿// components/layout/PageTemplate.tsx
-"use client";
-
-import Link from "next/link";
+﻿/* components/layout/PageTemplate.tsx */
 import Image from "next/image";
-import { ReactNode, useMemo } from "react";
+import Link from "next/link";
+import { ReactNode } from "react";
+import { Inter, Manrope } from "next/font/google";
 
-type Section = "Dashboard" | "Employees" | "Payroll" | "Absence" | "Settings";
-type StatTile = { label: string; value: number | string };
-type ActionTile = { label: string; href: string };
+const inter = Inter({ subsets: ["latin"], display: "swap", variable: "--font-inter" });
+const manrope = Manrope({ subsets: ["latin"], display: "swap", variable: "--font-manrope" });
 
-interface Props {
-  currentSection: Section;
-  hideCurrentChip?: boolean;
-  showSettingsChip?: boolean;
-  statTiles?: StatTile[];
-  actionTiles?: ActionTile[];
-  statColsMd?: 1 | 2 | 3 | 4;
-  actionColsMd?: 1 | 2 | 3 | 4;
+type ChipKey = "Dashboard" | "Employees" | "Payroll" | "Absence" | "Settings";
+type Chip = { label: string; href: string; key: ChipKey };
+
+type StatSpec = { label: string; value: string | number; id?: string };
+type ActionSpec = { title: string; description?: string; href?: string; id?: string };
+
+export type PageTemplateProps = {
+  title: string;
+  currentSection: ChipKey;
+  stats?: StatSpec[];
+  statCols?: 2 | 3 | 4;
+  actions?: ActionSpec[];
+  actionCols?: 2 | 3 | 4;
   children?: ReactNode;
-}
-
-const COLS_MD: Record<1 | 2 | 3 | 4, string> = {
-  1: "md:grid-cols-1",
-  2: "md:grid-cols-2",
-  3: "md:grid-cols-3",
-  4: "md:grid-cols-4",
 };
 
-export default function PageTemplate({
-  currentSection,
-  hideCurrentChip = true,
-  showSettingsChip = false,
-  statTiles = [],
-  actionTiles = [],
-  statColsMd = 4,
-  actionColsMd = 3,
-  children,
-}: Props) {
-  const allNav: { label: Section; href: string; show: boolean }[] = [
-    { label: "Dashboard", href: "/dashboard", show: true },
-    { label: "Employees", href: "/dashboard/employees", show: true },
-    { label: "Payroll",   href: "/dashboard/payroll",   show: true },
-    { label: "Absence",   href: "/dashboard/absence",   show: true },
-    { label: "Settings",  href: "/dashboard/settings",  show: showSettingsChip },
-  ];
+/** One tile to rule them all: exact same grey + height for BOTH rows */
+const TILE_MIN_H = "min-h-[8.5rem]";
+const TILE_SHARED =
+  "rounded-2xl ring-1 border !bg-neutral-300 !ring-neutral-400 !border-neutral-400";
 
-  const nav = useMemo(
-    () =>
-      allNav.filter(
-        item => !(hideCurrentChip && item.label === currentSection) && item.show
-      ),
-    [allNav, hideCurrentChip, currentSection]
+/** BaseTile ensures identical visuals for stat tiles and action tiles */
+function BaseTile({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className={`${TILE_SHARED} ${TILE_MIN_H} p-6 flex flex-col items-center justify-center text-center`}
+      // belt-and-braces in case some legacy CSS leaks through
+      style={{ backgroundColor: "#d4d4d4" /* neutral-300 fallback */ }}
+    >
+      {children}
+    </div>
   );
+}
+
+function StatTile({ label, value }: StatSpec) {
+  return (
+    <BaseTile>
+      <div className="text-sm font-semibold text-neutral-900">{label}</div>
+      <div
+        className={`${inter.variable} mt-2 text-[27px] leading-none font-semibold`}
+        style={{ fontFamily: "var(--font-inter)" }}
+      >
+        {value}
+      </div>
+    </BaseTile>
+  );
+}
+
+function ActionTile({ title, description, href }: ActionSpec) {
+  const content = (
+    <BaseTile>
+      <div className="text-base font-semibold text-neutral-900">{title}</div>
+      {description ? <div className="mt-1 text-sm text-neutral-800">{description}</div> : null}
+    </BaseTile>
+  );
+  return href ? <Link href={href} className="block hover:-translate-y-0.5 transition-transform">{content}</Link> : content;
+}
+
+export default function PageTemplate({
+  title,
+  currentSection,
+  stats = [],
+  statCols = 3,
+  actions = [],
+  actionCols = 2,
+  children
+}: PageTemplateProps) {
+  // Only show Settings chip on Dashboard
+  const baseChips: Chip[] = [
+    { label: "Dashboard", href: "/dashboard", key: "Dashboard" },
+    { label: "Employees", href: "/dashboard/employees", key: "Employees" },
+    { label: "Payroll", href: "/dashboard/payroll", key: "Payroll" },
+    { label: "Absence", href: "/dashboard/absence", key: "Absence" }
+  ];
+  const chips: Chip[] =
+    currentSection === "Dashboard"
+      ? [...baseChips, { label: "Settings", href: "/dashboard/settings", key: "Settings" }]
+      : baseChips;
+
+  const visibleChips = chips.filter(c => c.key !== currentSection);
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-[#10b981] to-[#1e40af]">
-      {/* Header banner */}
-      <div className="mx-auto max-w-6xl px-4 pt-6">
-        <div className="rounded-2xl bg-white ring-1 ring-neutral-200 shadow-sm">
-          <div className="flex items-center justify-between px-5 py-4">
-            <div className="flex items-center gap-4">
-              <Image
-                src="/WageFlowLogo.png"
-                alt="WageFlow"
-                width={64}
-                height={64}
-                priority
-              />
-              <h1 className="text-4xl font-semibold text-blue-900">
-                {currentSection}
-              </h1>
-            </div>
-
-            <nav className="flex items-center gap-3">
-              {nav.map(item => (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className={[
-                    "inline-flex h-10 w-32 items-center justify-center rounded-full",
-                    "bg-blue-800 text-white text-sm font-medium",
-                    "ring-1 ring-blue-900/20 shadow-sm",
-                    "transition-transform duration-150 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400",
-                  ].join(" ")}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
+    <div
+      className={`${manrope.variable} ${inter.variable} min-h-dvh bg-gradient-to-b from-[#10b981] to-[#1e40af]`}
+      style={{ fontFamily: "var(--font-manrope)" }}
+    >
+      <div className="mx-auto max-w-6xl px-4 py-6">
+        <header className="rounded-2xl bg-white px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Image src="/WageFlowLogo.png" alt="WageFlow" width={64} height={64} className="h-16 w-16 object-contain" />
+            <h1 className="text-4xl font-semibold" style={{ color: "#1e40af" }}>
+              {title}
+            </h1>
           </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="mx-auto max-w-6xl px-4 pb-10">
-        {statTiles.length > 0 && (
-          <div className={["mt-6 grid grid-cols-1 gap-4", COLS_MD[statColsMd]].join(" ")}>
-            {statTiles.map(t => (
-              <div
-                key={t.label}
-                className="flex flex-col items-center justify-center rounded-2xl bg-neutral-300 p-4 text-center ring-1 ring-neutral-400"
-              >
-                <div className="text-sm text-neutral-700">{t.label}</div>
-                <div className="mt-1 text-[27px] leading-none font-semibold [font-family:var(--font-inter,inherit)]">
-                  {t.value}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {actionTiles.length > 0 && (
-          <div className={["mt-6 grid grid-cols-1 gap-4", COLS_MD[actionColsMd]].join(" ")}>
-            {actionTiles.map(a => (
+          <nav className="flex items-center gap-2">
+            {visibleChips.map(chip => (
               <Link
-                key={a.label}
-                href={a.href}
-                className={[
-                  "mx-auto inline-flex h-16 w-44 items-center justify-center rounded-2xl",
-                  "bg-white text-blue-900 text-lg font-medium",
-                  "ring-1 ring-neutral-200 shadow-sm",
-                  "transition-transform duration-150 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400",
-                  "text-center",
-                ].join(" ")}
+                key={chip.key}
+                href={chip.href}
+                className="w-32 inline-flex items-center justify-center rounded-full bg-[#1e40af] text-white text-sm h-10 hover:-translate-y-0.5 transition-transform"
               >
-                {a.label}
+                {chip.label}
               </Link>
             ))}
-          </div>
+          </nav>
+        </header>
+
+        {stats.length > 0 && (
+          <section className="mt-6">
+            <div
+              className={`grid gap-4 ${
+                statCols === 4
+                  ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+                  : statCols === 2
+                  ? "grid-cols-1 sm:grid-cols-2"
+                  : "grid-cols-1 sm:grid-cols-3"
+              }`}
+            >
+              {stats.map((s, i) => (
+                <StatTile key={s.id ?? i} {...s} />
+              ))}
+            </div>
+          </section>
         )}
 
-        {children && <div className="mt-6">{children}</div>}
+        {actions.length > 0 && (
+          <section className="mt-4">
+            <div
+              className={`grid gap-4 ${
+                actionCols === 4
+                  ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+                  : actionCols === 3
+                  ? "grid-cols-1 sm:grid-cols-3"
+                  : "grid-cols-1 sm:grid-cols-2"
+              }`}
+            >
+              {actions.map((a, i) => (
+                <ActionTile key={a.id ?? i} {...a} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        <main className="mt-6">{children}</main>
       </div>
     </div>
   );
