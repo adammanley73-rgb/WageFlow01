@@ -1,4 +1,4 @@
-﻿/** Tailwind config in CJS so ESM "type: module" doesn't break it */
+﻿/** Tailwind config in CJS */
 module.exports = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
