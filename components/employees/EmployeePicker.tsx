@@ -1,55 +1,61 @@
-"use client"
+'use client';
 
-import React, { useMemo } from "react"
+import React from 'react';
 
-type Option = { id: string; name: string }
+type Employee = {
+  id: string;
+  name: string;
+};
 
-export type EmployeePickerProps = {
-  value?: string
-  onSelect?: (employeeId: string) => void
-  options?: Option[]
-  placeholder?: string
-}
+type Props = {
+  value?: string | null;
+  onChange?: (employeeId: string | null) => void;
+  employees?: Employee[];
+  placeholder?: string;
+  disabled?: boolean;
+  name?: string;
+  id?: string;
+  required?: boolean;
+  className?: string;
+};
 
-/**
- * Minimal preview-safe picker.
- * Works both with and without props.
- * If no options are passed, shows a tiny mock list.
- */
+const defaultEmployees: Employee[] = [
+  { id: 'stub-1', name: 'Alice Example' },
+  { id: 'stub-2', name: 'Bob Example' },
+];
+
 export default function EmployeePicker({
-  value,
-  onSelect,
-  options,
-  placeholder = "Select employee"
-}: EmployeePickerProps) {
-  const items = useMemo<Option[]>(
-    () =>
-      options && options.length
-        ? options
-        : [
-            { id: "emp-001", name: "Alex Carter" },
-            { id: "emp-002", name: "Jamie Patel" },
-            { id: "emp-003", name: "Sam O'Neill" }
-          ],
-    [options]
-  )
+  value = null,
+  onChange,
+  employees = defaultEmployees,
+  placeholder = 'Select employee',
+  disabled = false,
+  name = 'employee_id',
+  id = 'employee_id',
+  required = false,
+  className = 'w-full rounded-md border px-3 py-2',
+}: Props) {
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const v = e.target.value || null;
+    onChange?.(v);
+  }
 
   return (
-    <div className="inline-flex items-center gap-2">
-      <label className="text-sm text-gray-600">Employee</label>
-      <select
-        className="border rounded px-2 py-1 text-sm"
-        aria-label="Employee"
-        value={value ?? ""}
-        onChange={(e) => onSelect?.(e.target.value)}
-      >
-        <option value="">{placeholder}</option>
-        {items.map((opt) => (
-          <option key={opt.id} value={opt.id}>
-            {opt.name}
-          </option>
-        ))}
-      </select>
-    </div>
-  )
+    <select
+      id={id}
+      name={name}
+      value={value ?? ''}
+      onChange={handleChange}
+      disabled={disabled}
+      required={required}
+      className={className}
+    >
+      <option value="">{placeholder}</option>
+      {employees.map(emp => (
+        <option key={emp.id} value={emp.id}>
+          {emp.name}
+        </option>
+      ))}
+    </select>
+  );
 }

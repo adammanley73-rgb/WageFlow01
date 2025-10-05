@@ -1,51 +1,56 @@
-﻿/* @ts-nocheck */
-/**
- * Preview-safe SPBP shim.
- * Accepts both {awe} and {weeklyEarnings}. Extra keys ignored.
- * Not production logic.
+﻿/**
+ * Minimal SPBP helpers so absence pages compile.
+ * SPBP = Statutory Parental Bereavement Pay (UK).
  */
 
-export type SpbpInput = {
-  awe?: number
-  weeklyEarnings?: number
-  days?: number
-  taxYear?: string
-  startDate?: string
-}
+export type SpbpEligibilityInput = {
+  averageWeeklyEarnings?: number; // AWE
+  employmentWeeks?: number; // continuous employment weeks
+  taxYear?: string; // e.g. '2025-26'
+};
+
+export type SpbpCalculationInput = {
+  weeks?: number; // 1 or 2 weeks typically
+  awe?: number; // average weekly earnings
+  statutoryWeeklyRate?: number; // statutory cap for the tax year
+};
 
 export type SpbpResult = {
-  eligible: boolean
-  dailyRate: number
-  days: number
-  gross: number
-  notes: string[]
+  weeklyRate: number;
+  total: number;
+};
+
+export function getSpbpStatutoryWeeklyRate(taxYear?: string): number {
+  // Placeholder. Update when you wire real rates.
+  // Keep non-zero to avoid divide-by-zero logic elsewhere.
+  return 184.03;
 }
 
-export function calcSPBP(input: SpbpInput = {}): SpbpResult {
-  const days =
-    Number.isFinite(input.days) && input.days! > 0 ? Math.min(10, input.days!) : 10
+export function isEligibleSpbp(input: SpbpEligibilityInput): boolean {
+  const weeks = input.employmentWeeks ?? 26;
+  const awe = input.averageWeeklyEarnings ?? 200;
+  return weeks >= 26 && awe > 0;
+}
 
-  const awe =
-    typeof input.awe === "number" && input.awe > 0
-      ? input.awe
-      : typeof input.weeklyEarnings === "number" && input.weeklyEarnings > 0
-      ? input.weeklyEarnings
-      : NaN
-
-  const daily = Number.isFinite(awe) ? Math.min(awe / 7, 30) : 30
-  const gross = Number((daily * days).toFixed(2))
-
+export function calculateSpbp(input: SpbpCalculationInput): SpbpResult {
+  const weeks = input.weeks ?? 1;
+  const awe = input.awe ?? 200;
+  const cap = input.statutoryWeeklyRate ?? getSpbpStatutoryWeeklyRate();
+  const weeklyRate = Math.min(cap, 0.9 * awe);
   return {
-    eligible: true,
-    dailyRate: Number(daily.toFixed(2)),
-    days,
-    gross,
-    notes: [
-      "preview-stub: eligibility forced true",
-      `taxYear=${input.taxYear ?? "unspecified"}`,
-      `startDate=${input.startDate ?? "ignored-in-preview"}`
-    ]
-  }
+    weeklyRate: round2(weeklyRate),
+    total: round2(weeklyRate * Math.max(1, Math.min(2, weeks))),
+  };
 }
 
-export default { calcSPBP }
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+const spbp = {
+  getSpbpStatutoryWeeklyRate,
+  isEligibleSpbp,
+  calculateSpbp,
+};
+
+export default spbp;
