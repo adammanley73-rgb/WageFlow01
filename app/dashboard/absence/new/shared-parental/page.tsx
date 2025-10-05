@@ -3,7 +3,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import EmployeePicker from "@/app/components/employees/EmployeePicker";
+import EmployeePicker from "@/components/employees/EmployeePicker";
 import {
   ensureStoreReady,
   readAbsences as nsReadAbsences,

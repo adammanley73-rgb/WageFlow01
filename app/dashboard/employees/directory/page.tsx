@@ -2,9 +2,9 @@
 /* @ts-nocheck */
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import HeaderBanner from "@components/ui/HeaderBanner";
-import { getAll, subscribe, removeEmployee, type Employee } from "@lib/employeeStore";
-import { hasPayrollForEmployee } from "@lib/payrollIndex";
+import HeaderBanner from "@/components/ui/HeaderBanner";
+import { getAll, subscribe, removeEmployee, type Employee } from "@/lib/employeeStore";
+import { hasPayrollForEmployee } from "@/lib/payrollIndex";
 
 export default function EmployeeDirectoryPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -45,7 +45,7 @@ export default function EmployeeDirectoryPage() {
 
   return (
     <div className="min-h-screen">
-      <HeaderBanner title="Employee Directory (Preview)" />
+      <HeaderBanner title="Employee Directory" currentSection="employees" />
       <div className="p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Employees</h2>
@@ -61,7 +61,7 @@ export default function EmployeeDirectoryPage() {
           <p className="text-sm text-gray-600">Loading…</p>
         ) : employees.length === 0 ? (
           <div className="rounded border border-gray-200 bg-white p-4 text-sm text-gray-700">
-            No employees in preview.
+            No employees yet.
           </div>
         ) : (
           <div className="overflow-x-auto rounded border border-gray-200 bg-white">

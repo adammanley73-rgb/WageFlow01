@@ -1,0 +1,26 @@
+﻿// app/dashboard/payroll/page.tsx
+'use client';
+
+import PageTemplate from '@/components/layout/PageTemplate';
+
+export default function Page() {
+  return (
+    <PageTemplate
+      currentSection="Payroll"
+      hideCurrentChip
+      showSettingsChip={false}
+      statColsMd={4}
+      actionColsMd={2}
+      statTiles={[
+        { label: 'Open runs',     value: 0 },
+        { label: 'Approved',      value: 0 },
+        { label: 'RTI submitted', value: 0 },
+        { label: 'Completed',     value: 0 },
+      ]}
+      actionTiles={[
+        { label: 'New payroll run', href: '/dashboard/payroll/new' },
+        { label: 'View runs',       href: '/dashboard/payroll' },
+      ]}
+    />
+  );
+}

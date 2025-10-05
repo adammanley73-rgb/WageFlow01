@@ -1,8 +1,20 @@
-// @ts-nocheck
-/* preview: auto-suppressed to keep Preview builds green. */
+// lib/supabaseServer.ts
 /* @ts-nocheck */
-export function supabaseServer(){
-  return { auth:{ getUser: async () => ({ data:{ user:null } }) } };
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
+
+export function supabaseServer() {
+  const cookieStore = cookies();
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+      },
+    }
+  );
 }
-export async function getCompanyId(){ return null; }
-export async function getAdmin(){ return null; }

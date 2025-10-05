@@ -16,7 +16,7 @@ declare module "@/lib/spbp";
 declare module "@/lib/storeVersion";
 
 // Components resolved via alias
-declare module "@/app/components/employees/EmployeePicker";
+declare module "@/components/employees/EmployeePicker";
 
 // If you use JSON imports anywhere under the alias,
 // this makes TS treat them as 'any' without extra config.

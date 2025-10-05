@@ -83,7 +83,7 @@ export default function HomePage() {
             compliance, and UK tax features.
           </p>
 
-          <Link href="/dashboard" style={styles.cta}>
+          <Link href="/dashboard/companies" style={styles.cta}>
             View Live Demo System
           </Link>
         </div>
