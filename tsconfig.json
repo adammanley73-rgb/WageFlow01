@@ -7,6 +7,21 @@
     ],
     "module": "esnext",
     "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "*"
+      ],
+      "@components/*": [
+        "components/*"
+      ],
+      "@lib/*": [
+        "lib/*"
+      ],
+      "@app/*": [
+        "app/*"
+      ]
+    },
     "allowJs": true,
     "jsx": "preserve",
     "esModuleInterop": true,
