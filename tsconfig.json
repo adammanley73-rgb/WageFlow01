@@ -23,6 +23,7 @@
         "app/*"
       ]
     },
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "incremental": true,
     "resolveJsonModule": true,
@@ -46,6 +47,7 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "recovery"
   ]
 }
