@@ -1,9 +1,10 @@
+// middleware.ts
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 /**
  * Return true if a Supabase session cookie exists.
- * Works for sb-access-token, supabase-auth-token, and similar variants.
+ * Covers sb-access-token and supabase-auth-token variants.
  */
 function hasSupabaseSession(req: NextRequest): boolean {
   const cookies = req.cookies.getAll()
@@ -21,13 +22,13 @@ function hasSupabaseSession(req: NextRequest): boolean {
 }
 
 /**
- * Protect dashboard routes. Let everything else pass.
- * Adjust matcher below if your app paths differ.
+ * Gate dashboard routes behind a Supabase session.
+ * Adjust allowed paths to match your app.
  */
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Allow public assets and auth pages
+  // Public and system paths
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
@@ -39,7 +40,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // Gate dashboard by session cookie
+  // Protect dashboard
   if (pathname.startsWith('/dashboard') && !hasSupabaseSession(req)) {
     const url = req.nextUrl.clone()
     url.pathname = '/login'
@@ -50,7 +51,6 @@ export function middleware(req: NextRequest) {
   return NextResponse.next()
 }
 
-// Limit middleware to relevant routes
 export const config = {
   matcher: ['/dashboard/:path*'],
 }
