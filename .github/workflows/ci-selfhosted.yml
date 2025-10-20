@@ -1,0 +1,104 @@
+name: ci-selfhosted
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ "**" ]
+
+concurrency:
+  group: ci-selfhosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-windows:
+    name: Typecheck, Lint, Build on self-hosted Windows
+    runs-on: [self-hosted, Windows, X64]
+    env:
+      NEXT_PUBLIC_APP_ENV: "ci"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Detect package manager
+        id: pm
+        shell: powershell
+        run: |
+          if (Test-Path "pnpm-lock.yaml") { echo "pm=pnpm" >> $env:GITHUB_OUTPUT }
+          elseif (Test-Path "yarn.lock")  { echo "pm=yarn" >> $env:GITHUB_OUTPUT }
+          else                            { echo "pm=npm"  >> $env:GITHUB_OUTPUT }
+
+      - name: Setup pnpm (if needed)
+        if: steps.pm.outputs.pm == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Enable corepack for yarn (if needed)
+        if: steps.pm.outputs.pm == 'yarn'
+        shell: powershell
+        run: corepack enable
+
+      - name: Install dependencies
+        shell: powershell
+        run: |
+          if ("${{ steps.pm.outputs.pm }}" -eq "pnpm") { pnpm install --frozen-lockfile -r || pnpm install -r }
+          elseif ("${{ steps.pm.outputs.pm }}" -eq "yarn") { yarn install --frozen-lockfile || yarn install }
+          else { npm ci || npm install }
+
+      - name: Typecheck
+        shell: powershell
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($pkg.scripts.PSObject.Properties.Name -contains "typecheck") {
+            if ("${{ steps.pm.outputs.pm }}" -eq "pnpm") { pnpm run typecheck }
+            elseif ("${{ steps.pm.outputs.pm }}" -eq "yarn") { yarn run typecheck }
+            else { npm run typecheck }
+          } elseif (Get-Command tsc -ErrorAction SilentlyContinue) {
+            tsc --noEmit
+          } else {
+            echo "No typecheck configured, skipping"
+          }
+
+      - name: Lint
+        shell: powershell
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($pkg.scripts.PSObject.Properties.Name -contains "lint") {
+            if ("${{ steps.pm.outputs.pm }}" -eq "pnpm") { pnpm run lint }
+            elseif ("${{ steps.pm.outputs.pm }}" -eq "yarn") { yarn run lint }
+            else { npm run lint }
+          } else {
+            echo "No lint script, skipping"
+          }
+
+      - name: Build
+        shell: powershell
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($pkg.scripts.PSObject.Properties.Name -contains "build") {
+            if ("${{ steps.pm.outputs.pm }}" -eq "pnpm") { pnpm run build }
+            elseif ("${{ steps.pm.outputs.pm }}" -eq "yarn") { yarn run build }
+            else { npm run build }
+          } else {
+            echo "No build script, skipping"
+          }
+
+      - name: Unit tests
+        shell: powershell
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($pkg.scripts.PSObject.Properties.Name -contains "test") {
+            if ("${{ steps.pm.outputs.pm }}" -eq "pnpm") { pnpm run test -- --ci --reporter=default 2>$null || pnpm run test }
+            elseif ("${{ steps.pm.outputs.pm }}" -eq "yarn") { yarn run test --ci 2>$null || yarn run test }
+            else { npm test -- --ci 2>$null || npm test }
+          } else {
+            echo "No tests yet, skipping"
+          }
