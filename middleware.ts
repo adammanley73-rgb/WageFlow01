@@ -1,41 +1,56 @@
-import type { NextRequest } from 'next/server';
-import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
-function hasSupabaseSession(req: NextRequest) {
-  // Supabase sets a project-scoped cookie like: sb-<project-ref>-auth-token
-  for (const c of req.cookies.getAll()) {
-    if (c.name === 'sb-access-token' || c.name === 'supabase-auth-token') return true;
-    if (c.name.startsWith('sb-') && c.name.endsWith('-auth-token')) return true;
-  }
-  return false;
-}
-
-export function middleware(req: NextRequest) {
-  const { pathname, origin } = req.nextUrl;
-
-  // allow static, images, favicon, and sign-in
-  if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/assets') ||
-    pathname.startsWith('/images') ||
-    pathname === '/favicon.ico' ||
-    pathname.startsWith('/auth/sign-in')
-  ) {
-    return NextResponse.next();
-  }
-
-  // protect dashboard
-  if (pathname.startsWith('/dashboard')) {
-    if (!hasSupabaseSession(req)) {
-      const url = new URL('/auth/sign-in', origin);
-      url.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(url);
+/**
+ * Return true if a Supabase session cookie exists.
+ * Works for sb-access-token, supabase-auth-token, and similar variants.
+ */
+function hasSupabaseSession(req: NextRequest): boolean {
+  const cookies = req.cookies.getAll()
+  for (const c of cookies) {
+    const n = c.name
+    if (
+      n === 'sb-access-token' ||
+      n === 'supabase-auth-token' ||
+      (n.startsWith('sb-') && n.endsWith('-auth-token'))
+    ) {
+      return true
     }
   }
-
-  return NextResponse.next();
+  return false
 }
 
+/**
+ * Protect dashboard routes. Let everything else pass.
+ * Adjust matcher below if your app paths differ.
+ */
+export function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl
+
+  // Allow public assets and auth pages
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/public') ||
+    pathname === '/' ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/auth')
+  ) {
+    return NextResponse.next()
+  }
+
+  // Gate dashboard by session cookie
+  if (pathname.startsWith('/dashboard') && !hasSupabaseSession(req)) {
+    const url = req.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('next', pathname)
+    return NextResponse.redirect(url)
+  }
+
+  return NextResponse.next()
+}
+
+// Limit middleware to relevant routes
 export const config = {
-  matcher: ['/dashboard/:path*', '/auth/:path*'],
-};
+  matcher: ['/dashboard/:path*'],
+}
