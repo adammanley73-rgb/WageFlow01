@@ -1,0 +1,3 @@
+-- Placeholder to reconcile local vs remote migration history.
+-- File: 20250920191500_employees_fix_fk_and_drop_employee_id.sql
+-- Intentionally empty. Remote already applied the actual migration.

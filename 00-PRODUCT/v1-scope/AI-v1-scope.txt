@@ -1,0 +1,24 @@
+Title: WageFlow-AI v1 scope
+
+Copilot
+- Answers â‰¤120 words
+- Always cite HMRC docs or internal rule table IDs
+- Refuse when confidence is low and point to manual
+
+Anomaly rules (v1)
+1) NI spike > 30% vs previous run
+2) Net pay â‰¤ 0
+3) Pay delta > 25% vs previous run
+4) Missing pension eligibility where AE threshold is met
+
+UX
+- One side panel for Q&A
+- One inline banner per anomaly with reason and rule ID
+
+Logging and privacy
+- Store prompt, retrieved rules, answer, citations, user rating
+- No PII in logs; redact names and NI numbers
+- EU/UK residency for storage
+
+Out of scope
+- Free-text bulk advice, generative emails, policy writing

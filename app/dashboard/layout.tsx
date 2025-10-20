@@ -1,5 +1,10 @@
-// app/dashboard/layout.tsx — dashboard layout with NO guards or redirects
-/* @ts-nocheck */
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+import { ReactNode } from "react";
+import PageTemplate from "@/components/layout/PageTemplate";
+
+export default function DashboardLayout({ children }: { children: ReactNode }) {
+  return (
+    <PageTemplate>
+      {children}
+    </PageTemplate>
+  );
 }

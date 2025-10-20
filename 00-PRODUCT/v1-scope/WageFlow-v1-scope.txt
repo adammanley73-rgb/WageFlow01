@@ -1,0 +1,45 @@
+Title: WageFlow v1 scope
+
+Pay frequencies
+- Monthly: full support (baseline test frequency)
+- Weekly, Fortnightly, Four-weekly, Lunar: supported using the shared calculation engine
+- Each frequency maintains its own pay period, cumulative settings, and FPS submission schedule
+- Monthly validated first; others released as beta until 3 consecutive clean runs pass acceptance tests
+
+Tax codes
+- 1257L cumulative, BR, D0, D1, W1/M1
+
+RTI
+- FPS only in v1, one submission per approved run
+- Manual resend with retry/backoff and error logging
+
+Statutory
+- Exclude SMP/SPP/SAP/ShPP in v1
+- Include SSP basic only if time permits
+
+Pension
+- One provider template with fixed settings and basic AE flags
+
+Payslips
+- PDF generation, employee portal access
+- Optional email delivery
+
+Imports
+- CSV for employees with minimal required fields
+- No historic payroll import in v1
+
+Exports
+- CSV for journals and HMRC audit basics
+
+Logs
+- Append-only audit for all pay-affecting changes with actor, timestamp, before/after
+
+Access
+- Roles: Owner, Manager, Processor, Employee
+- All queries company-scoped; enforce via RLS and tests
+
+UI flow
+- Create run â†’ add employees â†’ preview â†’ approve â†’ submit RTI â†’ generate payslips
+
+Out of scope v1
+- EPS, weekly/fortnightly specific edge-cases beyond shared engine, multi-pension, pro-rata edge-case library, multi-currency

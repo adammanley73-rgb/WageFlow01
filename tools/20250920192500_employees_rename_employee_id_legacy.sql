@@ -1,0 +1,3 @@
+-- Placeholder to reconcile local vs remote migration history.
+-- File: 20250920192500_employees_rename_employee_id_legacy.sql
+-- Intentionally empty. Remote already applied the actual migration.

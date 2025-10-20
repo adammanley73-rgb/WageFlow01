@@ -1,0 +1,3 @@
+-- Placeholder to reconcile local vs remote migration history.
+-- File: 20251016_124500_fix_rls_policies.sql
+-- Intentionally empty. Remote already applied the actual migration.
