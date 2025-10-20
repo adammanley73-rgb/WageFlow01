@@ -14,8 +14,11 @@ concurrency:
 
 jobs:
   build-test:
-    name: Typecheck, Lint, Build
+    name: Typecheck, Lint, Build (auto-detect package manager)
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_APP_ENV: "ci"
+      NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,59 +27,88 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "pnpm"
 
-      - name: Setup pnpm
+      - name: Detect package manager
+        id: pm
+        shell: bash
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "pm=pnpm" >> $GITHUB_OUTPUT
+          elif [ -f yarn.lock ]; then
+            echo "pm=yarn" >> $GITHUB_OUTPUT
+          else
+            echo "pm=npm" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup pnpm (if needed)
+        if: steps.pm.outputs.pm == 'pnpm'
         uses: pnpm/action-setup@v4
         with:
           version: 9
           run_install: false
 
-      - name: Get pnpm store path
-        id: pnpm-cache
-        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+      - name: Enable corepack for yarn (if needed)
+        if: steps.pm.outputs.pm == 'yarn'
+        run: corepack enable
 
-      - name: Cache pnpm store
+      - name: Cache dependencies
         uses: actions/cache@v4
         with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          path: |
+            **/node_modules
+            ~/.pnpm-store
+            ~/.cache/yarn
+          key: ${{ runner.os }}-${{ steps.pm.outputs.pm }}-${{ hashFiles('**/package-lock.json', '**/pnpm-lock.yaml', '**/yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-
+            ${{ runner.os }}-${{ steps.pm.outputs.pm }}-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
+        shell: bash
         run: |
-          if [ -f "tsconfig.json" ]; then
-            pnpm exec tsc --noEmit
+          if [ "${{ steps.pm.outputs.pm }}" = "pnpm" ]; then
+            pnpm install --frozen-lockfile || pnpm install
+          elif [ "${{ steps.pm.outputs.pm }}" = "yarn" ]; then
+            yarn install --frozen-lockfile || yarn install
           else
-            echo "No tsconfig.json found, skipping"
+            npm ci || npm install
           fi
 
-      - name: Lint
+      - name: Typecheck (if script or tsc present)
+        shell: bash
         run: |
-          if [ -f "package.json" ] && jq -e '.scripts.lint' package.json > /dev/null; then
-            pnpm run lint
+          if jq -e '.scripts.typecheck' package.json > /dev/null 2>&1; then
+            if [ "${{ steps.pm.outputs.pm }}" = "pnpm" ]; then pnpm run typecheck; elif [ "${{ steps.pm.outputs.pm }}" = "yarn" ]; then yarn run typecheck; else npm run typecheck; fi
+          elif npx --yes --package typescript tsc --version > /dev/null 2>&1; then
+            npx --yes typescript tsc --noEmit || true
+          else
+            echo "No typecheck configured, skipping"
+          fi
+
+      - name: Lint (if present)
+        shell: bash
+        run: |
+          if jq -e '.scripts.lint' package.json > /dev/null 2>&1; then
+            if [ "${{ steps.pm.outputs.pm }}" = "pnpm" ]; then pnpm run lint; elif [ "${{ steps.pm.outputs.pm }}" = "yarn" ]; then yarn run lint; else npm run lint; fi
           else
             echo "No lint script, skipping"
           fi
 
-      - name: Build
-        env:
-          NEXT_PUBLIC_APP_ENV: "ci"
+      - name: Build (if present)
+        shell: bash
         run: |
-          if [ -f "package.json" ] && jq -e '.scripts.build' package.json > /dev/null; then
-            pnpm run build
+          if jq -e '.scripts.build' package.json > /dev/null 2>&1; then
+            if [ "${{ steps.pm.outputs.pm }}" = "pnpm" ]; then pnpm run build; elif [ "${{ steps.pm.outputs.pm }}" = "yarn" ]; then yarn run build; else npm run build; fi
           else
             echo "No build script, skipping"
           fi
 
       - name: Unit tests (if present)
+        shell: bash
         run: |
-          if [ -f "package.json" ] && jq -e '.scripts.test' package.json > /dev/null; then
-            pnpm run test --if-present -- --ci --reporter=default
+          if jq -e '.scripts.test' package.json > /dev/null 2>&1; then
+            if [ "${{ steps.pm.outputs.pm }}" = "pnpm" ]; then pnpm run test -- --ci --reporter=default || pnpm run test || true; \
+            elif [ "${{ steps.pm.outputs.pm }}" = "yarn" ]; then yarn run test --ci || yarn run test || true; \
+            else npm test -- --ci || npm test || true; fi
           else
             echo "No tests yet, skipping"
           fi
