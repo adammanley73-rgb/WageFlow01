@@ -22,7 +22,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Allow script execution for this job only
       - name: Allow PowerShell scripts
         shell: powershell
         run: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -86,18 +85,28 @@ jobs:
             Write-Host "No typecheck configured, skipping"
           }
 
-      - name: Lint
+      - name: Lint (skip if no ESLint config)
         shell: powershell
         run: |
           $pm = "${{ steps.pm.outputs.pm }}"
-          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-          if ($pkg.scripts.PSObject.Properties.Name -contains "lint") {
+          $hasConfig = (Test-Path ".eslintrc" -PathType Leaf) -or
+                       (Test-Path ".eslintrc.json") -or
+                       (Test-Path ".eslintrc.js") -or
+                       (Test-Path ".eslintrc.cjs") -or
+                       (Test-Path ".eslintrc.yaml") -or
+                       (Test-Path ".eslintrc.yml")
+          if (-not $hasConfig) {
+            try {
+              $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+              if ($pkg.PSObject.Properties.Name -contains "eslintConfig") { $hasConfig = $true }
+            } catch { }
+          }
+          if ($hasConfig) {
             if ($pm -eq "pnpm") { pnpm run lint }
             elseif ($pm -eq "yarn") { yarn run lint }
             else { npm run lint }
-          }
-          else {
-            Write-Host "No lint script, skipping"
+          } else {
+            Write-Host "No ESLint config detected, skipping lint."
           }
 
       - name: Build
