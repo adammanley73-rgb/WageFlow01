@@ -21,6 +21,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Fix: allow PowerShell to run step scripts in this job only
+      - name: Allow PowerShell scripts (process scope only)
+        shell: powershell
+        run: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
       - name: Use Node 20
         uses: actions/setup-node@v4
         with:
