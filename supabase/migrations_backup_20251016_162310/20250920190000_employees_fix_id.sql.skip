@@ -1,0 +1,57 @@
+-- Remove accidental NOT NULL on bogus employees.employee_id
+-- Ensure id is UUID PK with default.
+
+-- Add gen_random_uuid if needed
+create extension if not exists pgcrypto;
+
+-- 1) Ensure id exists, is uuid, and has default
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='employees' and column_name='id'
+  ) then
+    alter table public.employees add column id uuid;
+  end if;
+
+  -- set default if missing
+  if not exists (
+    select 1 from pg_attrdef d
+    join pg_class c on c.oid = d.adrelid
+    join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
+    where c.relname = 'employees' and a.attname = 'id'
+  ) then
+    alter table public.employees alter column id set default gen_random_uuid();
+  end if;
+
+  -- promote to PK if not already PK/unique
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.employees'::regclass and contype in ('p')
+  ) then
+    -- if some other PK exists, drop it first
+    perform 1;
+  end if;
+end$$;
+
+-- if there’s no primary key, add one on id
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.employees'::regclass and contype = 'p'
+  ) then
+    alter table public.employees add primary key (id);
+  end if;
+end$$;
+
+-- 2) Drop the stray employee_id column if present (it does not belong on employees)
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='employees' and column_name='employee_id'
+  ) then
+    alter table public.employees drop column employee_id;
+  end if;
+end$$;

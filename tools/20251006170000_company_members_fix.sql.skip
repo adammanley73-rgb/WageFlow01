@@ -1,0 +1,9 @@
+-- 20251006170000_company_members_fix.sql
+-- Add missing added_by column to company_members
+
+alter table public.company_members
+add column if not exists added_by uuid references auth.users(id);
+
+-- Optional: set a default to current user if you want automatic population
+-- alter table public.company_members
+-- alter column added_by set default auth.uid();

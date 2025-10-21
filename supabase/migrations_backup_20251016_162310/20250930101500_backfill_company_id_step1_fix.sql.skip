@@ -1,0 +1,94 @@
+-- supabase/migrations/20250930101500_backfill_company_id_step1_fix.sql
+-- Detects member id column in public.company_members (profile_id | user_id | member_id),
+-- then backfills employees/pay_runs.company_id using company_settings.created_by.
+
+do $$
+declare
+  v_member_col text;
+  rec record;
+  v_company_id uuid;
+  v_name text;
+  has_company_settings boolean;
+begin
+  -- detect the member id column name
+  select c.column_name
+    into v_member_col
+  from information_schema.columns c
+  where c.table_schema = 'public'
+    and c.table_name = 'company_members'
+    and c.column_name in ('profile_id','user_id','member_id')
+  order by case c.column_name
+             when 'profile_id' then 1
+             when 'user_id' then 2
+             else 3
+           end
+  limit 1;
+
+  if v_member_col is null then
+    raise exception 'Could not detect member id column on public.company_members. Expected one of: profile_id, user_id, member_id.';
+  end if;
+
+  -- ensure company_settings exists
+  select exists (
+    select 1
+    from information_schema.tables
+    where table_schema = 'public' and table_name = 'company_settings'
+  ) into has_company_settings;
+
+  if not has_company_settings then
+    raise notice 'public.company_settings not found. Skipping backfill loop; nothing to derive owners from.';
+    -- You can add an alternate strategy here if needed.
+    return;
+  end if;
+
+  -- loop over each company_settings row to ensure a company + owner exists
+  for rec in
+    select cs.created_by, coalesce(cs.company_name, 'My Company') as company_name
+    from public.company_settings cs
+  loop
+    v_name := rec.company_name;
+
+    -- try to find an existing company where this creator is owner/admin
+    execute format(
+      'select c.id
+         from public.companies c
+         join public.company_members m
+           on m.company_id = c.id
+          and m.%I = $1
+          and m.role in (''owner'',''admin'')
+        limit 1',
+      v_member_col
+    )
+    into v_company_id
+    using rec.created_by;
+
+    if v_company_id is null then
+      -- create company
+      insert into public.companies(name)
+      values (v_name)
+      returning id into v_company_id;
+
+      -- ensure creator is owner (idempotent)
+      execute format(
+        'insert into public.company_members(company_id, %I, role)
+         select $1, $2, ''owner''
+         where not exists (
+           select 1 from public.company_members
+           where company_id = $1 and %I = $2
+         )',
+        v_member_col, v_member_col
+      )
+      using v_company_id, rec.created_by;
+    end if;
+
+    -- backfill orphan rows
+    update public.employees e
+       set company_id = v_company_id
+     where e.company_id is null;
+
+    update public.pay_runs pr
+       set company_id = v_company_id
+     where pr.company_id is null;
+  end loop;
+end
+$$;

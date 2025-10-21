@@ -1,124 +1,137 @@
+'use client';
 /* @ts-nocheck */
-import HeaderBanner from "@/components/ui/HeaderBanner";
-import Link from "next/link";
-import { supabaseServer } from "@/lib/supabaseServer";
-import { getCompanyIdFromCookie } from "@/lib/company";
-import { selectCompanyAction, clearCompanyAction } from "./actions";
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import PageTemplate from '@/components/layout/PageTemplate';
 
-export default async function CompaniesPage() {
-  const supabase = supabaseServer();
-  const selectedId = getCompanyIdFromCookie();
+type Company = {
+  id: string;
+  name: string;
+  created_at?: string;
+};
 
-  const { data: rows, error } = await supabase
-    .from("my_companies_v")
-    .select("id, name")
-    .order("name", { ascending: true });
+function normalizeCompanies(input: any): Company[] {
+  const maybeArray = Array.isArray(input)
+    ? input
+    : Array.isArray(input?.data)
+    ? input.data
+    : Array.isArray(input?.companies)
+    ? input.companies
+    : [];
+
+  return maybeArray
+    .map((c: any) => {
+      const id = c.id ?? c.company_id ?? c.uuid ?? '';
+      const name = c.name ?? c.company_name ?? c.display_name ?? '';
+      const created_at = c.created_at ?? c.inserted_at ?? c.createdAt ?? undefined;
+      return { id, name, created_at };
+    })
+    .filter((c: Company) => c.id && c.name);
+}
+
+export default function CompaniesPage() {
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const r = await fetch('/api/companies', { cache: 'no-store' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const raw = await r.json().catch(() => []);
+        const list = normalizeCompanies(raw);
+        if (alive) setCompanies(list);
+      } catch (e: any) {
+        if (alive) setError(e?.message ?? 'Failed to load companies');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function selectCompany(id: string) {
+    try {
+      const res = await fetch('/api/select-company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: id }),
+      });
+      if (res.ok) {
+        router.push('/dashboard');
+        return;
+      }
+    } catch {
+      /* fall back */
+    }
+    document.cookie = `company_id=${encodeURIComponent(id)}; path=/; SameSite=Lax`;
+    router.push('/dashboard');
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-500 to-blue-800">
-      <HeaderBanner currentSection="Companies" />
-      <div className="max-w-3xl mx-auto p-4 space-y-4">
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-neutral-300 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-neutral-800">
-              Select a company
-            </h2>
-            <div className="flex items-center gap-2">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 bg-neutral-200 text-neutral-900 text-sm"
-              >
-                Back to dashboard
-              </Link>
-              <Link
-                href="/dashboard/companies/new"
-                className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 bg-blue-800 text-white text-sm"
-              >
-                Create company
-              </Link>
-            </div>
-          </div>
+    <PageTemplate title="Companies" currentSection="Companies">
+      {/* Grey outer card to match your standard */}
+      <div
+        className="rounded-2xl ring-1 border shadow p-4 ring-neutral-400 border-neutral-400"
+        style={{ backgroundColor: '#d4d4d4' }}
+      >
+        <div className="mb-3 text-sm text-neutral-700">
+          Select the company you want to work on.
+        </div>
 
-          {error ? (
-            <div className="p-4 text-red-700 text-sm">
-              Failed to load companies: {error.message}
+        {loading && <div className="text-neutral-800">Loading companies…</div>}
+        {error && <div className="text-red-600">Error: {error}</div>}
+
+        {!loading && !error && (
+          <>
+            {/* Column labels to align with tiles */}
+            <div className="hidden md:grid md:grid-cols-12 md:gap-2 px-1 pb-2">
+              <div className="md:col-span-7 text-sm font-semibold text-neutral-900">Name</div>
+              <div className="md:col-span-3 text-sm font-semibold text-neutral-900">Created</div>
+              <div className="md:col-span-2" />
             </div>
-          ) : rows && rows.length > 0 ? (
-            <ul className="divide-y divide-neutral-200">
-              {rows.map((c) => (
-                <li
+
+            {/* White rounded row tiles */}
+            <div className="space-y-3">
+              {companies.length === 0 && (
+                <div className="bg-white rounded-xl ring-1 ring-neutral-200 shadow px-4 py-6 text-neutral-700">
+                  No companies found.
+                </div>
+              )}
+
+              {companies.map((c) => (
+                <div
                   key={c.id}
-                  className="flex items-center justify-between px-4 py-3"
+                  className="bg-white rounded-xl ring-1 ring-neutral-200 shadow px-3 py-3"
                 >
-                  <div>
-                    <div className="font-medium text-neutral-900">{c.name}</div>
-                    <div className="text-xs text-neutral-600 break-all">
-                      {c.id}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                    <div className="md:col-span-7 text-neutral-900">{c.name}</div>
+                    <div className="md:col-span-3 text-neutral-700">
+                      {c.created_at ? new Date(c.created_at).toLocaleString() : '—'}
+                    </div>
+                    <div className="md:col-span-2 text-left md:text-right">
+                      <button
+                        type="button"
+                        onClick={() => selectCompany(c.id)}
+                        className="inline-flex items-center justify-center h-10 px-4 rounded-xl ring-1 border text-sm font-medium select-none bg-[#1e40af] text-white ring-[#1e40af] border-[#1e40af] hover:opacity-90"
+                      >
+                        Select company
+                      </button>
                     </div>
                   </div>
-                  {/* @ts-expect-error Server Action */}
-                  <form action={selectCompanyAction}>
-                    <input type="hidden" name="company_id" value={c.id} />
-                    <button
-                      type="submit"
-                      className={`px-3 py-1.5 rounded-lg text-sm ${
-                        selectedId === c.id
-                          ? "bg-green-600 text-white"
-                          : "bg-blue-800 text-white"
-                      }`}
-                    >
-                      {selectedId === c.id ? "Selected" : "Select"}
-                    </button>
-                  </form>
-                </li>
+                </div>
               ))}
-            </ul>
-          ) : (
-            <div className="p-4 text-neutral-700 text-sm">
-              You have no companies yet. Create one to continue.
             </div>
-          )}
-
-          <div className="p-4 border-t border-neutral-300 flex items-center justify-between">
-            <div className="text-sm text-neutral-700">
-              {selectedId ? (
-                <>
-                  Current selection:
-                  <span className="ml-2 font-mono text-neutral-900">
-                    {selectedId}
-                  </span>
-                </>
-              ) : (
-                "No company selected."
-              )}
-            </div>
-            {/* @ts-expect-error Server Action */}
-            <form action={clearCompanyAction}>
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 bg-neutral-200 text-neutral-900 text-sm"
-              >
-                Clear company selection
-              </button>
-            </form>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4">
-            <h3 className="text-sm font-semibold text-neutral-800">Notes</h3>
-            <ul className="mt-2 text-sm list-disc list-inside text-neutral-700">
-              <li>
-                This page is always accessible, even without a selected company.
-              </li>
-              <li>
-                Selection writes a secure cookie. RLS still enforces membership
-                on data access.
-              </li>
-            </ul>
-          </div>
-        </div>
+          </>
+        )}
       </div>
-    </div>
+    </PageTemplate>
   );
 }
