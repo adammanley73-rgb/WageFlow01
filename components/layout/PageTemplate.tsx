@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useMemo } from "react";
 
 type Section = "Dashboard" | "Employees" | "Payroll" | "Absence" | "Settings";
@@ -35,9 +36,18 @@ export default function PageTemplate({
       {/* White header banner */}
       <div className="mx-auto max-w-6xl rounded-2xl bg-white shadow-sm ring-1 ring-neutral-200">
         <div className="flex items-center gap-4 px-4 py-3 sm:px-6 sm:py-4">
-          {/* Logo placeholder square. Swap to your actual logo img if desired. */}
-          <div aria-hidden className="h-16 w-16 rounded-xl bg-neutral-200 ring-1 ring-neutral-300 shrink-0" />
-          <h1 className="text-3xl sm:text-4xl font-semibold text-neutral-900">{title}</h1>
+          {/* Brand logo only. No duplicate brand text. */}
+          <Image
+            src="/wageflow-logo.png"
+            alt="WageFlow"
+            width={64}
+            height={64}
+            priority
+            className="h-16 w-16 rounded-xl ring-1 ring-neutral-300 object-contain"
+          />
+          <h1 className="text-3xl sm:text-4xl font-semibold text-neutral-900">
+            {title}
+          </h1>
         </div>
 
         {/* Nav chips row */}
