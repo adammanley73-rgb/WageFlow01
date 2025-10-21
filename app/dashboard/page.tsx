@@ -2,6 +2,18 @@
 import Link from "next/link";
 import PageTemplate from "@/components/layout/PageTemplate";
 
+/**
+ * StatValue enforces Inter for numbers via the global --font-inter var.
+ * Falls back gracefully if the var isn't present.
+ */
+function StatValue({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-2 text-[27px] leading-none font-semibold [font-family:var(--font-inter)]">
+      {children}
+    </div>
+  );
+}
+
 function StatTile(props: { label: string; value: string | number }) {
   return (
     <div
@@ -10,7 +22,7 @@ function StatTile(props: { label: string; value: string | number }) {
     >
       <div className="flex h-full w-full flex-col items-center justify-center text-center">
         <div className="text-sm font-semibold text-neutral-900">{props.label}</div>
-        <div className="mt-2 text-[27px] leading-none font-semibold">{props.value}</div>
+        <StatValue>{props.value}</StatValue>
       </div>
     </div>
   );
