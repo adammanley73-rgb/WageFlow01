@@ -5,15 +5,12 @@ import ActionButton from "@/components/ui/ActionButton";
 export default function EmployeesPage() {
   return (
     <PageTemplate title="Employees" currentSection="Employees">
-      {/* Card container */}
       <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
         {/* Table header */}
         <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
-          <div className="text-sm font-semibold text-neutral-900">
-            Employee list
-          </div>
+          <div className="text-sm font-semibold text-neutral-900">Employee list</div>
           <div className="text-xs text-neutral-700">
-            Sticky first column, 2px separators, actions on the right.
+            Sticky first column, 2 px separators, actions on the right.
           </div>
         </div>
 
@@ -29,9 +26,7 @@ export default function EmployeesPage() {
             </colgroup>
             <thead className="bg-neutral-100">
               <tr className="border-b-2 border-neutral-300">
-                <th className="text-left px-4 py-3 sticky left-0 bg-neutral-100">
-                  Name
-                </th>
+                <th className="text-left px-4 py-3 sticky left-0 bg-neutral-100">Name</th>
                 <th className="text-left px-4 py-3">Email</th>
                 <th className="text-left px-4 py-3">NI</th>
                 <th className="text-left px-4 py-3">Pay Frequency</th>
@@ -39,7 +34,7 @@ export default function EmployeesPage() {
               </tr>
             </thead>
             <tbody>
-              {/* Empty state row */}
+              {/* Empty-state row */}
               <tr className="border-b-2 border-neutral-300">
                 <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
                   <div className="text-neutral-800">No employees yet.</div>
@@ -63,7 +58,7 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* Primary action button below the table in brand blue */}
+      {/* Primary action below the table in brand blue */}
       <div className="mt-4">
         <ActionButton href="/dashboard/employees/new" variant="primary">
           Create employee
