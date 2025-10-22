@@ -5,7 +5,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { useMemo } from "react";
 
-type Section = "Dashboard" | "Employees" | "Payroll" | "Absence" | "Settings";
+type Section =
+  | "Dashboard"
+  | "Employees"
+  | "Payroll"
+  | "Absence"
+  | "Reports"
+  | "Company"
+  | "Settings";
 
 export default function PageTemplate({
   title,
@@ -16,60 +23,66 @@ export default function PageTemplate({
   currentSection: Section;
   children: React.ReactNode;
 }) {
-  // Chip rules:
-  // - On Dashboard: show Employees, Payroll, Absence, Settings
-  // - On other pages: show Dashboard only (no chip for the current page)
-  const chips = useMemo(() => {
-    if (currentSection === "Dashboard") {
-      return [
-        { label: "Employees", href: "/dashboard/employees" },
-        { label: "Payroll", href: "/dashboard/payroll" },
-        { label: "Absence", href: "/dashboard/absence" },
-        { label: "Settings", href: "/dashboard/settings" },
-      ];
-    }
-    return [{ label: "Dashboard", href: "/dashboard" }];
-  }, [currentSection]);
+  // All possible chips we want visible across the app.
+  const allChips = useMemo(
+    () => [
+      { label: "Dashboard", href: "/dashboard" },
+      { label: "Employees", href: "/dashboard/employees" },
+      { label: "Payroll", href: "/dashboard/payroll" },
+      { label: "Absence", href: "/dashboard/absence" },
+      { label: "Reports", href: "/dashboard/reports" },
+      { label: "Company", href: "/dashboard/company" },
+      { label: "Settings", href: "/dashboard/settings" },
+    ],
+    []
+  );
+
+  // Show all chips except the current section.
+  // This keeps the row consistent and avoids a duplicate for the active page.
+  const chips = useMemo(
+    () => allChips.filter((c) => c.label !== currentSection),
+    [allChips, currentSection]
+  );
 
   return (
-    <div className="min-h-dvh bg-[linear-gradient(135deg,#22c55e_0%,#3b82f6_100%)] p-3 sm:p-4">
-      {/* White header banner */}
+    <div className="min-h-dvh bg-[linear-gradient(180deg,#22c55e_0%,#3b82f6_100%)] p-3 sm:p-4">
+      {/* Header banner */}
       <div className="mx-auto max-w-6xl rounded-2xl bg-white shadow-sm ring-1 ring-neutral-200">
-        <div className="flex items-center gap-4 px-4 py-3 sm:px-6 sm:py-4">
-          {/* Brand logo only. No duplicate brand text. */}
-          <Image
-            src="/wageflow-logo.png"
-            alt="WageFlow"
-            width={64}
-            height={64}
-            priority
-            className="h-16 w-16 rounded-xl ring-1 ring-neutral-300 object-contain"
-          />
-          <h1 className="text-3xl sm:text-4xl font-semibold text-neutral-900">
-            {title}
-          </h1>
-        </div>
+        {/* Top row: logo + title on the left, chips on the right */}
+        <div className="flex items-center justify-between gap-4 px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex items-center gap-4">
+            <Image
+              src="/wageflow-logo.png"
+              alt="WageFlow"
+              width={64}
+              height={64}
+              priority
+              className="h-16 w-16 rounded-xl ring-1 ring-neutral-300 object-contain"
+            />
+            <h1 className="text-3xl sm:text-4xl font-semibold text-[#2563eb]">
+              {title}
+            </h1>
+          </div>
 
-        {/* Nav chips row */}
-        <div className="flex flex-wrap gap-2 border-t border-neutral-200 px-4 py-3 sm:px-6">
-          {chips.map((c) => (
-            <Link
-              key={c.label}
-              href={c.href}
-              className="w-32 text-center rounded-full bg-white ring-1 ring-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-900 hover:-translate-y-0.5 transition-transform"
-            >
-              {c.label}
-            </Link>
-          ))}
+          {/* Right-aligned chip row at the same height as title */}
+          <div className="flex flex-wrap justify-end gap-2">
+            {chips.map((c) => (
+              <Link
+                key={c.label}
+                href={c.href}
+                className="min-w-28 text-center rounded-full bg-[#2563eb] text-white ring-1 ring-[#1e40af] px-3 py-2 text-sm font-semibold transition-transform hover:-translate-y-0.5"
+              >
+                {c.label}
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Page body card area */}
+      {/* Page body card */}
       <div className="mx-auto mt-4 max-w-6xl flex-1 min-h-[60vh]">
-        <div className="grid">
-          <div className="rounded-2xl bg-white/60 backdrop-blur ring-1 ring-neutral-200 p-3 sm:p-4">
-            {children}
-          </div>
+        <div className="rounded-2xl bg-white/60 backdrop-blur ring-1 ring-neutral-200 p-3 sm:p-4">
+          {children}
         </div>
       </div>
     </div>
