@@ -1,109 +1,69 @@
-﻿"use client";
-
+﻿/* C:\Users\adamm\Projects\wageflow01\components\ui\HeaderBanner.tsx */
 import Link from "next/link";
-import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { ReactNode } from "react";
 
-type SectionKey = "Dashboard" | "Employees" | "Payroll" | "Absence" | "Settings";
+type NavItem = {
+  key: string;
+  label: string;
+  href: string;
+};
+
+interface HeaderBannerProps {
+  title: string;
+  currentSection: string;
+  navChips: NavItem[];
+  rightSlot?: ReactNode;
+}
 
 /**
  * HeaderBanner
- * Pages render this exactly once inside PageTemplate's width wrapper.
- * Auto-detects the active section from the URL and hides its chip.
- * Shows Settings chip only on Dashboard.
- * No gradient or width logic here.
+ * - Title on left, chips on right (same row).
+ * - Darker logo blue (#003C8F) used for title and chips.
+ * - Active page chip hidden (case/whitespace-insensitive).
  */
-export default function HeaderBanner() {
-  const pathname = usePathname() || "/dashboard";
-  const segments = pathname.split("/").filter(Boolean);
-  const section = deriveSection(segments);
+export default function HeaderBanner({
+  title,
+  currentSection,
+  navChips,
+  rightSlot,
+}: HeaderBannerProps) {
+  const currentKey = (currentSection ?? "").toString().trim().toLowerCase();
 
-  const allChips: Array<{ key: SectionKey; label: string; href: string }> = [
-    { key: "Dashboard", label: "Dashboard", href: "/dashboard" },
-    { key: "Employees", label: "Employees", href: "/dashboard/employees" },
-    { key: "Payroll", label: "Payroll", href: "/dashboard/payroll" },
-    { key: "Absence", label: "Absence", href: "/dashboard/absence" },
-    { key: "Settings", label: "Settings", href: "/dashboard/settings" },
-  ];
-
-  const visibleChips = allChips.filter((chip) => {
-    if (chip.key === section) return false;
-    if (chip.key === "Settings" && section !== "Dashboard") return false;
-    return true;
-  });
-
-  const title = sectionTitle(section, segments);
+  const chips = (navChips ?? []).filter(
+    (c) => (c.key ?? "").toString().trim().toLowerCase() !== currentKey
+  );
 
   return (
-    <div className="w-full rounded-xl bg-white shadow-sm ring-1 ring-neutral-200">
-      {/* Title Row */}
-      <div className="flex items-center gap-4 px-6 pt-6">
-        <div className="shrink-0">
-          <Image
+    <header className="w-full">
+      <div className="mx-auto w-full max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-4 rounded-2xl bg-white px-4 py-4 shadow-sm ring-1 ring-neutral-200 sm:px-6 lg:px-8">
+          <img
             src="/wageflow-logo.png"
             alt="WageFlow"
-            width={64}
-            height={64}
-            className="h-16 w-16 object-contain"
-            priority
+            width={48}
+            height={48}
+            className="h-12 w-12 rounded-md object-contain"
           />
+
+          {/* Title in darker logo blue */}
+          <h1 className="text-4xl font-extrabold tracking-tight text-[#003C8F]">
+            {title}
+          </h1>
+
+          <div className="ml-auto flex items-center gap-3">
+            {chips.map((chip) => (
+              <Link
+                key={chip.key}
+                href={chip.href}
+                className="inline-flex items-center rounded-full bg-[#003C8F] px-5 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#003C8F]"
+              >
+                {chip.label}
+              </Link>
+            ))}
+            {rightSlot}
+          </div>
         </div>
-        <h1 className="text-4xl font-semibold tracking-tight text-neutral-900">
-          {title}
-        </h1>
       </div>
-
-      {/* Nav Chips */}
-      <div className="flex flex-wrap items-center gap-3 px-6 pb-6 pt-4">
-        {visibleChips.map((chip) => (
-          <Link
-            key={chip.key}
-            href={chip.href}
-            className="inline-flex h-9 w-32 items-center justify-center rounded-full border border-neutral-300 bg-neutral-50 text-sm font-medium text-neutral-800 hover:bg-neutral-100"
-          >
-            {chip.label}
-          </Link>
-        ))}
-      </div>
-    </div>
+    </header>
   );
-}
-
-function deriveSection(segments: string[]): SectionKey {
-  if (segments.length === 0) return "Dashboard";
-  if (segments[0] !== "dashboard") return "Dashboard";
-
-  const second = segments[1];
-  if (!second) return "Dashboard";
-
-  switch (second) {
-    case "employees":
-      return "Employees";
-    case "payroll":
-      return "Payroll";
-    case "absence":
-      return "Absence";
-    case "settings":
-      return "Settings";
-    default:
-      return "Dashboard";
-  }
-}
-
-function sectionTitle(section: SectionKey, segments: string[]): string {
-  const base: Record<SectionKey, string> = {
-    Dashboard: "Dashboard",
-    Employees: "Employees",
-    Payroll: "Payroll",
-    Absence: "Absence",
-    Settings: "Settings",
-  };
-
-  if (section === "Absence") {
-    const lower = segments.join("/").toLowerCase();
-    if (lower.includes("wizard") || lower.endsWith("new")) {
-      return "Absence";
-    }
-  }
-  return base[section];
 }

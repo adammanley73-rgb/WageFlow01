@@ -1,56 +1,30 @@
-// middleware.ts
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+/* C:\Users\adamm\Projects\wageflow01\middleware.ts */
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 /**
- * Return true if a Supabase session cookie exists.
- * Covers sb-access-token and supabase-auth-token variants.
- */
-function hasSupabaseSession(req: NextRequest): boolean {
-  const cookies = req.cookies.getAll()
-  for (const c of cookies) {
-    const n = c.name
-    if (
-      n === 'sb-access-token' ||
-      n === 'supabase-auth-token' ||
-      (n.startsWith('sb-') && n.endsWith('-auth-token'))
-    ) {
-      return true
-    }
-  }
-  return false
-}
-
-/**
- * Gate dashboard routes behind a Supabase session.
- * Adjust allowed paths to match your app.
+ * Middleware redirect:
+ * - If user hits /dashboard (root of the app),
+ *   redirect them to /dashboard/companies.
+ * - All other routes continue normally.
+ * - If they already go directly to /dashboard/companies or elsewhere, do nothing.
  */
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl
+  const { pathname } = req.nextUrl;
 
-  // Public and system paths
-  if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/api') ||
-    pathname.startsWith('/public') ||
-    pathname === '/' ||
-    pathname.startsWith('/login') ||
-    pathname.startsWith('/auth')
-  ) {
-    return NextResponse.next()
+  // Only trigger on root dashboard path (no trailing slash after /dashboard)
+  if (pathname === "/dashboard") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/dashboard/companies";
+    return NextResponse.redirect(url);
   }
 
-  // Protect dashboard
-  if (pathname.startsWith('/dashboard') && !hasSupabaseSession(req)) {
-    const url = req.nextUrl.clone()
-    url.pathname = '/login'
-    url.searchParams.set('next', pathname)
-    return NextResponse.redirect(url)
-  }
-
-  return NextResponse.next()
+  return NextResponse.next();
 }
 
+/**
+ * Matcher: run middleware only for dashboard root.
+ */
 export const config = {
-  matcher: ['/dashboard/:path*'],
-}
+  matcher: ["/dashboard"],
+};
