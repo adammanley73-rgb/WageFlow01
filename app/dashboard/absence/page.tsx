@@ -3,15 +3,24 @@ import PageTemplate from "@/components/layout/PageTemplate";
 import ActionButton from "@/components/ui/ActionButton";
 
 export default function AbsencePage() {
+  // Placeholder data. Replace with Supabase data later.
+  const absences: {
+    id: string;
+    employee: string;
+    startDate: string;
+    endDate: string;
+    type: string;
+    processedInPayroll: boolean;
+  }[] = [];
+
   return (
     <PageTemplate title="Absence" currentSection="Absence">
-      {/* Card container */}
       <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
         {/* Table header */}
         <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
           <div className="text-sm font-semibold text-neutral-900">Absence records</div>
           <div className="text-xs text-neutral-700">
-            Displays logged sickness and annual leave entries.
+            Use the Record New Absence Wizard from the Dashboard to add an entry.
           </div>
         </div>
 
@@ -35,33 +44,43 @@ export default function AbsencePage() {
               </tr>
             </thead>
             <tbody>
-              {/* Empty-state row */}
-              <tr className="border-b-2 border-neutral-300">
-                <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
-                  <div className="text-neutral-800">No absences recorded yet.</div>
-                  <div className="text-neutral-700 text-xs">Use the button below to log a new absence.</div>
-                </td>
-                <td className="px-4 py-6 text-right bg-white">
-                  <div className="inline-flex gap-2">
-                    <ActionButton href="/dashboard/absence/new" variant="success">
-                      Record absence
-                    </ActionButton>
-                    <ActionButton href="/dashboard" variant="ghost">
-                      Back to dashboard
-                    </ActionButton>
-                  </div>
-                </td>
-              </tr>
+              {absences.length === 0 ? (
+                <tr className="border-b-2 border-neutral-300">
+                  <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
+                    <div className="text-neutral-800">No absences recorded yet.</div>
+                    <div className="text-neutral-700 text-xs">
+                      Add one via the Record New Absence Wizard on the Dashboard.
+                    </div>
+                  </td>
+                  <td className="px-4 py-6 text-right bg-white" />
+                </tr>
+              ) : (
+                absences.map((a) => (
+                  <tr key={a.id} className="border-b-2 border-neutral-300">
+                    <td className="px-4 py-3 sticky left-0 bg-white">{a.employee}</td>
+                    <td className="px-4 py-3">{a.startDate}</td>
+                    <td className="px-4 py-3">{a.endDate}</td>
+                    <td className="px-4 py-3">{a.type}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex gap-2">
+                        <ActionButton href={`/dashboard/absence/${a.id}/edit`} variant="success">
+                          Edit
+                        </ActionButton>
+                        <ActionButton
+                          href="#"
+                          variant="primary"
+                          className={a.processedInPayroll ? "opacity-50 pointer-events-none" : ""}
+                        >
+                          Delete
+                        </ActionButton>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Primary action below the table in brand blue */}
-      <div className="mt-4">
-        <ActionButton href="/dashboard/absence/new" variant="primary">
-          Record absence
-        </ActionButton>
       </div>
     </PageTemplate>
   );
