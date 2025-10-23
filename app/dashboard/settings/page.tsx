@@ -1,160 +1,118 @@
-"use client";
-
-/* app/dashboard/settings/page.tsx
-   Settings page: single grey tile (same vibe as dashboard tiles),
-   wide as the header banner, reduced vertical padding, heavier labels.
-   Field order: Company Name → PAYE Ref No → Accounts Ref No → Address → Contact.
-*/
+/* app/dashboard/settings/page.tsx */
+import PageTemplate from "@/components/layout/PageTemplate";
 
 export default function SettingsPage() {
   return (
-    <div className="flex-1 min-h-0">
-      <form
-        className="
-          mx-auto w-full max-w-5xl
-          rounded-2xl bg-neutral-200 ring-1 ring-neutral-300
-          p-5 sm:p-6 space-y-5
-        "
-        onSubmit={(e) => {
-          e.preventDefault();
-          alert("Saved (placeholder). Wire to Supabase later.");
-        }}
-      >
-        <h2 className="text-xl sm:text-2xl font-bold text-neutral-900">
-          Company details
-        </h2>
+    <PageTemplate title="Settings" currentSection="Settings">
+      {/* Single centered card wrapper, identical to other pages */}
+      <div className="rounded-2xl bg-neutral-100 ring-1 ring-neutral-300 p-4">
+        <div className="rounded-xl bg-white ring-1 ring-neutral-200 p-4 sm:p-6">
+          <h2 className="text-xl font-semibold text-neutral-900 mb-4">Company details</h2>
 
-        {/* Top trio: Company, PAYE Ref, Accounts Ref */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-semibold text-neutral-900">
-              Company Name
-            </label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="WageFlow Ltd"
-              required
-            />
-          </div>
+          <form className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Company Name */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">Company Name</label>
+              <input
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="WageFlow Ltd"
+                defaultValue="WageFlow Ltd"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-neutral-900">
-              PAYE Ref No
-            </label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="123/AB45678"
-              autoComplete="off"
-            />
-          </div>
+            {/* Accounts Ref No */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">Accounts Ref No</label>
+              <input
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="123PA00000000"
+                defaultValue="123PA00000000"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-semibold text-neutral-900">
-              Accounts Ref No
-            </label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="123PA00000000"
-              autoComplete="off"
-            />
-          </div>
+            {/* PAYE Ref No */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">PAYE Ref No</label>
+              <input
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="123/AB45678"
+                defaultValue="123/AB45678"
+              />
+            </div>
+
+            {/* Address line 1 */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">Address line 1</label>
+              <input
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="123 Example Street"
+                defaultValue="123 Example Street"
+              />
+            </div>
+
+            {/* Address line 2 */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">Address line 2</label>
+              <input
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="Suite 4B"
+                defaultValue="Suite 4B"
+              />
+            </div>
+
+            {/* City */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">City</label>
+              <input
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="London"
+                defaultValue="London"
+              />
+            </div>
+
+            {/* Postcode */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">Postcode</label>
+              <input
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="SW1A 1AA"
+                defaultValue="SW1A 1AA"
+              />
+            </div>
+
+            {/* Country */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">Country</label>
+              <input
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="United Kingdom"
+                defaultValue="United Kingdom"
+              />
+            </div>
+
+            {/* Contact email */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">Contact email</label>
+              <input
+                type="email"
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="payroll@example.com"
+                defaultValue="payroll@example.com"
+              />
+            </div>
+
+            {/* Phone */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-neutral-800">Phone</label>
+              <input
+                className="w-full rounded-lg ring-1 ring-neutral-300 px-3 py-2 bg-white"
+                placeholder="+44 20 7946 0000"
+                defaultValue="+44 20 7946 0000"
+              />
+            </div>
+          </form>
         </div>
-
-        {/* Address block */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-semibold text-neutral-900">
-              Address line 1
-            </label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="123 Example Street"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-semibold text-neutral-900">
-              Address line 2
-            </label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Suite 4B"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-neutral-900">
-              City
-            </label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="London"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-neutral-900">
-              Postcode
-            </label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="SW1A 1AA"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-semibold text-neutral-900">
-              Country
-            </label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="United Kingdom"
-            />
-          </div>
-        </div>
-
-        {/* Contact block */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-semibold text-neutral-900">
-              Contact email
-            </label>
-            <input
-              type="email"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="payroll@example.com"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-neutral-900">
-              Phone
-            </label>
-            <input
-              type="tel"
-              className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="+44 20 7946 0000"
-            />
-          </div>
-        </div>
-
-        <div className="pt-1">
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-white font-semibold hover:bg-blue-700"
-          >
-            Save changes
-          </button>
-        </div>
-      </form>
-    </div>
+      </div>
+    </PageTemplate>
   );
 }
