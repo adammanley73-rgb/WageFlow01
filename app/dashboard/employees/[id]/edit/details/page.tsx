@@ -1,40 +1,64 @@
-'use client';
-/* @ts-nocheck */
-import React, { useEffect, useState } from "react";
-import HeaderBanner from "@components/ui/HeaderBanner";
-import { useParams, useRouter } from "next/navigation";
+/* C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\edit\details\page.tsx */
+import React from "react";
 
-export default function EditEmployeeDetailsPage() {
-  const params = (useParams() as any) || {};
-  const id = params.id ?? "";
-  const router = useRouter();
-
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    // Preview stub: no data fetch
-    setLoading(false);
-  }, [id]);
-
+export default function EditEmployeeDetailsPreviewPage() {
   return (
     <div className="min-h-screen">
-      <HeaderBanner title="Edit Employee Details (Preview)" />
+      {/* Minimal header card to avoid HeaderBanner prop requirements */}
+      <div className="w-full bg-white border-b border-neutral-200 px-6 py-4">
+        <h1 className="text-xl font-semibold text-blue-700">Edit Employee Details (Preview)</h1>
+      </div>
+
       <div className="p-6 space-y-4">
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-sm text-gray-700">
-            Preview stub. Employee editor is disabled in preview mode.
+            Preview-only placeholder. Form disabled until data service is wired.
           </p>
-          <p className="text-xs text-gray-500 mt-2">Employee id: {id || "(none)"}.</p>
-          <div className="mt-4 flex gap-2">
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs text-gray-600">First name</span>
+              <input
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                placeholder="Read-only in preview"
+                readOnly
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs text-gray-600">Last name</span>
+              <input
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                placeholder="Read-only in preview"
+                readOnly
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs text-gray-600">Date of birth</span>
+              <input
+                type="date"
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                readOnly
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs text-gray-600">NI number</span>
+              <input
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                placeholder="AB123456C"
+                readOnly
+              />
+            </label>
+          </div>
+
+          <div className="pt-3">
             <button
-              className="rounded bg-gray-200 px-4 py-2 text-sm"
-              type="button"
-              onClick={() => router.back()}
+              className="inline-flex items-center rounded-md bg-blue-700 px-4 py-2 text-white text-sm disabled:opacity-60"
+              disabled
             >
-              Back
-            </button>
-            <button className="rounded bg-gray-200 px-4 py-2 text-sm" type="button" disabled>
-              Save
+              Save changes (disabled in preview)
             </button>
           </div>
         </div>
