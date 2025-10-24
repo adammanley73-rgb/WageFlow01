@@ -1,23 +1,16 @@
-﻿// @ts-nocheck
-/* preview: auto-suppressed to keep Preview builds green. */
-/* @ts-nocheck */
-type BuildProfile = 'preview' | 'prod';
+﻿// lib/env.ts
+// Minimal non-secret env shim so imports like "@lib/env" resolve in API routes.
 
-function readProfile(): BuildProfile {
-  const raw = process.env.BUILD_PROFILE?.toLowerCase();
-  if (raw === 'prod') return 'prod';
-  return 'preview';
+type NonEmpty = string & { __brand: "NonEmpty" };
+function must(name: string): NonEmpty {
+  const v = process.env[name];
+  if (!v || v.trim() === "") {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return v as NonEmpty;
 }
 
-const profile = readProfile();
+export const NEXT_PUBLIC_SUPABASE_URL: NonEmpty = must("NEXT_PUBLIC_SUPABASE_URL");
+export const NEXT_PUBLIC_SUPABASE_ANON_KEY: NonEmpty = must("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-export const env = {
-  profile,
-  preview: profile === 'preview',
-  prod: profile === 'prod',
-  SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
-  SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '',
-  NEXTAUTH_URL: process.env.NEXTAUTH_URL || '',
-  NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || '',
-  SUPABASE_SERVICE_ROLE: process.env.SUPABASE_SERVICE_ROLE || '',
-} as const;
+// Add other public envs here as needed, keeping secrets out of NEXT_PUBLIC_*.
