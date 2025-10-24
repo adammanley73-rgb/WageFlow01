@@ -1,5 +1,6 @@
 ﻿// lib/env.ts
-// Minimal non-secret env shim so imports like "@lib/env" resolve in API routes.
+// Public env shim. Exports named constants, a default 'env' object,
+// and also a named 'env' to satisfy both import styles.
 
 type NonEmpty = string & { __brand: "NonEmpty" };
 function must(name: string): NonEmpty {
@@ -13,4 +14,10 @@ function must(name: string): NonEmpty {
 export const NEXT_PUBLIC_SUPABASE_URL: NonEmpty = must("NEXT_PUBLIC_SUPABASE_URL");
 export const NEXT_PUBLIC_SUPABASE_ANON_KEY: NonEmpty = must("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-// Add other public envs here as needed, keeping secrets out of NEXT_PUBLIC_*.
+// Default + named 'env' export for legacy imports
+const env = {
+  NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY,
+};
+export default env;
+export { env };

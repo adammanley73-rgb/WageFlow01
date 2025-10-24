@@ -1,5 +1,5 @@
 // app/_server/employees.ts
-// Server-only employees data service. Lives under /app so Next won't drag it into the pages bundler.
+// Server-only employees data service. Lives under /app.
 
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
@@ -71,9 +71,12 @@ export async function listEmployeesSSR(limit = 500): Promise<EmployeeListItem[]>
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error || !data) return [];
+  if (error || !data || !Array.isArray(data)) return [];
 
-  return (data as EmployeeRow[]).map((r) => ({
+  // Supabase types aren’t guaranteed. Coerce through unknown to satisfy TS.
+  const rows = (data ?? []) as unknown as EmployeeRow[];
+
+  return rows.map((r) => ({
     id: r.id,
     name: [r.first_name ?? "", r.last_name ?? ""].join(" ").trim() || "(No name)",
     email: r.email ?? null,
@@ -123,5 +126,5 @@ export async function getEmployeeById(id: string): Promise<EmployeeRow | null> {
     .maybeSingle();
 
   if (error || !data) return null;
-  return data as EmployeeRow;
+  return data as unknown as EmployeeRow;
 }
