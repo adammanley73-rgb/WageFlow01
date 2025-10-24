@@ -1,6 +1,5 @@
 // lib/data/employees.ts
-// Thin dynamic proxy so app routes can import from "@/lib/data/employees"
-// without statically pulling server-only imports. No next/headers here.
+// Proxy exports that point at the server-only implementation under app/_server.
 
 export type {
   EmployeeRow,
@@ -8,18 +7,8 @@ export type {
   EmployeePickerOption,
 } from "./employees.types";
 
-// Dynamic forwarders
-export async function listEmployeesSSR(limit?: number) {
-  const m = await import("./employees.server");
-  return m.listEmployeesSSR(limit);
-}
-
-export async function listEmployeePickerOptions(limit?: number) {
-  const m = await import("./employees.server");
-  return m.listEmployeePickerOptions(limit);
-}
-
-export async function getEmployeeById(id: string) {
-  const m = await import("./employees.server");
-  return m.getEmployeeById(id);
-}
+export {
+  listEmployeesSSR,
+  listEmployeePickerOptions,
+  getEmployeeById,
+} from "@/app/_server/employees";
