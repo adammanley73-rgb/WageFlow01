@@ -1,5 +1,5 @@
 // lib/data/employees.ts
-// Proxy exports that point at the server-only implementation under app/_server.
+// Proxy to the server-only implementation under app/_server.
 
 export type {
   EmployeeRow,
