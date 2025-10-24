@@ -1,5 +1,5 @@
 /* C:\Users\adamm\Projects\wageflow01\app\api\employees\route.ts
-   CI-safe stub. No NextRequest anywhere.
+   CI-safe stub. No Request anywhere.
 */
 
 import { NextResponse } from "next/server";
