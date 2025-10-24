@@ -1,42 +1,29 @@
 // app/api/active-company/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
-function isUuid(v: string) {
-  // Basic UUID v4 check
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
-}
+// Returns the currently selected company from cookies set by /api/select-company.
+// Response: { id: string, name: string | null } or 404 if no active company cookie exists.
+export async function GET(_req: Request) {
+  const jar = cookies();
 
-export async function POST(req: Request) {
-  try {
-    const contentType = req.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      return NextResponse.json({ error: "Use application/json" }, { status: 400 });
-    }
+  // Prefer explicit active_company_* cookie names, fall back to generic ones if present.
+  const id =
+    jar.get("active_company_id")?.value ??
+    jar.get("company_id")?.value ??
+    "";
 
-    const body = await req.json();
-    const companyId = String(body?.company_id || "").trim();
+  const name =
+    jar.get("active_company_name")?.value ??
+    jar.get("company_name")?.value ??
+    null;
 
-    if (!companyId || !isUuid(companyId)) {
-      return NextResponse.json({ error: "Invalid company_id" }, { status: 400 });
-    }
-
-    const res = NextResponse.json({ ok: true, company_id: companyId }, { status: 200 });
-
-    // Cookie for 30 days, strict, app-wide
-    res.cookies.set("active_company_id", companyId, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-    });
-
-    return res;
-  } catch (err) {
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  if (!id) {
+    return NextResponse.json(
+      { error: "No active company selected" },
+      { status: 404 }
+    );
   }
-}
 
-export async function GET() {
-  // Helpful for quick checks
-  return NextResponse.json({ ok: true, message: "POST company_id JSON to set cookie" });
+  return NextResponse.json({ id, name }, { status: 200 });
 }
