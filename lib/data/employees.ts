@@ -1,208 +1,199 @@
-export type EmploymentType = 'full_time' | 'part_time' | 'contract' | 'temporary' | 'apprentice';
-export type EmploymentStatus = 'active' | 'inactive' | 'terminated';
+// lib/data/employees.ts
+// Server-safe employees data service for WageFlow.
+// Reads active_company_* cookies, uses a server Supabase client, and returns
+// query results suitable for SSR rendering and simple pickers.
+// No client hooks. No local stores. Compile-safe with loose types.
 
-export interface PaySchedule {
+import "server-only";
+import { cookies } from "next/headers";
+
+/**
+ * Minimal runtime guard for required envs on the server.
+ * Vercel/Next provides NEXT_PUBLIC_* at build/runtime, but we read them here only
+ * to construct a server client. Do NOT put secrets here.
+ */
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env: ${name}`);
+  return v;
+}
+
+// We avoid importing project-specific wrappers to keep this file drop-in safe.
+// If your repo already exposes a server client at "@/lib/supabase/server",
+// you can swap to that import to centralize cookie handling.
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+
+function createSupabaseServer() {
+  const cookieStore = cookies();
+
+  // Next/Supabase SSR helper wires auth cookies automatically.
+  // We only need the public URL and anon key for RLS-protected reads.
+  const supabase = createServerClient(
+    requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          // Next 14 server components cannot set cookies during render here; ignore.
+          // API routes or actions should set cookies.
+        },
+        remove(name: string, options: CookieOptions) {
+          // No-op in server components.
+        },
+      },
+    }
+  );
+
+  return supabase;
+}
+
+/**
+ * Active company selection from cookies set by /api/select-company.
+ * We tolerate either active_company_* or company_* naming.
+ */
+function getActiveCompanyFromCookies() {
+  const jar = cookies();
+  const id =
+    jar.get("active_company_id")?.value ??
+    jar.get("company_id")?.value ??
+    "";
+  const name =
+    jar.get("active_company_name")?.value ??
+    jar.get("company_name")?.value ??
+    null;
+  return { id, name };
+}
+
+export type EmployeeRow = {
+  id: string;
+  employee_code?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  ni_number?: string | null;
+  job_title?: string | null;
+  hourly_rate?: number | null;
+  annual_salary?: number | null;
+  pay_frequency?: string | null;
+  created_at?: string | null;
+};
+
+export type EmployeeListItem = {
   id: string;
   name: string;
-  frequency: 'weekly' | 'bi_weekly' | 'monthly';
-  payDayOfWeek?: number;
-  payDayOfMonth?: number;
-  description?: string;
-  isActive: boolean;
-}
-
-export const PAY_SCHEDULES: PaySchedule[] = [
-  {
-    id: '11111111-1111-1111-1111-111111111111',
-    name: 'Monthly Salary',
-    frequency: 'monthly',
-    payDayOfMonth: 25,
-    description: 'Salaried staff paid monthly on 25th',
-    isActive: true,
-  },
-  {
-    id: '22222222-2222-2222-2222-222222222222',
-    name: 'Weekly Operations',
-    frequency: 'weekly',
-    payDayOfWeek: 5,
-    description: 'Operations staff paid weekly on Friday',
-    isActive: true,
-  },
-  {
-    id: '33333333-3333-3333-3333-333333333333',
-    name: 'Bi-Weekly Mixed',
-    frequency: 'bi_weekly',
-    payDayOfWeek: 5,
-    description: 'Mixed departments paid every other Friday',
-    isActive: true,
-  },
-];
-
-export interface Employee {
-  id: string;
-  employeeNumber: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone?: string;
-  dateOfBirth: string;
-  nationalInsurance?: string;
-  annualSalary: number;
-  hireDate: string;
-  status: EmploymentStatus;
-  employmentType: EmploymentType;
-  autoEnrollmentStatus: 'eligible' | 'entitled' | 'non_eligible';
-  payScheduleId?: string;
-  address?: {
-    line1: string;
-    line2?: string;
-    city: string;
-    county?: string;
-    postcode: string;
-  };
-}
-
-export const DEMO_EMPLOYEES: Employee[] = [
-  {
-    id: 'EMP001',
-    employeeNumber: 'EMP001',
-    firstName: 'Sarah',
-    lastName: 'Johnson',
-    email: 'sarah.johnson@company.co.uk',
-    phone: '+44 7700 900123',
-    dateOfBirth: '1985-03-15',
-    nationalInsurance: 'AB123456C',
-    annualSalary: 35_000,
-    hireDate: '2020-01-15',
-    status: 'active',
-    employmentType: 'full_time',
-    autoEnrollmentStatus: 'eligible',
-    payScheduleId: '11111111-1111-1111-1111-111111111111',
-    address: {
-      line1: '123 Main Street',
-      line2: 'Apt 4B',
-      city: 'London',
-      county: 'Greater London',
-      postcode: 'SW1A 1AA',
-    },
-  },
-  {
-    id: 'EMP002',
-    employeeNumber: 'EMP002',
-    firstName: 'James',
-    lastName: 'Wilson',
-    email: 'james.wilson@company.co.uk',
-    phone: '+44 7700 900124',
-    dateOfBirth: '1990-07-22',
-    nationalInsurance: 'CD789012E',
-    annualSalary: 28_000,
-    hireDate: '2021-03-10',
-    status: 'active',
-    employmentType: 'full_time',
-    autoEnrollmentStatus: 'entitled',
-    payScheduleId: '22222222-2222-2222-2222-222222222222',
-    address: {
-      line1: '456 Oak Road',
-      city: 'Manchester',
-      postcode: 'M1 1AB',
-    },
-  },
-  {
-    id: 'EMP003',
-    employeeNumber: 'EMP003',
-    firstName: 'Emma',
-    lastName: 'Brown',
-    email: 'emma.brown@company.co.uk',
-    phone: '+44 7700 900125',
-    dateOfBirth: '1992-11-08',
-    nationalInsurance: 'EF345678E',
-    annualSalary: 22_000,
-    hireDate: '2023-03-10',
-    status: 'active',
-    employmentType: 'part_time',
-    autoEnrollmentStatus: 'entitled',
-    payScheduleId: '22222222-2222-2222-2222-222222222222',
-    address: {
-      line1: '789 Pine Avenue',
-      city: 'Birmingham',
-      postcode: 'B1 3CD',
-    },
-  },
-  {
-    id: 'EMP004',
-    employeeNumber: 'EMP004',
-    firstName: 'Michael',
-    lastName: 'Davis',
-    email: 'michael.davis@company.co.uk',
-    phone: '+44 7700 900126',
-    dateOfBirth: '1985-05-20',
-    nationalInsurance: 'GH456789F',
-    annualSalary: 42_000,
-    hireDate: '2022-11-01',
-    status: 'active',
-    employmentType: 'full_time',
-    autoEnrollmentStatus: 'eligible',
-    payScheduleId: '11111111-1111-1111-1111-111111111111',
-    address: {
-      line1: '321 Elm Street',
-      city: 'Leeds',
-      postcode: 'LS1 4EF',
-    },
-  },
-  {
-    id: 'EMP005',
-    employeeNumber: 'EMP005',
-    firstName: 'Lisa',
-    lastName: 'Taylor',
-    email: 'lisa.taylor@company.co.uk',
-    phone: '+44 7700 900127',
-    dateOfBirth: '1991-09-12',
-    nationalInsurance: 'IJ567890G',
-    annualSalary: 38_000,
-    hireDate: '2023-01-20',
-    status: 'active',
-    employmentType: 'full_time',
-    autoEnrollmentStatus: 'eligible',
-    payScheduleId: '33333333-3333-3333-3333-333333333333',
-    address: {
-      line1: '654 Birch Close',
-      city: 'Bristol',
-      postcode: 'BS1 5GH',
-    },
-  },
-];
-
-export const getEmployeeById = (id: string): Employee | undefined =>
-  DEMO_EMPLOYEES.find((emp) => emp.id === id);
-
-export const getAllEmployees = (): Employee[] => [...DEMO_EMPLOYEES];
-
-export const getEmployeesByPaySchedule = (scheduleId?: string): Employee[] => {
-  // return all active employees if scheduleId is undefined or empty
-  const activeEmps = DEMO_EMPLOYEES.filter((emp) => emp.status === 'active');
-  if (!scheduleId || scheduleId === '') return activeEmps;
-  return activeEmps.filter((emp) => emp.payScheduleId === scheduleId);
+  email: string | null;
+  ni_number: string | null;
+  job_title: string | null;
+  hourly_rate: number | null;
+  annual_salary: number | null;
 };
 
-export const getPayScheduleById = (id: string): PaySchedule | undefined => {
-  return PAY_SCHEDULES.find((schedule) => schedule.id === id);
+export type EmployeePickerOption = {
+  value: string;
+  label: string;
+  subtitle?: string;
 };
 
-export const getPayScheduleName = (scheduleId?: string): string => {
-  if (!scheduleId) return 'No Schedule Assigned';
-  const schedule = getPayScheduleById(scheduleId);
-  return schedule ? schedule.name : 'No Schedule Assigned';
-};
-
-export const calculateAge = (dateOfBirth: string): number => {
-  const today = new Date();
-  const birthDate = new Date(dateOfBirth);
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
+/**
+ * List employees for the active company. Safe for SSR.
+ * Returns a normalized shape suitable for a basic table or list.
+ */
+export async function listEmployeesSSR(limit = 500): Promise<EmployeeListItem[]> {
+  const { id: companyId } = getActiveCompanyFromCookies();
+  if (!companyId) {
+    // Middleware should redirect before we get here, but fail-soft if not.
+    return [];
   }
 
-  return age;
-};
+  const supabase = createSupabaseServer();
+
+  // Select the columns we actually show. Keep types loose to avoid compile churn.
+  const { data, error } = await supabase
+    .from("employees")
+    .select(
+      [
+        "id",
+        "employee_code",
+        "first_name",
+        "last_name",
+        "email",
+        "ni_number",
+        "job_title",
+        "hourly_rate",
+        "annual_salary",
+        "created_at",
+        "company_id",
+      ].join(",")
+    )
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    // Fail soft. Consumers can render an empty state.
+    return [];
+  }
+
+  return (data as EmployeeRow[]).map((r) => ({
+    id: r.id,
+    name: [r.first_name ?? "", r.last_name ?? ""].join(" ").trim() || "(No name)",
+    email: r.email ?? null,
+    ni_number: r.ni_number ?? null,
+    job_title: r.job_title ?? null,
+    hourly_rate: r.hourly_rate ?? null,
+    annual_salary: r.annual_salary ?? null,
+  }));
+}
+
+/**
+ * Lightweight picker options for selects, dialogs, or wizards.
+ * Keeps payload small and renders without JS.
+ */
+export async function listEmployeePickerOptions(limit = 500): Promise<EmployeePickerOption[]> {
+  const rows = await listEmployeesSSR(limit);
+  return rows.map((r) => ({
+    value: r.id,
+    label: r.name,
+    subtitle: r.email ?? undefined,
+  }));
+}
+
+/**
+ * Basic by-id fetch for server components and actions.
+ */
+export async function getEmployeeById(id: string): Promise<EmployeeRow | null> {
+  if (!id) return null;
+
+  const { id: companyId } = getActiveCompanyFromCookies();
+  if (!companyId) return null;
+
+  const supabase = createSupabaseServer();
+
+  const { data, error } = await supabase
+    .from("employees")
+    .select(
+      [
+        "id",
+        "employee_code",
+        "first_name",
+        "last_name",
+        "email",
+        "ni_number",
+        "job_title",
+        "hourly_rate",
+        "annual_salary",
+        "pay_frequency",
+        "created_at",
+        "company_id",
+      ].join(",")
+    )
+    .eq("company_id", companyId)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as EmployeeRow;
+}
