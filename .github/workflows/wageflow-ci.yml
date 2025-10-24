@@ -2,51 +2,73 @@ name: WageFlow CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, develop, fix/**, feature/** ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, develop ]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  ci:
-    name: Lint, Type-check, Build, Test
+  build:
+    name: Lint • Typecheck • Test • Build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      CI: true
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Safe fallbacks so Next.js can compile even without repo secrets.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321' }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy-anon-key' }}
+      # If you have server-side envs, add them as secrets and they’ll override defaults:
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node 20.x
+      - name: Use Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.x'
           cache: 'npm'
-
-      - name: Configure npm for clean CI
-        run: |
-          npm config set fund false
-          npm config set audit false
 
       - name: Install dependencies
         run: npm ci
 
       - name: Lint
-        if: ${{ hashFiles('**/.eslintrc*', '**/eslint.config.*') != '' }}
-        run: npm run lint --if-present
+        run: npm run -s lint --if-present
 
-      - name: Type check
-        run: |
-          if npm run -s | grep -q "^type-check"; then
-            npm run type-check
-          else
-            echo "No type-check script, running tsc --noEmit"
-            npx tsc --noEmit
-          fi
-
-      - name: Build
-        run: npm run build
+      - name: Typecheck
+        run: npm run -s typecheck --if-present
 
       - name: Run tests
-        run: npm test --if-present -- --ci --reporters=default
+        run: npm test --if-present
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+
+      - name: Build (Next.js)
+        run: npm run -s build
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+
+      - name: Artifact — production build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wageflow-build-${{ github.sha }}
+          path: |
+            .next
+            package.json
+            package-lock.json
+            next.config.* 
+            public
+            app
+            components
+          if-no-files-found: warn

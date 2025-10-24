@@ -1,68 +1,42 @@
-// @ts-nocheck
 // app/api/active-company/route.ts
-// Reads/sets the active company selection via cookies.
-// GET  -> returns { id, name } or 204 if none
-// POST -> accept { id, name } or { company_id, name } and set cookies
+import { NextResponse } from "next/server";
 
-import { NextRequest } from 'next/server';
-import { cookies } from 'next/headers';
-
-const COOKIE_ID_A = 'company_id';
-const COOKIE_ID_B = 'active_company_id';
-const COOKIE_NAME = 'company_name';
-
-function getIds() {
-  const jar = cookies();
-  const id =
-    jar.get(COOKIE_ID_A)?.value ||
-    jar.get(COOKIE_ID_B)?.value ||
-    '';
-  const name = jar.get(COOKIE_NAME)?.value || '';
-  return { id, name };
+function isUuid(v: string) {
+  // Basic UUID v4 check
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 }
 
-function setIds(id: string, name?: string | null) {
-  const jar = cookies();
-  const opts = {
-    path: '/',
-    httpOnly: false, // readable by client code if needed
-    sameSite: 'lax' as const,
-  };
-  jar.set(COOKIE_ID_A, id, opts);
-  jar.set(COOKIE_ID_B, id, opts);
-  if (name) jar.set(COOKIE_NAME, name, opts);
+export async function POST(req: Request) {
+  try {
+    const contentType = req.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return NextResponse.json({ error: "Use application/json" }, { status: 400 });
+    }
+
+    const body = await req.json();
+    const companyId = String(body?.company_id || "").trim();
+
+    if (!companyId || !isUuid(companyId)) {
+      return NextResponse.json({ error: "Invalid company_id" }, { status: 400 });
+    }
+
+    const res = NextResponse.json({ ok: true, company_id: companyId }, { status: 200 });
+
+    // Cookie for 30 days, strict, app-wide
+    res.cookies.set("active_company_id", companyId, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+
+    return res;
+  } catch (err) {
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
 }
 
 export async function GET() {
-  const { id, name } = getIds();
-  if (!id) return new Response(null, { status: 204 });
-  return Response.json({ id, name: name || null }, { status: 200 });
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    let body: any = {};
-    // Support JSON or URL query (?id=...&name=...)
-    if (req.headers.get('content-type')?.includes('application/json')) {
-      body = await req.json();
-    } else {
-      const u = new URL(req.url);
-      body.id = u.searchParams.get('id');
-      body.company_id = u.searchParams.get('company_id');
-      body.name = u.searchParams.get('name');
-    }
-
-    const id = String(body.id || body.company_id || '').trim();
-    const name = body.name ? String(body.name).trim() : null;
-
-    if (!id) {
-      return Response.json({ error: 'missing company id' }, { status: 400 });
-    }
-
-    setIds(id, name);
-
-    return Response.json({ id, name }, { status: 200 });
-  } catch (e: any) {
-    return Response.json({ error: String(e?.message || e) }, { status: 500 });
-  }
+  // Helpful for quick checks
+  return NextResponse.json({ ok: true, message: "POST company_id JSON to set cookie" });
 }

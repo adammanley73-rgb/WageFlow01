@@ -1,29 +1,51 @@
-// /app/api/select-company/route.ts
-import { NextRequest, NextResponse } from "next/server";
+/* app/api/select-company/route.ts */
+import { NextResponse } from "next/server";
 
-export async function POST(req: NextRequest) {
+export const dynamic = "force-dynamic";
+
+export async function POST(request: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { company_id } = body;
+    const body = await request.json();
+    const company_id = typeof body?.company_id === "string" ? body.company_id : null;
 
-    if (!company_id || typeof company_id !== "string") {
-      return NextResponse.json({ error: "Missing or invalid company_id" }, { status: 400 });
+    if (!company_id) {
+      console.error("Missing company_id in payload:", body);
+      return NextResponse.json({ error: "Missing company_id" }, { status: 400 });
     }
 
-    // Create response
-    const res = NextResponse.json({ success: true, company_id });
+    console.log("Setting active company cookie:", company_id);
 
-    // Write a cookie that lasts 7 days (adjust if needed)
-    res.cookies.set("company_id", company_id, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+    const res = new NextResponse(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    res.cookies.set("active_company_id", company_id, {
       path: "/",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+
+    res.cookies.set("company_id", company_id, {
+      path: "/",
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 60 * 24 * 365,
     });
 
     return res;
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? "Unexpected error" }, { status: 500 });
+  } catch (err) {
+    console.error("select-company error:", err);
+    return NextResponse.json(
+      { error: "Invalid JSON payload" },
+      { status: 400 }
+    );
   }
+}
+
+export async function GET() {
+  // Simple GET for debugging
+  return NextResponse.json({ status: "ready" });
 }

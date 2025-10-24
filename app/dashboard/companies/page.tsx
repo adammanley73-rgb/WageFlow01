@@ -1,8 +1,8 @@
 'use client';
+/* app/dashboard/companies/page.tsx */
 /* @ts-nocheck */
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import PageTemplate from '@/components/layout/PageTemplate';
 
 type Company = {
   id: string;
@@ -64,74 +64,66 @@ export default function CompaniesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id: id }),
       });
+
       if (res.ok) {
-        router.push('/dashboard');
+        console.log('Company selected:', id);
+        window.location.href = '/dashboard';
         return;
+      } else {
+        console.error('Select company failed:', res.status);
       }
-    } catch {
-      /* fall back */
+    } catch (err) {
+      console.error('Select company error:', err);
     }
-    document.cookie = `company_id=${encodeURIComponent(id)}; path=/; SameSite=Lax`;
-    router.push('/dashboard');
   }
 
   return (
-    <PageTemplate title="Companies" currentSection="Companies">
-      {/* Grey outer card to match your standard */}
-      <div
-        className="rounded-2xl ring-1 border shadow p-4 ring-neutral-400 border-neutral-400"
-        style={{ backgroundColor: '#d4d4d4' }}
-      >
-        <div className="mb-3 text-sm text-neutral-700">
-          Select the company you want to work on.
-        </div>
+    <section className="bg-neutral-200 rounded-2xl ring-1 ring-neutral-400 p-6">
+      <p className="text-neutral-800 mb-4">Select the company you want to work on.</p>
 
-        {loading && <div className="text-neutral-800">Loading companies…</div>}
-        {error && <div className="text-red-600">Error: {error}</div>}
+      {loading && <div className="text-neutral-800">Loading companies…</div>}
+      {error && <div className="text-red-600">Error: {error}</div>}
 
-        {!loading && !error && (
-          <>
-            {/* Column labels to align with tiles */}
-            <div className="hidden md:grid md:grid-cols-12 md:gap-2 px-1 pb-2">
-              <div className="md:col-span-7 text-sm font-semibold text-neutral-900">Name</div>
-              <div className="md:col-span-3 text-sm font-semibold text-neutral-900">Created</div>
-              <div className="md:col-span-2" />
-            </div>
+      {!loading && !error && (
+        <>
+          <div className="grid grid-cols-[1fr_220px_160px] items-center px-3 py-2 text-sm font-semibold text-neutral-800">
+            <span>Name</span>
+            <span>Created</span>
+            <span className="sr-only">Action</span>
+          </div>
 
-            {/* White rounded row tiles */}
-            <div className="space-y-3">
-              {companies.length === 0 && (
-                <div className="bg-white rounded-xl ring-1 ring-neutral-200 shadow px-4 py-6 text-neutral-700">
-                  No companies found.
+          <div className="grid gap-3">
+            {companies.length === 0 && (
+              <div className="rounded-xl bg-white ring-1 ring-neutral-300 px-4 py-6 text-neutral-700">
+                No companies available.
+              </div>
+            )}
+
+            {companies.map((c) => (
+              <div
+                key={c.id}
+                className="rounded-xl bg-white ring-1 ring-neutral-300 px-4 py-3 flex items-center"
+              >
+                <div className="flex-1">
+                  <div className="font-medium text-neutral-900">{c.name}</div>
                 </div>
-              )}
-
-              {companies.map((c) => (
-                <div
-                  key={c.id}
-                  className="bg-white rounded-xl ring-1 ring-neutral-200 shadow px-3 py-3"
-                >
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
-                    <div className="md:col-span-7 text-neutral-900">{c.name}</div>
-                    <div className="md:col-span-3 text-neutral-700">
-                      {c.created_at ? new Date(c.created_at).toLocaleString() : '—'}
-                    </div>
-                    <div className="md:col-span-2 text-left md:text-right">
-                      <button
-                        type="button"
-                        onClick={() => selectCompany(c.id)}
-                        className="inline-flex items-center justify-center h-10 px-4 rounded-xl ring-1 border text-sm font-medium select-none bg-[#1e40af] text-white ring-[#1e40af] border-[#1e40af] hover:opacity-90"
-                      >
-                        Select company
-                      </button>
-                    </div>
-                  </div>
+                <div className="w-[220px] text-neutral-700">
+                  {c.created_at ? new Date(c.created_at).toLocaleString() : '—'}
                 </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </PageTemplate>
+                <div className="w-[160px] flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => selectCompany(c.id)}
+                    className="inline-flex items-center justify-center rounded-xl px-4 py-2 text-white font-semibold bg-[#1f3cb3] hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#1f3cb3]"
+                  >
+                    Select company
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
