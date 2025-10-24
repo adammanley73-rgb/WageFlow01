@@ -1,8 +1,14 @@
 // lib/data/employees.server.ts
 // Real server-only implementation. Safe to import next/headers here.
+
 import "server-only";
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import {
+  EmployeeRow,
+  EmployeeListItem,
+  EmployeePickerOption,
+} from "./employees.types";
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -40,36 +46,6 @@ function getActiveCompanyFromCookies() {
     null;
   return { id, name };
 }
-
-export type EmployeeRow = {
-  id: string;
-  employee_code?: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
-  email?: string | null;
-  ni_number?: string | null;
-  job_title?: string | null;
-  hourly_rate?: number | null;
-  annual_salary?: number | null;
-  pay_frequency?: string | null;
-  created_at?: string | null;
-};
-
-export type EmployeeListItem = {
-  id: string;
-  name: string;
-  email: string | null;
-  ni_number: string | null;
-  job_title: string | null;
-  hourly_rate: number | null;
-  annual_salary: number | null;
-};
-
-export type EmployeePickerOption = {
-  value: string;
-  label: string;
-  subtitle?: string;
-};
 
 export async function listEmployeesSSR(limit = 500): Promise<EmployeeListItem[]> {
   const { id: companyId } = getActiveCompanyFromCookies();
