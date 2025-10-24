@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "esnext",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": false,
     "skipLibCheck": true,
     "strict": true,
@@ -18,34 +14,17 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "*"
-      ],
-      "@lib/*": [
-        "lib/*"
-      ],
-      "@components/*": [
-        "components/*"
-      ],
-      "@app/*": [
-        "app/*"
-      ]
+      "@/*": ["*"],
+      "@lib/*": ["lib/*"],
+      "@components/*": ["components/*"],
+      "@app/*": ["app/*"]
     },
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
+
+    "plugins": [{ "name": "next" }]
   },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": ["next-env.d.ts", ".next/types/**/*.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "recovery", "recovery/**"]
 }
