@@ -1,45 +1,81 @@
-﻿/* C:\Users\adamm\Projects\wageflow01\components\layout\PageTemplate.tsx */
-import { ReactNode } from "react";
-import HeaderBanner from "@/components/ui/HeaderBanner";
+﻿"use client";
 
-type NavItem = {
-  key: string;
-  label: string;
-  href: string;
+import React from "react";
+import Link from "next/link";
+import Image from "next/image";
+
+type PageTemplateProps = {
+  title: string;
+  currentSection?: string;
+  children: React.ReactNode;
 };
 
-interface PageTemplateProps {
-  title: string;
-  currentSection: string;
-  children: ReactNode;
-}
+const BASE_NAV = [
+  { name: "Dashboard", href: "/dashboard" },
+  { name: "Company Selection", href: "/dashboard/companies" },
+  { name: "Employees", href: "/dashboard/employees" },
+  { name: "Payroll", href: "/dashboard/payroll" },
+  { name: "Absence", href: "/dashboard/absence" },
+  { name: "Reports", href: "/dashboard/reports" },
+];
 
-/**
- * PageTemplate
- * - Vertical background gradient from logo green (top) to logo blue (bottom).
- * - Standardised chips, including Company Selection.
- */
 export default function PageTemplate({
   title,
   currentSection,
   children,
 }: PageTemplateProps) {
-  const navChips: NavItem[] = [
-    { key: "dashboard", label: "Dashboard", href: "/dashboard" },
-    { key: "employees", label: "Employees", href: "/dashboard/employees" },
-    { key: "payroll", label: "Payroll", href: "/dashboard/payroll" },
-    { key: "absence", label: "Absence", href: "/dashboard/absence" },
-    { key: "reports", label: "Reports", href: "/dashboard/reports" },
-    { key: "settings", label: "Settings", href: "/dashboard/settings" },
-    { key: "companies", label: "Company Selection", href: "/dashboard/companies" },
-  ];
+  const navItems =
+    currentSection === "Dashboard"
+      ? [...BASE_NAV, { name: "Settings", href: "/dashboard/settings" }]
+      : BASE_NAV;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#00C853] to-[#2962FF]">
-      <HeaderBanner title={title} currentSection={currentSection} navChips={navChips} />
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-400 to-blue-600">
+      <div className="mx-auto max-w-6xl px-3 md:px-0 pt-6 pb-10">
+        <div className="bg-white rounded-2xl px-4 md:px-6 py-4 flex items-center gap-4 shadow-sm mb-5">
+          <Image
+            src="/WageFlowLogo.png"
+            alt="WageFlow"
+            width={58}
+            height={58}
+            className="h-[58px] w-[58px] object-contain"
+          />
+          <div className="flex-1">
+            <h1 className="text-3xl md:text-[2.2rem] font-bold text-[#0f3c85] leading-tight">
+              {title}
+            </h1>
+          </div>
+          <div className="hidden md:flex gap-2 flex-wrap justify-end min-w-[460px]">
+            {navItems
+              .filter((item) => item.name !== currentSection)
+              .map((item) => (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className="inline-flex items-center justify-center w-36 h-9 rounded-full bg-[#164fa3] text-white text-[0.75rem] font-medium shadow-sm hover:bg-[#0f3c85] transition"
+                >
+                  {item.name}
+                </Link>
+              ))}
+          </div>
+        </div>
+
+        <div className="md:hidden mb-4 flex flex-wrap gap-2">
+          {navItems
+            .filter((item) => item.name !== currentSection)
+            .map((item) => (
+              <Link
+                key={item.name}
+                href={item.href}
+                className="inline-flex items-center justify-center w-32 h-9 rounded-full bg-[#164fa3] text-white text-xs font-medium shadow-sm hover:bg-[#0f3c85] transition"
+              >
+                {item.name}
+              </Link>
+            ))}
+        </div>
+
         {children}
-      </main>
+      </div>
     </div>
   );
 }
