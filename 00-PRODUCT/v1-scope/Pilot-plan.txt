@@ -1,0 +1,22 @@
+Pilot plan
+
+Cohort
+- 2 accountants, 1 SME direct
+
+Duration
+- 2 full monthly cycles
+
+Setup
+- CSV import template
+- 60-minute onboarding call
+- Shared checklist
+
+Success metrics
+- Approval with no manual correction â‰¥ 85%
+- Copilot helpful rating â‰¥ 80% across 200 sessions
+- Anomaly recall â‰¥ 80% with false positive â‰¤ 10%
+
+Evidence to collect
+- Screenshare recordings of approvals
+- Time-to-approve logs
+- Defect list with severity and fixes

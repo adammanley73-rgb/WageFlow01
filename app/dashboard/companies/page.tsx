@@ -1,124 +1,86 @@
-/* @ts-nocheck */
-import HeaderBanner from "@/components/ui/HeaderBanner";
-import Link from "next/link";
-import { supabaseServer } from "@/lib/supabaseServer";
-import { getCompanyIdFromCookie } from "@/lib/company";
-import { selectCompanyAction, clearCompanyAction } from "./actions";
+import React from "react";
+import { getServerSupabase } from "@/lib/supabase/server";
+
+type Company = {
+id: string;
+name: string | null;
+};
+
+async function getMemberCompanies(): Promise<Company[]> {
+const supabase = getServerSupabase();
+const { data, error } = await supabase
+.from("vw_member_companies")
+.select("id,name")
+.order("name", { ascending: true });
+
+if (error) {
+console.error("vw_member_companies select failed:", error.message);
+return [];
+}
+return data ?? [];
+}
 
 export default async function CompaniesPage() {
-  const supabase = supabaseServer();
-  const selectedId = getCompanyIdFromCookie();
+const companies = await getMemberCompanies();
 
-  const { data: rows, error } = await supabase
-    .from("my_companies_v")
-    .select("id, name")
-    .order("name", { ascending: true });
+return (
+<div className="min-h-screen bg-gradient-to-b from-emerald-400 to-blue-600">
+<div className="mx-auto max-w-6xl pt-10 px-6">
+{/* Header */}
+<div className="rounded-t-[32px] bg-white px-6 py-6 flex items-center gap-4">
+<div className="h-14 w-32 flex items-center justify-center bg-transparent">
+<img src="/WageFlowLogo.png" alt="WageFlow" className="h-12 w-auto object-contain" />
+</div>
+<div>
+{/* only change: colour */}
+<h1 className="text-3xl font-bold text-[#154da4]">Company Selection</h1>
+<p className="text-sm text-neutral-600">
+Choose a company to continue. Your choice is saved for 30 days.
+</p>
+</div>
+</div>
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-500 to-blue-800">
-      <HeaderBanner currentSection="Companies" />
-      <div className="max-w-3xl mx-auto p-4 space-y-4">
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-neutral-300 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-neutral-800">
-              Select a company
-            </h2>
-            <div className="flex items-center gap-2">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 bg-neutral-200 text-neutral-900 text-sm"
-              >
-                Back to dashboard
-              </Link>
-              <Link
-                href="/dashboard/companies/new"
-                className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 bg-blue-800 text-white text-sm"
-              >
-                Create company
-              </Link>
+    {/* Body */}
+    <div className="bg-white/90 px-0 pb-8 rounded-b-[32px] shadow-sm">
+      <div className="px-6 pt-6">
+        <div className="rounded-xl overflow-hidden ring-1 ring-neutral-200">
+          {companies.length === 0 ? (
+            <div className="px-6 py-8 text-neutral-700 text-sm bg-neutral-200">
+              No companies visible for this account. Check memberships.
             </div>
-          </div>
-
-          {error ? (
-            <div className="p-4 text-red-700 text-sm">
-              Failed to load companies: {error.message}
-            </div>
-          ) : rows && rows.length > 0 ? (
-            <ul className="divide-y divide-neutral-200">
-              {rows.map((c) => (
+          ) : (
+            <ul>
+              {companies.map((c, idx) => (
                 <li
                   key={c.id}
-                  className="flex items-center justify-between px-4 py-3"
+                  className={`flex items-center justify-between gap-4 px-6 py-4 bg-neutral-200 ${
+                    idx < companies.length - 1 ? "border-b border-neutral-300" : ""
+                  }`}
                 >
                   <div>
-                    <div className="font-medium text-neutral-900">{c.name}</div>
-                    <div className="text-xs text-neutral-600 break-all">
-                      {c.id}
+                    <div className="text-sm font-semibold text-neutral-900">
+                      {c.name ?? "Unnamed company"}
                     </div>
+                    <div className="text-xs text-neutral-600">{c.id}</div>
                   </div>
-                  {/* @ts-expect-error Server Action */}
-                  <form action={selectCompanyAction}>
-                    <input type="hidden" name="company_id" value={c.id} />
+                  <form method="POST" action="/api/active-company/set">
+                    <input type="hidden" name="companyId" value={c.id} />
                     <button
                       type="submit"
-                      className={`px-3 py-1.5 rounded-lg text-sm ${
-                        selectedId === c.id
-                          ? "bg-green-600 text-white"
-                          : "bg-blue-800 text-white"
-                      }`}
+                      className="rounded-md bg-[#1b64ff] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1550ca] transition-transform hover:-translate-y-[2px]"
                     >
-                      {selectedId === c.id ? "Selected" : "Select"}
+                      Use this company
                     </button>
                   </form>
                 </li>
               ))}
             </ul>
-          ) : (
-            <div className="p-4 text-neutral-700 text-sm">
-              You have no companies yet. Create one to continue.
-            </div>
           )}
-
-          <div className="p-4 border-t border-neutral-300 flex items-center justify-between">
-            <div className="text-sm text-neutral-700">
-              {selectedId ? (
-                <>
-                  Current selection:
-                  <span className="ml-2 font-mono text-neutral-900">
-                    {selectedId}
-                  </span>
-                </>
-              ) : (
-                "No company selected."
-              )}
-            </div>
-            {/* @ts-expect-error Server Action */}
-            <form action={clearCompanyAction}>
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 bg-neutral-200 text-neutral-900 text-sm"
-              >
-                Clear company selection
-              </button>
-            </form>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4">
-            <h3 className="text-sm font-semibold text-neutral-800">Notes</h3>
-            <ul className="mt-2 text-sm list-disc list-inside text-neutral-700">
-              <li>
-                This page is always accessible, even without a selected company.
-              </li>
-              <li>
-                Selection writes a secure cookie. RLS still enforces membership
-                on data access.
-              </li>
-            </ul>
-          </div>
         </div>
       </div>
     </div>
-  );
+  </div>
+</div>
+
+);
 }

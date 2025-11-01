@@ -1,77 +1,80 @@
-﻿/* components/layout/PageTemplate.tsx */
-import Image from "next/image";
+﻿"use client";
+
+import React from "react";
 import Link from "next/link";
-import { ReactNode } from "react";
-import { Inter, Manrope } from "next/font/google";
+import Image from "next/image";
 
-const inter = Inter({ subsets: ["latin"], display: "swap", variable: "--font-inter" });
-const manrope = Manrope({ subsets: ["latin"], display: "swap", variable: "--font-manrope" });
-
-type ChipKey = "Dashboard" | "Employees" | "Payroll" | "Absence" | "Reports" | "Settings";
-type Chip = { label: string; href: string; key: ChipKey };
-
-export type PageTemplateProps = {
+type PageTemplateProps = {
   title: string;
-  currentSection: ChipKey;
-  children?: ReactNode;
+  currentSection?: string;
+  children: React.ReactNode;
 };
 
-/** Identical-size chips; wrap on small screens; no horizontal scroll anywhere. */
-const CHIP_CLASS =
-  "inline-flex items-center justify-center rounded-full bg-[#1e40af] text-white font-medium " +
-  "w-24 h-8 text-[12px] shadow-sm hover:-translate-y-0.5 transition-transform " +
-  "focus:outline-none focus:ring-2 focus:ring-white/60 select-none";
+const BASE_NAV = [
+  { name: "Dashboard", href: "/dashboard" },
+  { name: "Company Selection", href: "/dashboard/companies" },
+  { name: "Employees", href: "/dashboard/employees" },
+  { name: "Payroll", href: "/dashboard/payroll" },
+  { name: "Absence", href: "/dashboard/absence" },
+  { name: "Reports", href: "/dashboard/reports" },
+];
 
-export default function PageTemplate({ title, currentSection, children }: PageTemplateProps) {
-  const baseChips: Chip[] = [
-    { label: "Dashboard", href: "/dashboard", key: "Dashboard" },
-    { label: "Employees", href: "/dashboard/employees", key: "Employees" },
-    { label: "Payroll", href: "/dashboard/payroll", key: "Payroll" },
-    { label: "Absence", href: "/dashboard/absence", key: "Absence" },
-    { label: "Reports", href: "/dashboard/reports", key: "Reports" }
-  ];
-
-  // Settings only visible on Dashboard
-  const chips =
+export default function PageTemplate({
+  title,
+  currentSection,
+  children,
+}: PageTemplateProps) {
+  const navItems =
     currentSection === "Dashboard"
-      ? [...baseChips, { label: "Settings", href: "/dashboard/settings", key: "Settings" }]
-      : baseChips;
-
-  // Hide chip for the current page
-  const visibleChips = chips.filter(c => c.key !== currentSection);
+      ? [...BASE_NAV, { name: "Settings", href: "/dashboard/settings" }]
+      : BASE_NAV;
 
   return (
-    <div
-      className={`${manrope.variable} ${inter.variable} min-h-dvh bg-gradient-to-b from-[#10b981] to-[#1e40af] flex flex-col overflow-x-hidden`}
-      style={{ fontFamily: "var(--font-manrope)" }}
-    >
-      {/* Wider shared container; header + content use the same width so everything lines up */}
-      <div className="mx-auto w-[90vw] max-w-[1600px] px-2 sm:px-4 py-6 flex-1 flex flex-col min-h-0">
-        {/* Header banner (height unchanged) */}
-        <header className="rounded-2xl bg-white px-5 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <Image
-              src="/WageFlowLogo.png"
-              alt="WageFlow"
-              width={64}
-              height={64}
-              className="h-16 w-16 object-contain shrink-0"
-            />
-            <h1 className="text-4xl font-semibold truncate" style={{ color: "#1e40af" }}>
+    <div className="min-h-screen bg-gradient-to-b from-emerald-400 to-blue-600">
+      <div className="mx-auto max-w-6xl px-3 md:px-0 pt-6 pb-10">
+        <div className="bg-white rounded-2xl px-4 md:px-6 py-4 flex items-center gap-4 shadow-sm mb-5">
+          <Image
+            src="/WageFlowLogo.png"
+            alt="WageFlow"
+            width={58}
+            height={58}
+            className="h-[58px] w-[58px] object-contain"
+          />
+          <div className="flex-1">
+            <h1 className="text-3xl md:text-[2.2rem] font-bold text-[#0f3c85] leading-tight">
               {title}
             </h1>
           </div>
-          <nav className="flex flex-wrap justify-end items-center gap-2 max-w-full">
-            {visibleChips.map(chip => (
-              <Link key={chip.key} href={chip.href} className={CHIP_CLASS}>
-                {chip.label}
+          <div className="hidden md:flex gap-2 flex-wrap justify-end min-w-[460px]">
+            {navItems
+              .filter((item) => item.name !== currentSection)
+              .map((item) => (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className="inline-flex items-center justify-center w-36 h-9 rounded-full bg-[#164fa3] text-white text-[0.75rem] font-medium shadow-sm hover:bg-[#0f3c85] transition"
+                >
+                  {item.name}
+                </Link>
+              ))}
+          </div>
+        </div>
+
+        <div className="md:hidden mb-4 flex flex-wrap gap-2">
+          {navItems
+            .filter((item) => item.name !== currentSection)
+            .map((item) => (
+              <Link
+                key={item.name}
+                href={item.href}
+                className="inline-flex items-center justify-center w-32 h-9 rounded-full bg-[#164fa3] text-white text-xs font-medium shadow-sm hover:bg-[#0f3c85] transition"
+              >
+                {item.name}
               </Link>
             ))}
-          </nav>
-        </header>
+        </div>
 
-        {/* Content fills remaining height, never causes horizontal scroll */}
-        <main className="mt-6 flex-1 min-h-0 flex flex-col">{children}</main>
+        {children}
       </div>
     </div>
   );

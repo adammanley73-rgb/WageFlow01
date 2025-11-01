@@ -1,38 +1,41 @@
 // @ts-nocheck
-/* preview: auto-suppressed to keep Preview builds green. */
-/* @ts-nocheck */
+// lib/employeeStore.ts
+// Pathetic, but effective: process-level memory store for dev.
 
-// Preview stub for employee store
-
-export type Employee = {
-  id: string;
-  first_name?: string;
-  last_name?: string;
-  email?: string;
-  [key: string]: any;
+type NewRow = {
+  company_id: string;
+  name?: string | null;
+  email?: string | null;
+  job_title?: string | null;
+  start_date?: string | null;
+  employment_type?: string | null;
+  salary?: number | null;
+  hourly_rate?: number | null;
+  hours_per_week?: number | null;
+  ni_number?: string | null;
+  pay_frequency?: string | null;
 };
 
-export async function ensureStoreReady() {
-  return true;
+type Row = NewRow & { id: string };
+
+// Single shared map across hot reloads
+const g: any = globalThis as any;
+if (!g.__EMP_STORE__) g.__EMP_STORE__ = new Map<string, Row[]>();
+const DB: Map<string, Row[]> = g.__EMP_STORE__;
+
+function uid() {
+  if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-export async function readEmployees(): Promise<Employee[]> {
-  return [];
+export async function add(row: NewRow): Promise<string> {
+  const id = uid();
+  const list = DB.get(row.company_id) || [];
+  list.unshift({ id, ...row });
+  DB.set(row.company_id, list);
+  return id;
 }
 
-export async function writeEmployees(employees: Employee[]): Promise<Employee[]> {
-  return employees ?? [];
-}
-
-export async function getAll(): Promise<Employee[]> {
-  return [];
-}
-
-export function subscribe(_callback: (list: Employee[]) => void) {
-  // no-op subscription
-  return () => {};
-}
-
-export async function removeEmployee(_id: string): Promise<boolean> {
-  return true;
+export async function listByCompany(companyId: string): Promise<Row[]> {
+  return DB.get(companyId) || [];
 }

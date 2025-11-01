@@ -1,0 +1,3 @@
+-- Placeholder to reconcile local vs remote migration history.
+-- File: 20251016_120000_multi_frequency_core.sql
+-- Intentionally empty. Remote already applied the actual migration.

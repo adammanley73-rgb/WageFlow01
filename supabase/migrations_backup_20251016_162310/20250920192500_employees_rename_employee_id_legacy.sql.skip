@@ -1,0 +1,32 @@
+-- 20250920192500_employees_rename_employee_id_legacy.sql
+-- Rename bogus employees.employee_id to employee_legacy_id and drop any indexes on it.
+
+-- 1) If the column exists, rename it.
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema='public' and table_name='employees' and column_name='employee_id'
+  ) then
+    -- Drop any indexes that reference employees.employee_id before rename
+    perform
+      (select 1
+       from pg_indexes
+       where schemaname='public' and tablename='employees' and indexdef ilike '%employee_id%');
+
+    -- Drop those indexes dynamically
+    for
+      dropidx in
+      select i.indexname
+      from pg_indexes i
+      where i.schemaname='public' and i.tablename='employees' and i.indexdef ilike '%employee_id%'
+    loop
+      execute format('drop index if exists %I', dropidx.indexname);
+    end loop;
+
+    -- Finally rename the column
+    alter table public.employees rename column employee_id to employee_legacy_id;
+  end if;
+end
+$$;

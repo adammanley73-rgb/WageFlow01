@@ -1,67 +1,97 @@
-/* app/dashboard/absence/page.tsx */
-import Link from "next/link";
+import PageTemplate from "@/components/layout/PageTemplate";
+import ActionButton from "@/components/ui/ActionButton";
+import { cookies } from "next/headers";
 
-function StatTile(props: { label: string; value: number | string }) {
-  return (
-    <div
-      className="h-full rounded-2xl ring-1 border bg-neutral-300 ring-neutral-400 border-neutral-400 p-4"
-      style={{ backgroundColor: "#d4d4d4" }}
-    >
-      <div className="flex h-full w-full flex-col items-center justify-center text-center">
-        <div className="text-sm font-semibold text-neutral-900">{props.label}</div>
-        <div className="mt-2 text-[27px] leading-none font-semibold">{props.value}</div>
+export default async function AbsencePage() {
+const cookieStore = cookies();
+const activeCompanyName =
+cookieStore.get("active_company_name")?.value ?? "No company selected";
+
+const absences: {
+id: string;
+employee: string;
+startDate: string;
+endDate: string;
+type: string;
+processedInPayroll: boolean;
+}[] = [];
+
+return (
+<PageTemplate title="Absence" currentSection="Absence">
+<div className="mb-4 rounded-xl bg-white px-6 py-3 flex items-baseline gap-2">
+<span className="text-xs tracking-[0.25em] text-slate-500 uppercase">Company</span>
+<span className="text-base font-semibold text-[#0f3c85] leading-none">
+{activeCompanyName}
+</span>
+</div>
+
+  <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+    <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
+      <div className="text-sm font-semibold text-neutral-900">Absence records</div>
+      <div className="text-xs text-neutral-700">
+        Use the Record New Absence Wizard from the Dashboard to add an entry.
       </div>
     </div>
-  );
-}
 
-function GreyActionTile(props: { title: string; desc: string; href: string; cta: string }) {
-  return (
-    <div
-      className="h-full rounded-2xl ring-1 border bg-neutral-300 ring-neutral-400 border-neutral-400 p-6"
-      style={{ backgroundColor: "#d4d4d4" }}
-    >
-      <div className="flex h-full w-full flex-col items-center justify-center text-center">
-        <div className="text-base font-semibold text-neutral-900">{props.title}</div>
-        <div className="mt-2 text-sm text-neutral-800 max-w-[38ch]">{props.desc}</div>
-        <Link
-          href={props.href}
-          className="mt-4 inline-flex items-center justify-center rounded-xl px-4 py-2 ring-1 ring-neutral-500 hover:shadow-sm bg-white text-neutral-900"
-        >
-          {props.cta}
-        </Link>
-      </div>
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <colgroup>
+          <col className="w-[18rem]" />
+          <col className="w-[10rem]" />
+          <col className="w-[10rem]" />
+          <col className="w-[10rem]" />
+          <col className="w-[12rem]" />
+        </colgroup>
+        <thead className="bg-neutral-100">
+          <tr className="border-b-2 border-neutral-300">
+            <th className="text-left px-4 py-3 sticky left-0 bg-neutral-100">Employee</th>
+            <th className="text-left px-4 py-3">Start Date</th>
+            <th className="text-left px-4 py-3">End Date</th>
+            <th className="text-left px-4 py-3">Type</th>
+            <th className="text-right px-4 py-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {absences.length === 0 ? (
+            <tr className="border-b-2 border-neutral-300">
+              <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
+                <div className="text-neutral-800">No absences recorded yet.</div>
+                <div className="text-neutral-700 text-xs">
+                  Add one via the Record New Absence Wizard on the Dashboard.
+                </div>
+              </td>
+              <td className="px-4 py-6 text-right bg-white" />
+            </tr>
+          ) : (
+            absences.map((a) => (
+              <tr key={a.id} className="border-b-2 border-neutral-300">
+                <td className="px-4 py-3 sticky left-0 bg-white">{a.employee}</td>
+                <td className="px-4 py-3">{a.startDate}</td>
+                <td className="px-4 py-3">{a.endDate}</td>
+                <td className="px-4 py-3">{a.type}</td>
+                <td className="px-4 py-3 text-right">
+                  <div className="inline-flex gap-2">
+                    <ActionButton href={`/dashboard/absence/${a.id}/edit`} variant="success">
+                      Edit
+                    </ActionButton>
+                    <ActionButton
+                      href="#"
+                      variant="primary"
+                      className={a.processedInPayroll ? "opacity-50 pointer-events-none" : ""}
+                    >
+                      Delete
+                    </ActionButton>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
     </div>
-  );
-}
+  </div>
+</PageTemplate>
 
-export default function AbsencePage() {
-  return (
-    <div className="flex-1 min-h-0 flex flex-col gap-4">
-      {/* Top stat tiles (same height and style as Dashboard) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatTile label="Open requests" value={0} />
-        <StatTile label="Approved" value={0} />
-        <StatTile label="Rejected" value={0} />
-        <StatTile label="Absences logged" value={0} />
-      </div>
 
-      {/* Bottom action tiles (centered content, grey like spec) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <GreyActionTile
-          title="Record New Absence Wizard"
-          desc="Log sickness or annual leave."
-          href="/dashboard/absence/new"
-          cta="Open wizard"
-        />
-        <GreyActionTile
-          title="View Absences"
-          desc="Browse absence records."
-          href="/dashboard/absence/list"
-          cta="Open records"
-        />
-      </div>
-    </div>
-  );
+);
 }
-/* app/dashboard/absence/page.tsx */

@@ -1,0 +1,153 @@
+-- 20251016_124500_fix_rls_policies.sql
+-- Fix RLS policies by splitting INSERT and UPDATE into separate policies
+
+-- Safety: enable RLS (idempotent)
+ALTER TABLE payroll_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payroll_run_employees ENABLE ROW LEVEL SECURITY;
+
+-- Assume membership table: public.company_memberships(company_id uuid, user_id uuid, role text)
+
+-- ========= payroll_runs =========
+
+-- Drop any prior policies to avoid name clashes
+DROP POLICY IF EXISTS pr_view_runs   ON payroll_runs;
+DROP POLICY IF EXISTS pr_modify_runs ON payroll_runs;
+DROP POLICY IF EXISTS pr_insert_runs ON payroll_runs;
+DROP POLICY IF EXISTS pr_update_runs ON payroll_runs;
+DROP POLICY IF EXISTS pr_delete_runs ON payroll_runs;
+
+-- SELECT
+CREATE POLICY pr_view_runs
+ON payroll_runs
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_runs.company_id
+      AND m.user_id = auth.uid()
+  )
+);
+
+-- INSERT
+CREATE POLICY pr_insert_runs
+ON payroll_runs
+FOR INSERT
+WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_runs.company_id
+      AND m.user_id = auth.uid()
+      AND m.role IN ('owner','manager','processor')
+  )
+);
+
+-- UPDATE
+CREATE POLICY pr_update_runs
+ON payroll_runs
+FOR UPDATE
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_runs.company_id
+      AND m.user_id = auth.uid()
+      AND m.role IN ('owner','manager','processor')
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_runs.company_id
+      AND m.user_id = auth.uid()
+      AND m.role IN ('owner','manager','processor')
+  )
+);
+
+-- DELETE (optional but sane)
+CREATE POLICY pr_delete_runs
+ON payroll_runs
+FOR DELETE
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_runs.company_id
+      AND m.user_id = auth.uid()
+      AND m.role IN ('owner','manager')
+  )
+);
+
+-- ========= payroll_run_employees =========
+
+DROP POLICY IF EXISTS pr_view_run_items   ON payroll_run_employees;
+DROP POLICY IF EXISTS pr_modify_run_items ON payroll_run_employees;
+DROP POLICY IF EXISTS pr_insert_run_items ON payroll_run_employees;
+DROP POLICY IF EXISTS pr_update_run_items ON payroll_run_employees;
+DROP POLICY IF EXISTS pr_delete_run_items ON payroll_run_employees;
+
+-- SELECT
+CREATE POLICY pr_view_run_items
+ON payroll_run_employees
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_run_employees.company_id
+      AND m.user_id = auth.uid()
+  )
+);
+
+-- INSERT
+CREATE POLICY pr_insert_run_items
+ON payroll_run_employees
+FOR INSERT
+WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_run_employees.company_id
+      AND m.user_id = auth.uid()
+      AND m.role IN ('owner','manager','processor')
+  )
+);
+
+-- UPDATE
+CREATE POLICY pr_update_run_items
+ON payroll_run_employees
+FOR UPDATE
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_run_employees.company_id
+      AND m.user_id = auth.uid()
+      AND m.role IN ('owner','manager','processor')
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_run_employees.company_id
+      AND m.user_id = auth.uid()
+      AND m.role IN ('owner','manager','processor')
+  )
+);
+
+-- DELETE (optional)
+CREATE POLICY pr_delete_run_items
+ON payroll_run_employees
+FOR DELETE
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.company_memberships m
+    WHERE m.company_id = payroll_run_employees.company_id
+      AND m.user_id = auth.uid()
+      AND m.role IN ('owner','manager')
+  )
+);

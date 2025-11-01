@@ -1,22 +1,19 @@
-"use client";
+﻿// components/ui/HeaderBanner.tsx
+// Simple server component used on dashboard-style pages.
 
 import React from "react";
 
-type Props = {
-  title?: string;
-  currentSection?: string;
+type HeaderBannerProps = {
+  title: string;
 };
 
-/**
- * Stub HeaderBanner component.
- * Replace with your real version once deployment succeeds.
- */
-export default function HeaderBanner({ title, currentSection }: Props) {
+export default function HeaderBanner({ title }: HeaderBannerProps) {
   return (
-    <div className="w-full bg-white shadow p-4 mb-4">
-      <h1 className="text-2xl font-bold text-blue-900">
-        {title ?? currentSection ?? "Header"}
-      </h1>
-    </div>
+    <header className="bg-white px-6 py-4 rounded-b-xl flex items-center gap-4 shadow-sm">
+      <div className="w-14 h-14 rounded-full bg-gradient-to-b from-emerald-400 to-blue-600 flex items-center justify-center">
+        <span className="text-white font-bold text-sm">WageF</span>
+      </div>
+      <h1 className="text-3xl font-bold tracking-tight text-[#111827]">{title}</h1>
+    </header>
   );
 }
