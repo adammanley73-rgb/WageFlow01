@@ -1,5 +1,5 @@
 /* @ts-nocheck */
-"use server";
+// No `"use server"` here—this file is still server-only when imported by API routes.
 
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
@@ -7,10 +7,9 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 /**
  * Returns a server‑side Supabase client.
  *
- * This matches the previous behaviour of this file. It reads the Supabase URL
- * and anonymous key from environment variables and wires the cookie store so
- * session cookies are sent on subsequent requests. If the env vars are missing
- * it throws an error.
+ * Reads the Supabase URL and anon key from environment variables and wires the cookie
+ * store so session cookies are sent on subsequent requests. Throws if the env vars
+ * are missing.
  */
 export function createClient() {
   const cookieStore = cookies();
@@ -28,22 +27,69 @@ export function createClient() {
         return cookieStore.get(name)?.value;
       },
       set(name: string, value: string, options: CookieOptions) {
-      try {
-        cookieStore.set({ name, value, ...options });
-      } catch {}
-    },
+        try {
+          cookieStore.set({ name, value, ...options });
+        } catch {}
+      },
       remove(name: string, options: CookieOptions) {
-      try {
-        cookieStore.set({ name, value: "", ...options, maxAge: 0 });
-      } catch {}
-    },
+        try {
+          cookieStore.set({ name, value: "", ...options, maxAge: 0 });
+        } catch {}
+      },
     },
   });
 }
 
 /**
- * Preferred helper name for server‑side Supabase. This returns the same client
- * as `createClient` but using an async signature for future extensibility.
+ * Preferred async helper name for server‑side Supabase. Wraps `createClient`.
+ */
+export async function getServerSupabase() {
+  return createClient();
+}
+/* @ts-nocheck */
+// No `"use server"` here—this file is still server-only when imported by API routes.
+
+import { cookies } from "next/headers";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+
+/**
+ * Returns a server‑side Supabase client.
+ *
+ * Reads the Supabase URL and anon key from environment variables and wires the cookie
+ * store so session cookies are sent on subsequent requests. Throws if the env vars
+ * are missing.
+ */
+export function createClient() {
+  const cookieStore = cookies();
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) {
+    throw new Error(
+      "Supabase env vars are missing. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+    );
+  }
+
+  return createServerClient(url, anon, {
+    cookies: {
+      get(name: string) {
+        return cookieStore.get(name)?.value;
+      },
+      set(name: string, value: string, options: CookieOptions) {
+        try {
+          cookieStore.set({ name, value, ...options });
+        } catch {}
+      },
+      remove(name: string, options: CookieOptions) {
+        try {
+          cookieStore.set({ name, value: "", ...options, maxAge: 0 });
+        } catch {}
+      },
+    },
+  });
+}
+
+/**
+ * Preferred async helper name for server‑side Supabase. Wraps `createClient`.
  */
 export async function getServerSupabase() {
   return createClient();
