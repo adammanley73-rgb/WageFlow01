@@ -1,97 +1,116 @@
 // C:\Users\adamm\Projects\wageflow01\app\api\counts\route.ts
-
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { supabaseServer } from "@/lib/supabaseServer";
-import { getCompanyIdFromCookie } from "@/lib/company";
+import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-type CountsPayload = {
+type CountsResult = {
   employeeCount: number;
   payrollRunCount: number;
   absenceRecordCount: number;
-  // legacy keys for older callers (if any)
-  employees: number;
-  runs: number;
-  absences: number;
 };
 
-function emptyCounts(): CountsPayload {
+function createAdminClient() {
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceKey) {
+    console.error("counts api: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    throw new Error("Missing Supabase admin env");
+  }
+
+  return createClient(url, serviceKey, {
+    auth: {
+      persistSession: false,
+    },
+  });
+}
+
+async function getCountsForCompany(companyId: string): Promise<CountsResult> {
+  const supabase = createAdminClient();
+
+  const [
+    employeesRes,
+    payrollRunsRes,
+    absencesRes,
+  ] = await Promise.all([
+    supabase
+      .from("employees")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId),
+    supabase
+      .from("payroll_runs")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId),
+    supabase
+      .from("absence_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId),
+  ]);
+
+  if (employeesRes.error) {
+    console.error("counts api: employee count error", employeesRes.error);
+  }
+  if (payrollRunsRes.error) {
+    console.error("counts api: payroll run count error", payrollRunsRes.error);
+  }
+  if (absencesRes.error) {
+    console.error("counts api: absence count error", absencesRes.error);
+  }
+
   return {
-    employeeCount: 0,
-    payrollRunCount: 0,
-    absenceRecordCount: 0,
-    employees: 0,
-    runs: 0,
-    absences: 0,
+    employeeCount: employeesRes.count ?? 0,
+    payrollRunCount: payrollRunsRes.count ?? 0,
+    absenceRecordCount: absencesRes.count ?? 0,
   };
 }
 
 export async function GET() {
   try {
-    // Ensure cookies exist (middleware may also enforce active company)
     const jar = cookies();
-    const cookieCompanyId =
-      getCompanyIdFromCookie() ||
-      jar.get("active_company_id")?.value ||
-      jar.get("company_id")?.value ||
-      "";
 
-    if (!cookieCompanyId) {
-      return NextResponse.json(emptyCounts(), {
-        status: 200,
-        headers: { "Cache-Control": "no-store" },
-      });
+    const activeCompanyId =
+      jar.get("active_company_id")?.value ??
+      jar.get("company_id")?.value ??
+      null;
+
+    if (!activeCompanyId) {
+      // No company chosen yet; return zeroes but make it explicit
+      return NextResponse.json(
+        {
+          ok: true,
+          activeCompanyId: null,
+          reason: "NO_ACTIVE_COMPANY",
+          counts: {
+            employeeCount: 0,
+            payrollRunCount: 0,
+            absenceRecordCount: 0,
+          },
+        },
+        { status: 200 }
+      );
     }
 
-    const supabase = supabaseServer();
+    const counts = await getCountsForCompany(activeCompanyId);
 
-    const [
-      employeesRes,
-      payrollRunsRes,
-      absencesRes,
-    ] = await Promise.all([
-      supabase
-        .from("employees")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", cookieCompanyId),
-      supabase
-        .from("payroll_runs")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", cookieCompanyId),
-      supabase
-        .from("absence_records")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", cookieCompanyId),
-    ]);
+    return NextResponse.json(
+      {
+        ok: true,
+        activeCompanyId,
+        counts,
+      },
+      { status: 200 }
+    );
+  } catch (err: any) {
+    console.error("counts api: unhandled error", err);
 
-    const employeeCount =
-      typeof employeesRes.count === "number" ? employeesRes.count : 0;
-    const payrollRunCount =
-      typeof payrollRunsRes.count === "number" ? payrollRunsRes.count : 0;
-    const absenceRecordCount =
-      typeof absencesRes.count === "number" ? absencesRes.count : 0;
-
-    const payload: CountsPayload = {
-      employeeCount,
-      payrollRunCount,
-      absenceRecordCount,
-      // aliases
-      employees: employeeCount,
-      runs: payrollRunCount,
-      absences: absenceRecordCount,
-    };
-
-    return NextResponse.json(payload, {
-      status: 200,
-      headers: { "Cache-Control": "no-store" },
-    });
-  } catch (err) {
-    console.error("GET /api/counts error:", err);
-    return NextResponse.json(emptyCounts(), {
-      status: 200,
-      headers: { "Cache-Control": "no-store" },
-    });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: err?.message ?? "Unknown error",
+      },
+      { status: 500 }
+    );
   }
 }

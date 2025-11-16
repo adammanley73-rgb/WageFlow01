@@ -1,7 +1,10 @@
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\page.tsx
 
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { Inter } from "next/font/google";
+import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
 
 const inter = Inter({
@@ -13,10 +16,62 @@ type Counts = {
   employeeCount: number;
   payrollRunCount: number;
   absenceRecordCount: number;
-  employees?: number;
-  runs?: number;
-  absences?: number;
 };
+
+type CountsResponse = {
+  ok?: boolean;
+  activeCompanyId?: string | null;
+  counts?: Partial<Counts>;
+  employeeCount?: number;
+  payrollRunCount?: number;
+  absenceRecordCount?: number;
+};
+
+function createAdminClient() {
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceKey) {
+    throw new Error("dashboard: missing Supabase env");
+  }
+
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false },
+  });
+}
+
+async function getActiveCompanyName(): Promise<string | null> {
+  try {
+    const jar = cookies();
+
+    const activeCompanyId =
+      jar.get("active_company_id")?.value ??
+      jar.get("company_id")?.value ??
+      null;
+
+    if (!activeCompanyId) {
+      return null;
+    }
+
+    const supabase = createAdminClient();
+
+    const { data, error } = await supabase
+      .from("companies")
+      .select("id, name")
+      .eq("id", activeCompanyId)
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error("dashboard: error loading active company", error);
+      return null;
+    }
+
+    return data.name ?? null;
+  } catch (err) {
+    console.error("dashboard: admin client error", err);
+    return null;
+  }
+}
 
 async function getCounts(): Promise<Counts> {
   try {
@@ -28,6 +83,7 @@ async function getCounts(): Promise<Counts> {
     });
 
     if (!res.ok) {
+      console.error("dashboard: /api/counts returned", res.status);
       return {
         employeeCount: 0,
         payrollRunCount: 0,
@@ -35,30 +91,37 @@ async function getCounts(): Promise<Counts> {
       };
     }
 
-    const data = (await res.json()) as Partial<Counts>;
+    const raw = (await res.json()) as CountsResponse;
+
+    const fromNested = raw.counts ?? {};
+    const employeeCount =
+      typeof fromNested.employeeCount === "number"
+        ? fromNested.employeeCount
+        : typeof raw.employeeCount === "number"
+        ? raw.employeeCount
+        : 0;
+
+    const payrollRunCount =
+      typeof fromNested.payrollRunCount === "number"
+        ? fromNested.payrollRunCount
+        : typeof raw.payrollRunCount === "number"
+        ? raw.payrollRunCount
+        : 0;
+
+    const absenceRecordCount =
+      typeof fromNested.absenceRecordCount === "number"
+        ? fromNested.absenceRecordCount
+        : typeof raw.absenceRecordCount === "number"
+        ? raw.absenceRecordCount
+        : 0;
 
     return {
-      employeeCount:
-        typeof data.employeeCount === "number"
-          ? data.employeeCount
-          : typeof data.employees === "number"
-          ? data.employees
-          : 0,
-      payrollRunCount:
-        typeof data.payrollRunCount === "number"
-          ? data.payrollRunCount
-          : typeof data.runs === "number"
-          ? data.runs
-          : 0,
-      absenceRecordCount:
-        typeof data.absenceRecordCount === "number"
-          ? data.absenceRecordCount
-          : typeof data.absences === "number"
-          ? data.absences
-          : 0,
+      employeeCount,
+      payrollRunCount,
+      absenceRecordCount,
     };
   } catch (err) {
-    console.error("getCounts error:", err);
+    console.error("dashboard: getCounts error", err);
     return {
       employeeCount: 0,
       payrollRunCount: 0,
@@ -128,40 +191,63 @@ function GreyTile(props: {
 }
 
 export default async function DashboardPage() {
-  const counts = await getCounts();
+  const [counts, activeCompanyName] = await Promise.all([
+    getCounts(),
+    getActiveCompanyName(),
+  ]);
 
   return (
     <PageTemplate title="Dashboard" currentSection="Dashboard">
-      <div className="grid grid-rows-2 gap-3 flex-1 min-h-0">
-        {/* Row 1: three KPIs driven by /api/counts */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 h-full min-h-0">
-          <StatTile label="Employees" value={counts.employeeCount} />
-          <StatTile label="Payroll runs" value={counts.payrollRunCount} />
-          <StatTile label="Absence records" value={counts.absenceRecordCount} />
+      <div className="flex flex-col gap-3 flex-1 min-h-0">
+        {/* Active company banner */}
+        <div className="rounded-2xl bg-white/80 px-4 py-4">
+          {activeCompanyName ? (
+            <p className="text-lg sm:text-xl text-[#0f3c85]">
+              <span className="font-semibold">Active company:</span>{" "}
+              <span className="font-bold">{activeCompanyName}</span>
+            </p>
+          ) : (
+            <p className="text-sm sm:text-base text-neutral-800">
+              No active company selected. Go to the Companies page to choose one.
+            </p>
+          )}
         </div>
 
-        {/* Row 2: four wizard tiles */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 h-full min-h-0">
-          <GreyTile
-            title="New Employees Wizard"
-            description="Create and onboard new employees."
-            href="/dashboard/employees/new"
-          />
-          <GreyTile
-            title="Leaver Wizard"
-            description="Process leavers with a guided flow."
-            href="/dashboard/employees"
-          />
-          <GreyTile
-            title="New Absence Wizard"
-            description="Record sickness, holiday, or other absences."
-            href="/dashboard/absence/new"
-          />
-          <GreyTile
-            title="Payroll Run Wizard"
-            description="Start a guided payroll run."
-            href="/dashboard/payroll/new"
-          />
+        {/* Main grid */}
+        <div className="grid grid-rows-2 gap-3 flex-1 min-h-0">
+          {/* Row 1: three KPIs */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 h-full min-h-0">
+            <StatTile label="Employees" value={counts.employeeCount} />
+            <StatTile label="Payroll runs" value={counts.payrollRunCount} />
+            <StatTile
+              label="Absence records"
+              value={counts.absenceRecordCount}
+            />
+          </div>
+
+          {/* Row 2: four wizard tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 h-full min-h-0">
+            <GreyTile
+              title="New Employees Wizard"
+              description="Create and onboard new employees."
+              href="/dashboard/employees/new"
+            />
+            <GreyTile
+              title="Leaver Wizard"
+              description="Process leavers with a guided flow."
+              href="/dashboard/employees"
+            />
+            <GreyTile
+              title="New Absence Wizard"
+              description="Record sickness, holiday, or other absences."
+              href="/dashboard/absence/new"
+            />
+            <GreyTile
+              title="Payroll Run Wizard"
+              description="Start a guided payroll run."
+              href="/dashboard/payroll/new"
+            />
+          </div>
         </div>
       </div>
     </PageTemplate>
