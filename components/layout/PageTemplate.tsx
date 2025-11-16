@@ -1,45 +1,39 @@
-﻿/* C:\Users\adamm\Projects\wageflow01\components\layout\PageTemplate.tsx */
-import { ReactNode } from "react";
+﻿// C:\Users\adamm\Projects\wageflow01\components\layout\PageTemplate.tsx
+
+import React from "react";
 import HeaderBanner from "@/components/ui/HeaderBanner";
 
-type NavItem = {
-  key: string;
-  label: string;
-  href: string;
+type Section =
+  | "Dashboard"
+  | "Company Selection"
+  | "Employees"
+  | "Payroll"
+  | "Absence"
+  | "Reports"
+  | "Settings";
+
+type PageTemplateProps = {
+  title: Section;
+  currentSection: Section;
+  children: React.ReactNode;
 };
 
-interface PageTemplateProps {
-  title: string;
-  currentSection: string;
-  children: ReactNode;
-}
-
-/**
- * PageTemplate
- * - Vertical background gradient from logo green (top) to logo blue (bottom).
- * - Standardised chips, including Company Selection.
- */
 export default function PageTemplate({
   title,
   currentSection,
   children,
 }: PageTemplateProps) {
-  const navChips: NavItem[] = [
-    { key: "dashboard", label: "Dashboard", href: "/dashboard" },
-    { key: "employees", label: "Employees", href: "/dashboard/employees" },
-    { key: "payroll", label: "Payroll", href: "/dashboard/payroll" },
-    { key: "absence", label: "Absence", href: "/dashboard/absence" },
-    { key: "reports", label: "Reports", href: "/dashboard/reports" },
-    { key: "settings", label: "Settings", href: "/dashboard/settings" },
-    { key: "companies", label: "Company Selection", href: "/dashboard/companies" },
-  ];
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#00C853] to-[#2962FF]">
-      <HeaderBanner title={title} currentSection={currentSection} navChips={navChips} />
-      <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {children}
-      </main>
+    // Brand background: logo green → logo blue
+    <div className="min-h-screen bg-gradient-to-b from-[#00a651] to-[#0f3c85]">
+      {/* Top spacing */}
+      <div className="pt-6" />
+
+      {/* Shared container so header and tiles line up perfectly */}
+      <div className="mx-auto max-w-6xl px-4 pb-8">
+        <HeaderBanner title={title} currentSection={currentSection} />
+        <main className="mt-6">{children}</main>
+      </div>
     </div>
   );
 }

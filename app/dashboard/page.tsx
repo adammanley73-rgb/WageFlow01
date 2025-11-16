@@ -1,107 +1,169 @@
-// app/dashboard/page.tsx
-// Server component: fetches the active company and shows it on the dashboard.
-// Uses the internal /api/active-company endpoint and forwards cookies for SSR.
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\page.tsx
 
-import React from "react";
-import { headers } from "next/headers";
+import Link from "next/link";
+import { Inter } from "next/font/google";
+import PageTemplate from "@/components/layout/PageTemplate";
 
-type ActiveCompany = {
-  id: string;
-  name: string | null;
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+});
+
+type Counts = {
+  employeeCount: number;
+  payrollRunCount: number;
+  absenceRecordCount: number;
+  employees?: number;
+  runs?: number;
+  absences?: number;
 };
 
-async function getActiveCompany(): Promise<ActiveCompany | null> {
-  // Forward incoming cookies so the API can read the active_company_* values
-  const incoming = headers();
-  const cookie = incoming.get("cookie") ?? "";
+async function getCounts(): Promise<Counts> {
+  try {
+    const base = process.env.NEXT_PUBLIC_BASE_URL;
+    const url = base ? `${base}/api/counts` : "/api/counts";
 
-  // Relative URL works on both Vercel and local dev inside app router
-  const res = await fetch("/api/active-company", {
-    method: "GET",
-    headers: { cookie },
-    // We want fresh info if user switches companies
-    cache: "no-store",
-  });
+    const res = await fetch(url, {
+      cache: "no-store",
+    });
 
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    // Avoid throwing; render a soft error state instead
-    return null;
+    if (!res.ok) {
+      return {
+        employeeCount: 0,
+        payrollRunCount: 0,
+        absenceRecordCount: 0,
+      };
+    }
+
+    const data = (await res.json()) as Partial<Counts>;
+
+    return {
+      employeeCount:
+        typeof data.employeeCount === "number"
+          ? data.employeeCount
+          : typeof data.employees === "number"
+          ? data.employees
+          : 0,
+      payrollRunCount:
+        typeof data.payrollRunCount === "number"
+          ? data.payrollRunCount
+          : typeof data.runs === "number"
+          ? data.runs
+          : 0,
+      absenceRecordCount:
+        typeof data.absenceRecordCount === "number"
+          ? data.absenceRecordCount
+          : typeof data.absences === "number"
+          ? data.absences
+          : 0,
+    };
+  } catch (err) {
+    console.error("getCounts error:", err);
+    return {
+      employeeCount: 0,
+      payrollRunCount: 0,
+      absenceRecordCount: 0,
+    };
   }
-
-  return (await res.json()) as ActiveCompany;
 }
 
-function ActiveCompanyCard({ company }: { company: ActiveCompany }) {
-  const displayName = company.name?.trim() || "Unnamed company";
+function StatValue(props: { label: string; value: string | number }) {
   return (
-    <div className="mx-auto mt-4 max-w-6xl px-4">
-      <div className="rounded-xl border border-neutral-300 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-base font-medium text-neutral-700">
-            Active company
-          </div>
-          <div className="text-xs text-neutral-500">ID: {company.id}</div>
-        </div>
-        <div className="mt-1 text-2xl font-semibold tracking-tight text-neutral-900">
-          {displayName}
-        </div>
+    <div className="flex h-full w-full flex-col items-center justify-center text-center">
+      <div className="text-sm font-semibold text-neutral-900">
+        {props.label}
+      </div>
+      <div
+        className={`${inter.className} mt-2 text-[27px] leading-none font-semibold`}
+      >
+        {props.value}
       </div>
     </div>
   );
 }
 
-export default async function DashboardPage() {
-  const company = await getActiveCompany();
-
-  // If middleware is configured correctly, this should not render in missing state.
-  // Still, fail soft to avoid crashing the page during local testing.
+function StatTile(props: { label: string; value: string | number }) {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-200 to-sky-200">
-      {/* Keep top spacing consistent with your layout */}
-      <div className="pt-6" />
+    <div
+      className="h-full rounded-2xl ring-1 border bg-neutral-300 ring-neutral-400 border-neutral-400 p-4"
+      style={{ backgroundColor: "#d4d4d4" }}
+    >
+      <StatValue label={props.label} value={props.value} />
+    </div>
+  );
+}
 
-      {company ? (
-        <ActiveCompanyCard company={company} />
-      ) : (
-        <div className="mx-auto max-w-6xl px-4">
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
-            No active company detected. If you are not redirected to Company
-            Selection, check middleware and cookies.
-          </div>
+function GreyTile(props: {
+  title: string;
+  description?: string;
+  href?: string;
+}) {
+  const body = (
+    <div
+      className="h-full rounded-2xl ring-1 border bg-neutral-300 ring-neutral-400 border-neutral-400 p-4"
+      style={{ backgroundColor: "#d4d4d4" }}
+    >
+      <div className="flex h-full w-full flex-col items-center text-center">
+        <div className="text-base font-semibold text-neutral-900 min-h-[22px] flex items-end">
+          {props.title}
         </div>
-      )}
-
-      {/* Placeholder for the rest of the dashboard tiles/cards.
-         Replace with your existing dashboard content as needed. */}
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-neutral-300 bg-neutral-100 p-6 text-center">
-            <div className="text-sm text-neutral-600">Employees</div>
-            <div className="mt-1 text-3xl font-semibold text-neutral-900">
-              —
-            </div>
-          </div>
-          <div className="rounded-xl border border-neutral-300 bg-neutral-100 p-6 text-center">
-            <div className="text-sm text-neutral-600">Payroll</div>
-            <div className="mt-1 text-3xl font-semibold text-neutral-900">
-              —
-            </div>
-          </div>
-          <div className="rounded-xl border border-neutral-300 bg-neutral-100 p-6 text-center">
-            <div className="text-sm text-neutral-600">Absence</div>
-            <div className="mt-1 text-3xl font-semibold text-neutral-900">
-              —
-            </div>
-          </div>
-          <div className="rounded-xl border border-neutral-300 bg-neutral-100 p-6 text-center">
-            <div className="text-sm text-neutral-600">Settings</div>
-            <div className="mt-1 text-3xl font-semibold text-neutral-900">
-              —
-            </div>
-          </div>
+        <div className="mt-2 text-sm text-neutral-800 leading-snug min-h-[36px] w-full">
+          {props.description ?? ""}
         </div>
+        <div className="mt-auto" />
       </div>
     </div>
+  );
+
+  return props.href ? (
+    <Link
+      href={props.href}
+      className="block transition-transform hover:-translate-y-0.5"
+    >
+      {body}
+    </Link>
+  ) : (
+    body
+  );
+}
+
+export default async function DashboardPage() {
+  const counts = await getCounts();
+
+  return (
+    <PageTemplate title="Dashboard" currentSection="Dashboard">
+      <div className="grid grid-rows-2 gap-3 flex-1 min-h-0">
+        {/* Row 1: three KPIs driven by /api/counts */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 h-full min-h-0">
+          <StatTile label="Employees" value={counts.employeeCount} />
+          <StatTile label="Payroll runs" value={counts.payrollRunCount} />
+          <StatTile label="Absence records" value={counts.absenceRecordCount} />
+        </div>
+
+        {/* Row 2: four wizard tiles */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 h-full min-h-0">
+          <GreyTile
+            title="New Employees Wizard"
+            description="Create and onboard new employees."
+            href="/dashboard/employees/new"
+          />
+          <GreyTile
+            title="Leaver Wizard"
+            description="Process leavers with a guided flow."
+            href="/dashboard/employees"
+          />
+          <GreyTile
+            title="New Absence Wizard"
+            description="Record sickness, holiday, or other absences."
+            href="/dashboard/absence/new"
+          />
+          <GreyTile
+            title="Payroll Run Wizard"
+            description="Start a guided payroll run."
+            href="/dashboard/payroll/new"
+          />
+        </div>
+      </div>
+    </PageTemplate>
   );
 }
