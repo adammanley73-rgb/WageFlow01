@@ -90,7 +90,7 @@ export default async function CompaniesPage() {
     null;
 
   return (
-    <PageTemplate title="Companies" currentSection="Dashboard">
+    <PageTemplate title="Companies" currentSection="Companies">
       <div className="rounded-2xl bg-white shadow-sm p-4 sm:p-6">
         {companies.length === 0 ? (
           <div className="text-sm text-neutral-600">
@@ -119,7 +119,10 @@ export default async function CompaniesPage() {
                         {company.name}
                       </td>
                       <td className="rounded-r-xl bg-neutral-100 px-2 py-2 text-right">
-                        <form action={setActiveCompanyAction} className="inline-block">
+                        <form
+                          action={setActiveCompanyAction}
+                          className="inline-block"
+                        >
                           <input
                             type="hidden"
                             name="company_id"

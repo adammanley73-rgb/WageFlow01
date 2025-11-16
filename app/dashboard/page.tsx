@@ -202,14 +202,31 @@ export default async function DashboardPage() {
         {/* Active company banner */}
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (
-            <p className="text-lg sm:text-xl text-[#0f3c85]">
-              <span className="font-semibold">Active company:</span>{" "}
-              <span className="font-bold">{activeCompanyName}</span>
-            </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-lg sm:text-xl text-[#0f3c85]">
+                <span className="font-semibold">Active company:</span>{" "}
+                <span className="font-bold">{activeCompanyName}</span>
+              </p>
+              <Link
+                href="/dashboard/companies"
+                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+              >
+                Change company
+              </Link>
+            </div>
           ) : (
-            <p className="text-sm sm:text-base text-neutral-800">
-              No active company selected. Go to the Companies page to choose one.
-            </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm sm:text-base text-neutral-800">
+                No active company selected. Go to the Companies page to choose
+                one.
+              </p>
+              <Link
+                href="/dashboard/companies"
+                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+              >
+                Select company
+              </Link>
+            </div>
           )}
         </div>
 
