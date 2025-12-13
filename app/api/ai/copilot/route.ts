@@ -1,6 +1,8 @@
 // C:\Users\adamm\Projects\wageflow01\app\api\ai\copilot\route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getAiBaseUrl } from "@/lib/aiClient";
+
+export const dynamic = "force-dynamic";
 
 type CopilotRequestBody = {
   question?: string;
@@ -67,7 +69,7 @@ type ProxyErrorResponse = {
   };
 };
 
-export async function GET(_req: NextRequest) {
+export async function GET(_req: Request) {
   return NextResponse.json({
     ok: true,
     endpoint: "copilot",
@@ -81,7 +83,7 @@ export async function GET(_req: NextRequest) {
   });
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
     let body: CopilotRequestBody | null = null;
 
@@ -117,9 +119,7 @@ export async function POST(req: NextRequest) {
 
     const upstreamResponse = await fetch(targetUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
@@ -138,14 +138,14 @@ export async function POST(req: NextRequest) {
     }
 
     const upstreamDebug =
-      aiData && "debug" in aiData && aiData.debug && typeof aiData.debug === "object"
+      aiData &&
+      "debug" in aiData &&
+      aiData.debug &&
+      typeof aiData.debug === "object"
         ? (aiData.debug as Record<string, unknown>)
         : null;
 
-    const isSuccess =
-      upstreamResponse.ok &&
-      !!aiData &&
-      aiData.ok === true;
+    const isSuccess = upstreamResponse.ok && !!aiData && aiData.ok === true;
 
     if (!isSuccess) {
       const errorCode =
@@ -189,10 +189,7 @@ export async function POST(req: NextRequest) {
       highlights: successData.highlights ?? [],
       citations: successData.citations ?? [],
       followUps: successData.followUps ?? [],
-      safety:
-        typeof successData.safety === "object"
-          ? successData.safety
-          : null,
+      safety: typeof successData.safety === "object" ? successData.safety : null,
       debug: {
         source: "wageflow-main",
         target: "wageflow-ai",
@@ -203,9 +200,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(payload);
   } catch (error) {
     const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown error in Copilot proxy.";
+      error instanceof Error ? error.message : "Unknown error in Copilot proxy.";
 
     const payload: ProxyErrorResponse = {
       ok: false,
