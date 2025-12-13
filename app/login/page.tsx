@@ -1,16 +1,13 @@
-/* @ts-nocheck */
-import { redirect } from 'next/navigation';
+import { redirect } from "next/navigation";
+import LoginForm from "./LoginForm";
+
+const bypass =
+  process.env.AUTH_BYPASS === "1" || process.env.NEXT_PUBLIC_AUTH_BYPASS === "1";
 
 export default function LoginPage() {
-  const bypass =
-    process.env.AUTH_BYPASS === '1' ||
-    process.env.NEXT_PUBLIC_AUTH_BYPASS === '1';
-
   if (bypass) {
-    redirect('/dashboard');
+    redirect("/dashboard");
   }
 
-  // Optional: keep empty during build; add your real form later
-  return null;
+  return <LoginForm />;
 }
-
