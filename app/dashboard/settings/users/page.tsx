@@ -1,56 +1,50 @@
-/* @ts-nocheck */
-'use client';
-
-import type { CSSProperties } from 'react';
-import HeaderBanner from '../../../../components/ui/HeaderBanner';
+﻿/* C:\Users\adamm\Projects\wageflow01\app\dashboard\settings\users\page.tsx */
+import React from "react";
 
 const S = {
-  page: { minHeight: '100vh', background: 'linear-gradient(180deg,#10b981 0%,#059669 35%,#1e40af 65%,#3b82f6 100%)', padding: '32px 16px' } as CSSProperties,
-  wrap: { maxWidth: '1100px', margin: '0 auto' } as CSSProperties,
-  panel: { background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px rgba(0,0,0,0.10)', padding: 18 } as CSSProperties,
-  toolbar: { display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 } as CSSProperties,
-  btn: { background: '#1e40af', color: '#fff', borderRadius: 9999, padding: '10px 16px', fontWeight: 700, border: 0, cursor: 'pointer' } as CSSProperties,
-  ghost: { background: 'transparent', color: '#1e40af', borderRadius: 9999, padding: '10px 16px', fontWeight: 700, border: '1px solid #1e40af', cursor: 'pointer' } as CSSProperties,
-  table: { width: '100%', borderCollapse: 'separate', borderSpacing: 0 } as CSSProperties,
-  th: { textAlign: 'left', padding: '10px 12px', borderBottom: '1px solid #e5e7eb', background: '#f8fafc' } as CSSProperties,
-  td: { padding: '10px 12px', borderBottom: '1px solid #f1f5f9' } as CSSProperties,
-} as const;
+  page: { maxWidth: "72rem", margin: "0 auto" },
+  wrap: { background: "white", borderRadius: "0.75rem", border: "1px solid #e5e7eb", padding: "1.5rem" },
+  panel: { border: "1px solid #e5e7eb", borderRadius: "0.5rem", padding: "1rem" },
+  input: "mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm",
+  btn: "inline-flex items-center rounded-md bg-blue-700 px-3 py-1.5 text-white text-sm disabled:opacity-60"
+};
 
-export default function UsersPage() {
+export default function SettingsUsersPage() {
   return (
-    <main style={S.page}>
-      <div style={S.wrap}>
-        <HeaderBanner title="Settings" currentSection="settings" />
+    <div className="min-h-screen bg-gradient-to-b from-green-500 to-blue-700 px-4 py-6 md:px-8 lg:px-12">
+      {/* Minimal header card to avoid HeaderBanner prop requirements */}
+      <div className="w-full bg-white border-b border-neutral-200 px-6 py-4 rounded-t-xl">
+        <h1 className="text-xl font-semibold text-blue-700">Settings</h1>
+      </div>
 
-        <div style={S.panel}>
-          <div style={S.toolbar}>
-            <button style={S.btn} disabled title="Coming soon">Invite user</button>
-            <a href="/dashboard/settings" style={S.ghost}>Back</a>
-          </div>
+      <main style={S.page}>
+        <div style={S.wrap}>
+          <div style={S.panel}>
+            <div className="flex gap-2 items-center mb-4 flex-wrap">
+              <input className={S.input} placeholder="Search users (disabled)" readOnly />
+              <button className={S.btn} disabled>Invite user (disabled)</button>
+            </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={S.table} aria-label="Users">
-              <thead>
-                <tr>
-                  <th style={S.th}>Name</th>
-                  <th style={S.th}>Email</th>
-                  <th style={S.th}>Role</th>
-                  <th style={S.th}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td style={S.td}>You</td>
-                  <td style={S.td}>demo@example.com</td>
-                  <td style={S.td}>Owner</td>
-                  <td style={S.td}>Active</td>
-                </tr>
-              </tbody>
-            </table>
+            <div className="rounded-lg border border-neutral-200 p-4">
+              <h2 className="text-sm font-medium text-neutral-900">Users</h2>
+              <p className="mt-2 text-sm text-neutral-700">
+                User management is disabled in this preview build. This placeholder keeps CI and typecheck green
+                until the real settings wiring lands.
+              </p>
+
+              <ul className="mt-3 list-disc pl-5 text-sm text-neutral-700">
+                <li>Role-based access control</li>
+                <li>Company scoping</li>
+                <li>Owner and admin roles</li>
+              </ul>
+
+              <div className="mt-4">
+                <button className={S.btn} disabled>Save changes (disabled)</button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
-

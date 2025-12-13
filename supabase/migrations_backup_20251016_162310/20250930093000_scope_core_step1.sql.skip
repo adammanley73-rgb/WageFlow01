@@ -1,0 +1,53 @@
+-- Step 1: add company_id to employees and pay_runs (nullable for backfill)
+
+do $$
+begin
+  -- employees
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'employees' and column_name = 'company_id'
+  ) then
+    alter table public.employees add column company_id uuid;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint where conname = 'employees_company_id_fkey'
+  ) then
+    alter table public.employees
+      add constraint employees_company_id_fkey
+      foreign key (company_id) references public.companies(id) on delete cascade;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where c.relkind = 'i' and c.relname = 'idx_employees_company_id' and n.nspname = 'public'
+  ) then
+    create index idx_employees_company_id on public.employees(company_id);
+  end if;
+
+  -- pay_runs
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'pay_runs' and column_name = 'company_id'
+  ) then
+    alter table public.pay_runs add column company_id uuid;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint where conname = 'pay_runs_company_id_fkey'
+  ) then
+    alter table public.pay_runs
+      add constraint pay_runs_company_id_fkey
+      foreign key (company_id) references public.companies(id) on delete cascade;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where c.relkind = 'i' and c.relname = 'idx_pay_runs_company_id' and n.nspname = 'public'
+  ) then
+    create index idx_pay_runs_company_id on public.pay_runs(company_id);
+  end if;
+end
+$$;

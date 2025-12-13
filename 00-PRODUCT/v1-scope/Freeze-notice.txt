@@ -1,0 +1,5 @@
+Freeze notice
+
+- PeopleFlow paused until WageFlow v1 acceptance criteria are met
+- WhisperLine paused until either 10 paying WageFlow companies or 2 bureau pilots complete
+- Any exception requires a written 1-page impact note and removal of equal work from the WageFlow v1 scope

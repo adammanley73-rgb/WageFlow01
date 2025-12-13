@@ -1,0 +1,3 @@
+﻿-- Remote-applied placeholder
+-- This migration version exists in the remote database but not in local history.
+-- Intentionally empty. Do not add SQL here.

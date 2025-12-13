@@ -1,65 +1,31 @@
-/* @ts-nocheck */
-import React from "react";
-import HeaderBanner from "@components/ui/HeaderBanner";
+/* app/dashboard/absence/new/adoption/page.tsx
+   Minimal placeholder. No HeaderBanner import, no strict props.
+*/
 
-export default function AdoptionLeavePage() {
+export default function NewAdoptionLeavePage() {
   return (
-    <div className="min-h-screen">
-      <HeaderBanner title="New Adoption Leave" />
-      <div className="p-6 space-y-4">
-        <p className="text-sm text-gray-700">
-          Preview stub. Adoption leave wizard is disabled in preview mode.
-        </p>
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-xs text-gray-600">Employee</span>
-              <input
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                placeholder="Select employee (stub)"
-                readOnly
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-gray-600">Expected placement date</span>
-              <input
-                type="date"
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                disabled
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-gray-600">Leave start date</span>
-              <input
-                type="date"
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                disabled
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-gray-600">Weeks of leave</span>
-              <input
-                type="number"
-                min={0}
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                disabled
-              />
-            </label>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <button className="rounded bg-gray-200 px-4 py-2 text-sm" disabled>
-              Save
-            </button>
-            <button className="rounded bg-gray-200 px-4 py-2 text-sm" disabled>
-              Cancel
-            </button>
-          </div>
+    <div className="min-h-screen bg-gradient-to-b from-[#11a36a] to-[#1565d8]">
+      {/* Simple header card */}
+      <header className="w-full flex justify-center pt-6">
+        <div className="w-[92%] max-w-6xl bg-white rounded-2xl shadow-sm px-6 py-4">
+          <h1 className="text-4xl font-extrabold tracking-tight text-[#1565d8]">
+            New Adoption Leave
+          </h1>
         </div>
-        <p className="text-xs text-gray-500">
-          This page is a compile-safe placeholder. Real logic, validation, and SMP/SAP calculations will be enabled after preview hardening.
-        </p>
-      </div>
+      </header>
+
+      <main className="w-full flex justify-center py-8">
+        <section className="w-[92%] max-w-6xl bg-neutral-200 rounded-2xl ring-1 ring-neutral-400 p-6">
+          <div className="rounded-xl bg-white ring-1 ring-neutral-300 px-4 py-6 space-y-3">
+            <p className="text-sm text-gray-700">
+              Preview stub. Adoption leave wizard is disabled in this build.
+            </p>
+            <p className="text-sm text-gray-700">
+              This route stays in place so CI and navigation remain consistent while Absence flows are implemented.
+            </p>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
-

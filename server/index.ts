@@ -1,10 +1,10 @@
-// server/index.ts
+﻿// server/index.ts
 // Minimal Express server for WageFlow preview API.
 
 import express from 'express';
 import cors from 'cors';
 import { randomUUID } from 'node:crypto';
-import registerPreviewRoutes from './routes/preview.ts';
+import registerPreviewRoutes from './routes/preview';
 
 // Helper to format run_number like "YYYY-MM-MMM" where MMM is M01..M12
 function currentRunNumber(): string {

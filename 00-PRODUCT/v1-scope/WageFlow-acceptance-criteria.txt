@@ -1,0 +1,20 @@
+Acceptance criteria
+
+Core reliability
+- 10 consecutive monthly runs across 3 test companies complete with 0 data leaks
+- â‰¥95% FPS submissions succeed on first try; 100% succeed after auto-retry within 15 minutes
+- Payslips generated for 100% of employees in approved runs
+
+Security and isolation
+- RLS tests: cross-company access attempts return 0 rows in automated tests
+- Audit log records actor, timestamp, entity, and before/after for all pay-affecting actions
+
+Onboarding
+- Time to first successful run for a new company â‰¤ 7 days using CSV import and a checklist
+
+Support
+- Support load â‰¤ 3 tickets per 1,000 payslips during pilot month
+
+Multi-frequency validation
+- At least one successful test company per pay frequency (monthly, weekly, fortnightly, four-weekly, lunar)
+- No cross-frequency leakage; each frequency generates independent FPS and payslips

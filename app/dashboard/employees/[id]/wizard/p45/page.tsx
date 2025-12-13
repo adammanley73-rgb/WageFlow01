@@ -6,8 +6,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 
-const NAV_CHIP =
-  'w-32 text-center rounded-full bg-blue-700 px-5 py-2 text-sm font-medium text-white';
+const ACTION_BTN =
+  'rounded-full bg-blue-700 px-5 py-2 text-sm font-medium text-white';
 const CARD =
   'rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6';
 
@@ -15,13 +15,18 @@ type P45Row = {
   employer_paye_ref: string | null;
   employer_name: string | null;
   works_number: string | null;
-  tax_code: string;
-  tax_basis: 'cumulative' | 'wk1mth1' | 'BR' | 'D0' | 'D1' | 'NT';
-  prev_pay_to_date: number;
-  prev_tax_to_date: number;
-  leaving_date: string | null;
-  student_loan_deductions: boolean;
+  leaving_date: string | null; // ISO yyyy-mm-dd
+  tax_code: string | null;
+  tax_basis: 'Cumulative' | 'Week1Month1' | null;
+  total_pay_to_date: number | null;
+  total_tax_to_date: number | null;
+  had_student_loan_deductions: boolean | null;
 };
+
+function isJson(res: Response) {
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('application/json');
+}
 
 export default function P45Page() {
   const params = useParams<{ id: string }>();
@@ -32,17 +37,17 @@ export default function P45Page() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Controlled state
-  const [employerPayeRef, setEmployerPayeRef] = useState('');
-  const [employerName, setEmployerName] = useState('');
-  const [worksNumber, setWorksNumber] = useState('');
-  const [taxCode, setTaxCode] = useState('1257L');
-  const [taxBasis, setTaxBasis] =
-    useState<'cumulative' | 'wk1mth1' | 'BR' | 'D0' | 'D1' | 'NT'>('cumulative');
-  const [prevPay, setPrevPay] = useState<string>('0.00');
-  const [prevTax, setPrevTax] = useState<string>('0.00');
-  const [leavingDate, setLeavingDate] = useState<string>('');
-  const [loanWasDeducted, setLoanWasDeducted] = useState(false);
+  const [form, setForm] = useState<P45Row>({
+    employer_paye_ref: '',
+    employer_name: '',
+    works_number: '',
+    leaving_date: '',
+    tax_code: '1257L',
+    tax_basis: 'Cumulative',
+    total_pay_to_date: 0,
+    total_tax_to_date: 0,
+    had_student_loan_deductions: false,
+  });
 
   useEffect(() => {
     let alive = true;
@@ -50,20 +55,39 @@ export default function P45Page() {
       try {
         setLoading(true);
         setErr(null);
+
         const r = await fetch(`/api/employees/${id}/p45`, { cache: 'no-store' });
-        if (r.ok) {
-          const j = await r.json();
-          const d = (j?.data ?? null) as Partial<P45Row> | null;
+
+        // No record yet or backend not returning JSON
+        if (r.status === 204 || r.status === 404) return;
+
+        if (!r.ok) throw new Error(`load ${r.status}`);
+
+        if (isJson(r)) {
+          const j = await r.json().catch(() => null);
+          const d = (j?.data ?? j ?? null) as Partial<P45Row> | null;
           if (alive && d) {
-            setEmployerPayeRef(d.employer_paye_ref ?? '');
-            setEmployerName(d.employer_name ?? '');
-            setWorksNumber(d.works_number ?? '');
-            setTaxCode(d.tax_code ?? '1257L');
-            setTaxBasis((d.tax_basis as any) || 'cumulative');
-            setPrevPay(String(d.prev_pay_to_date ?? '0.00'));
-            setPrevTax(String(d.prev_tax_to_date ?? '0.00'));
-            setLeavingDate(d.leaving_date ?? '');
-            setLoanWasDeducted(!!d.student_loan_deductions);
+            setForm((prev) => ({
+              ...prev,
+              employer_paye_ref: d.employer_paye_ref ?? prev.employer_paye_ref,
+              employer_name: d.employer_name ?? prev.employer_name,
+              works_number: d.works_number ?? prev.works_number,
+              leaving_date: d.leaving_date ?? prev.leaving_date,
+              tax_code: d.tax_code ?? prev.tax_code,
+              tax_basis: (d.tax_basis as any) ?? prev.tax_basis,
+              total_pay_to_date:
+                typeof d.total_pay_to_date === 'number'
+                  ? d.total_pay_to_date
+                  : prev.total_pay_to_date,
+              total_tax_to_date:
+                typeof d.total_tax_to_date === 'number'
+                  ? d.total_tax_to_date
+                  : prev.total_tax_to_date,
+              had_student_loan_deductions:
+                typeof d.had_student_loan_deductions === 'boolean'
+                  ? d.had_student_loan_deductions
+                  : prev.had_student_loan_deductions,
+            }));
           }
         }
       } catch (e: any) {
@@ -72,46 +96,67 @@ export default function P45Page() {
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
-  const validMoney = (s: string) => /^\d{1,10}(\.\d{1,2})?$/.test(s.trim());
+  function onChange(
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) {
+    const { name, value, type, checked } = e.target as any;
+    setForm((prev) => ({
+      ...prev,
+      [name]:
+        type === 'checkbox'
+          ? Boolean(checked)
+          : name === 'total_pay_to_date' || name === 'total_tax_to_date'
+          ? value === '' ? null : Number(value)
+          : value,
+    }));
+  }
 
   async function onSave() {
-    // Basic validations that match HMRC fields
-    if (!taxCode.trim() && !['BR', 'D0', 'D1', 'NT'].includes(taxBasis)) {
-      alert('Enter a tax code or choose BR/D0/D1/NT.');
-      return;
-    }
-    if (!validMoney(prevPay) || !validMoney(prevTax)) {
-      alert('Enter amounts as 0.00 with up to 2 decimals.');
-      return;
-    }
-
     try {
       setSaving(true);
       setErr(null);
-      const body = {
-        employer_paye_ref: employerPayeRef || null,
-        employer_name: employerName || null,
-        works_number: worksNumber || null,
-        tax_code: taxCode || '1257L',
-        tax_basis: taxBasis,
-        prev_pay_to_date: Number(prevPay),
-        prev_tax_to_date: Number(prevTax),
-        leaving_date: leavingDate || null,
-        student_loan_deductions: loanWasDeducted,
+
+      const payload: P45Row = {
+        employer_paye_ref: form.employer_paye_ref || null,
+        employer_name: form.employer_name || null,
+        works_number: form.works_number || null,
+        leaving_date: form.leaving_date || null,
+        tax_code: form.tax_code || null,
+        tax_basis: form.tax_basis || null,
+        total_pay_to_date:
+          typeof form.total_pay_to_date === 'number'
+            ? form.total_pay_to_date
+            : null,
+        total_tax_to_date:
+            typeof form.total_tax_to_date === 'number'
+              ? form.total_tax_to_date
+              : null,
+        had_student_loan_deductions:
+          typeof form.had_student_loan_deductions === 'boolean'
+            ? form.had_student_loan_deductions
+            : null,
       };
 
       const res = await fetch(`/api/employees/${id}/p45`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.detail || json?.error || `save ${res.status}`);
 
+      // Advance even if body is empty. Read JSON only if present.
+      let warn = '';
+      if (isJson(res)) {
+        const j = await res.json().catch(() => null);
+        warn = j?.warning || '';
+      }
+      // Next step in your flow after P45 is Bank
       router.push(`/dashboard/employees/${id}/wizard/bank`);
+      if (warn) console.warn('P45 saved with warning:', warn);
     } catch (e: any) {
       const msg = String(e?.message || e);
       setErr(msg);
@@ -124,90 +169,132 @@ export default function P45Page() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-300 via-teal-400 to-blue-600 font-[var(--font-manrope,inherit)]">
       <div className="mx-auto max-w-6xl px-4 py-6">
+        {/* Header banner */}
         <div className="mb-6 flex items-center justify-between gap-6 rounded-xl bg-white px-6 py-6 ring-1 ring-neutral-200">
           <div className="flex items-center gap-4">
             <Image src="/WageFlowLogo.png" alt="WageFlow" width={64} height={64} priority />
             <h1 className="text-4xl font-bold tracking-tight text-blue-800">P45 Details</h1>
           </div>
-          <nav className="flex flex-wrap items-center gap-3">
-            <Link href="/dashboard" className={NAV_CHIP}>Dashboard</Link>
-            <Link href="/dashboard/payroll" className={NAV_CHIP}>Payroll</Link>
-            <Link href="/dashboard/absence" className={NAV_CHIP}>Absence</Link>
-          </nav>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => (history.length > 1 ? router.back() : router.push('/dashboard'))}
+              className={ACTION_BTN}
+              aria-label="Back"
+            >
+              Back
+            </button>
+            <Link href="/dashboard/companies" className={ACTION_BTN} aria-label="Company Selection">
+              Company Selection
+            </Link>
+          </div>
         </div>
 
         <div className={CARD}>
           {loading ? (
-            <div>Loadingâ€¦</div>
+            <div>Loading…</div>
           ) : (
             <>
-              {err && (
+              {err ? (
                 <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">
                   {err}
                 </div>
-              )}
+              ) : null}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <div className="text-sm font-medium text-neutral-900 mb-1">Employer PAYE reference</div>
-                  <input className="w-full rounded-md border border-neutral-400 bg-white p-2"
-                    value={employerPayeRef} onChange={(e) => setEmployerPayeRef(e.target.value)} />
+                  <label className="block text-sm text-neutral-900">Employer PAYE reference</label>
+                  <input
+                    name="employer_paye_ref"
+                    value={form.employer_paye_ref || ''}
+                    onChange={onChange}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-neutral-900">Employer name</label>
+                  <input
+                    name="employer_name"
+                    value={form.employer_name || ''}
+                    onChange={onChange}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
                 </div>
 
                 <div>
-                  <div className="text-sm font-medium text-neutral-900 mb-1">Employer name</div>
-                  <input className="w-full rounded-md border border-neutral-400 bg-white p-2"
-                    value={employerName} onChange={(e) => setEmployerName(e.target.value)} />
+                  <label className="block text-sm text-neutral-900">Works/payroll number</label>
+                  <input
+                    name="works_number"
+                    value={form.works_number || ''}
+                    onChange={onChange}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-neutral-900">Leaving date</label>
+                  <input
+                    type="date"
+                    name="leaving_date"
+                    value={form.leaving_date || ''}
+                    onChange={onChange}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
                 </div>
 
                 <div>
-                  <div className="text-sm font-medium text-neutral-900 mb-1">Works/payroll number</div>
-                  <input className="w-full rounded-md border border-neutral-400 bg-white p-2"
-                    value={worksNumber} onChange={(e) => setWorksNumber(e.target.value)} />
+                  <label className="block text-sm text-neutral-900">Tax code</label>
+                  <input
+                    name="tax_code"
+                    value={form.tax_code || ''}
+                    onChange={onChange}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
                 </div>
-
                 <div>
-                  <div className="text-sm font-medium text-neutral-900 mb-1">Leaving date</div>
-                  <input type="date" className="w-full rounded-md border border-neutral-400 bg-white p-2"
-                    value={leavingDate} onChange={(e) => setLeavingDate(e.target.value)} />
-                </div>
-
-                <div>
-                  <div className="text-sm font-medium text-neutral-900 mb-1">Tax code</div>
-                  <input className="w-full rounded-md border border-neutral-400 bg-white p-2"
-                    value={taxCode} onChange={(e) => setTaxCode(e.target.value)}
-                    placeholder="e.g. 1257L or leave blank when BR/D0/D1/NT" />
-                </div>
-
-                <div>
-                  <div className="text-sm font-medium text-neutral-900 mb-1">Tax basis</div>
-                  <select className="w-full rounded-md border border-neutral-400 bg-white p-2"
-                    value={taxBasis}
-                    onChange={(e) => setTaxBasis(e.target.value as any)}>
-                    <option value="cumulative">Cumulative</option>
-                    <option value="wk1mth1">Week 1 / Month 1</option>
-                    <option value="BR">BR</option>
-                    <option value="D0">D0</option>
-                    <option value="D1">D1</option>
-                    <option value="NT">NT</option>
+                  <label className="block text-sm text-neutral-900">Tax basis</label>
+                  <select
+                    name="tax_basis"
+                    value={form.tax_basis || ''}
+                    onChange={onChange}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  >
+                    <option value="Cumulative">Cumulative</option>
+                    <option value="Week1Month1">Week1Month1</option>
                   </select>
                 </div>
 
                 <div>
-                  <div className="text-sm font-medium text-neutral-900 mb-1">Total pay to date</div>
-                  <input className="w-full rounded-md border border-neutral-400 bg-white p-2"
-                    value={prevPay} onChange={(e) => setPrevPay(e.target.value)} placeholder="0.00" />
+                  <label className="block text-sm text-neutral-900">Total pay to date</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    name="total_pay_to_date"
+                    value={form.total_pay_to_date ?? ''}
+                    onChange={onChange}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
                 </div>
-
                 <div>
-                  <div className="text-sm font-medium text-neutral-900 mb-1">Total tax to date</div>
-                  <input className="w-full rounded-md border border-neutral-400 bg-white p-2"
-                    value={prevTax} onChange={(e) => setPrevTax(e.target.value)} placeholder="0.00" />
+                  <label className="block text-sm text-neutral-900">Total tax to date</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    name="total_tax_to_date"
+                    value={form.total_tax_to_date ?? ''}
+                    onChange={onChange}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
                 </div>
 
-                <label className="flex items-center gap-2 mt-2">
-                  <input type="checkbox" checked={loanWasDeducted}
-                    onChange={(e) => setLoanWasDeducted(e.target.checked)} />
+                <label className="mt-2 flex items-center gap-2 md:col-span-2">
+                  <input
+                    type="checkbox"
+                    name="had_student_loan_deductions"
+                    checked={!!form.had_student_loan_deductions}
+                    onChange={onChange}
+                  />
                   <span className="text-sm text-neutral-900">
                     Student loan deductions were being made
                   </span>
@@ -215,13 +302,18 @@ export default function P45Page() {
               </div>
 
               <div className="mt-6 flex justify-end gap-3">
-                <Link href={`/dashboard/employees/${id}/edit`}
-                  className="rounded-md bg-neutral-400 px-4 py-2 text-white">
+                <Link
+                  href={`/dashboard/employees/${id}/edit`}
+                  className="rounded-md bg-neutral-400 px-4 py-2 text-white"
+                >
                   Cancel
                 </Link>
-                <button onClick={onSave} disabled={saving}
-                  className="rounded-md bg-blue-700 px-4 py-2 text-white disabled:opacity-50">
-                  {saving ? 'Savingâ€¦' : 'Save and continue'}
+                <button
+                  onClick={onSave}
+                  disabled={saving}
+                  className="rounded-md bg-blue-700 px-4 py-2 text-white disabled:opacity-50"
+                >
+                  {saving ? 'Saving…' : 'Save and continue'}
                 </button>
               </div>
             </>
@@ -231,4 +323,3 @@ export default function P45Page() {
     </div>
   );
 }
-

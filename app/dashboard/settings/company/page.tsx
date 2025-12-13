@@ -1,84 +1,53 @@
-// app/dashboard/settings/company/page.tsx
-
+/* C:\Users\adamm\Projects\wageflow01\app\dashboard\settings\company\page.tsx */
 import React from "react";
-import HeaderBanner from "@components/ui/HeaderBanner";
 
 const S = {
-  page: { padding: "0.5rem" },
-  wrap: { margin: "0 auto", maxWidth: "72rem" },
-  panel: {
-    background: "#fff",
-    border: "1px solid #e5e7eb",
-    borderRadius: "0.75rem",
-    padding: "1.5rem",
-    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-  } as React.CSSProperties,
-  row: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "1rem",
-    marginTop: "1rem",
-  },
-  label: { display: "block", fontWeight: 600, marginBottom: "0.25rem" },
-  input: {
-    width: "100%",
-    border: "1px solid #d1d5db",
-    borderRadius: "0.5rem",
-    padding: "0.5rem 0.75rem",
-  },
-  saveRow: { marginTop: "1rem", display: "flex", justifyContent: "flex-end" },
-  btn: {
-    border: "1px solid #d1d5db",
-    borderRadius: "0.5rem",
-    padding: "0.5rem 1rem",
-    background: "#f9fafb",
-    cursor: "pointer",
-  },
+  page: { maxWidth: "72rem", margin: "0 auto" },
+  wrap: { background: "white", borderRadius: "0.75rem", border: "1px solid #e5e7eb", padding: "1.5rem" },
 };
 
-export default function CompanySettingsPage() {
+export default function SettingsCompanyPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-green-500 to-blue-700 px-4 py-6 md:px-8 lg:px-12">
-      <HeaderBanner title="Settings" currentSection="settings" />
+      {/* Minimal header card to avoid HeaderBanner prop requirements */}
+      <div className="w-full bg-white border-b border-neutral-200 px-6 py-4 rounded-t-xl">
+        <h1 className="text-xl font-semibold text-blue-700">Settings</h1>
+      </div>
 
       <main style={S.page}>
         <div style={S.wrap}>
-          <div style={S.panel}>
-            <h2 style={{ marginTop: 0 }}>Company details</h2>
+          <h2 className="text-base font-medium text-neutral-900">Company</h2>
+          <p className="mt-2 text-sm text-neutral-700">
+            Company settings are disabled in this preview build. This placeholder keeps CI and typecheck green until wiring is complete.
+          </p>
 
-            <div style={S.row}>
-              <div>
-                <label style={S.label} htmlFor="company_name">
-                  Company name
-                </label>
-                <input id="company_name" name="company_name" style={S.input} placeholder="The Business Consortium Ltd" />
-              </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs text-gray-600">Company name</span>
+              <input
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                placeholder="Acme Ltd"
+                readOnly
+              />
+            </label>
 
-              <div>
-                <label style={S.label} htmlFor="company_number">
-                  Company number
-                </label>
-                <input id="company_number" name="company_number" style={S.input} placeholder="12345678" />
-              </div>
+            <label className="block">
+              <span className="text-xs text-gray-600">Company number</span>
+              <input
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                placeholder="Optional"
+                readOnly
+              />
+            </label>
+          </div>
 
-              <div>
-                <label style={S.label} htmlFor="paye_reference">
-                  PAYE reference
-                </label>
-                <input id="paye_reference" name="paye_reference" style={S.input} placeholder="123/AB12345" />
-              </div>
-
-              <div>
-                <label style={S.label} htmlFor="accounts_office_ref">
-                  Accounts office reference
-                </label>
-                <input id="accounts_office_ref" name="accounts_office_ref" style={S.input} placeholder="123PA00123456" />
-              </div>
-            </div>
-
-            <div style={S.saveRow}>
-              <button type="button" style={S.btn}>Save</button>
-            </div>
+          <div className="mt-6">
+            <button
+              className="inline-flex items-center rounded-md bg-blue-700 px-4 py-2 text-white text-sm disabled:opacity-60"
+              disabled
+            >
+              Save changes (disabled)
+            </button>
           </div>
         </div>
       </main>
