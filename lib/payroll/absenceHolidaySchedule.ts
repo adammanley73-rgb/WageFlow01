@@ -23,7 +23,7 @@ export type AbsenceHolidayScheduleInput = {
   employee: HolidayPayEmployee;
   frequency: Frequency;
   periodStart: string; // payroll period start (ISO date string)
-  periodEnd: string;   // payroll period end (ISO date string)
+  periodEnd: string; // payroll period end (ISO date string)
 };
 
 /**
@@ -48,7 +48,9 @@ export async function upsertHolidayPayScheduleForAnnualLeave(
     input;
 
   if (!absence?.id) {
-    throw new Error("upsertHolidayPayScheduleForAnnualLeave: absence.id is required.");
+    throw new Error(
+      "upsertHolidayPayScheduleForAnnualLeave: absence.id is required."
+    );
   }
   if (!absence?.employee_id) {
     throw new Error(
@@ -63,7 +65,6 @@ export async function upsertHolidayPayScheduleForAnnualLeave(
 
   const daysOfLeave = normaliseDaysOfLeave(absence.total_days);
 
-  // Calculate holiday pay amount using the shared v1 rules.
   const holidayResult = calculateHolidayPay({
     employee,
     frequency,
@@ -72,11 +73,8 @@ export async function upsertHolidayPayScheduleForAnnualLeave(
     periodEnd,
   });
 
-  // Round amount to 2 decimal places for storage.
   const roundedAmount = roundToCents(holidayResult.amount);
 
-  // If amount is zero, we still write a row so that downstream logic can see
-  // that a schedule was considered, but we keep it explicit in notes.
   const schedulePayload = {
     company_id: absence.company_id,
     employee_id: absence.employee_id,
@@ -87,7 +85,6 @@ export async function upsertHolidayPayScheduleForAnnualLeave(
     amount: roundedAmount,
   };
 
-  // Check if a schedule already exists for this absence + element + period.
   const { data: existingRows, error: existingError } = await supabase
     .from("absence_pay_schedules")
     .select("id")
@@ -113,7 +110,7 @@ export async function upsertHolidayPayScheduleForAnnualLeave(
     const { data, error } = await supabase
       .from("absence_pay_schedules")
       .update(schedulePayload)
-      .eq("id", existing.id)
+      .eq("id", (existing as any).id)
       .select()
       .limit(1);
 

@@ -1,5 +1,5 @@
 // C:\Users\adamm\Projects\wageflow01\app\api\employees\[id]\leaver\route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseAdmin = createClient(
@@ -27,14 +27,9 @@ function badRequest(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
 }
 
-export async function GET(
-  _req: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function GET(_req: Request, context: { params: { id: string } }) {
   const employeeId = context.params?.id;
-  if (!employeeId) {
-    return badRequest("Missing employee id");
-  }
+  if (!employeeId) return badRequest("Missing employee id");
 
   try {
     const { data, error } = await supabaseAdmin
@@ -53,28 +48,10 @@ export async function GET(
       `
       )
       .eq("id", employeeId)
-      .maybeSingle?.() // if using supabase-js v2
-      // fallback for v1 without maybeSingle
-      // @ts-ignore
-      || await supabaseAdmin
-        .from("employees")
-        .select(
-          `
-          id,
-          status,
-          leaving_date,
-          final_pay_date,
-          leaver_reason,
-          pay_after_leaving,
-          leaver_holiday_days,
-          leaver_holiday_amount,
-          leaver_other_json
-        `
-        )
-        .eq("id", employeeId)
-        .single();
+      .single();
 
     const row: any = data;
+
     if (error || !row) {
       return NextResponse.json(
         { ok: false, error: "Employee not found" },
@@ -116,14 +93,9 @@ export async function GET(
   }
 }
 
-export async function POST(
-  req: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function POST(req: Request, context: { params: { id: string } }) {
   const employeeId = context.params?.id;
-  if (!employeeId) {
-    return badRequest("Missing employee id");
-  }
+  if (!employeeId) return badRequest("Missing employee id");
 
   let body: any;
   try {
@@ -134,7 +106,8 @@ export async function POST(
 
   const rawLeavingDate = body.leaving_date;
   const rawFinalPayDate = body.final_pay_date;
-  const rawReason = typeof body.leaver_reason === "string" ? body.leaver_reason : "";
+  const rawReason =
+    typeof body.leaver_reason === "string" ? body.leaver_reason : "";
   const rawPayAfterLeaving = !!body.pay_after_leaving;
 
   const rawHolidayDays = body.holiday_days;
@@ -201,7 +174,7 @@ export async function POST(
       );
     }
 
-    return NextResponse.json({ ok: true, id: data.id });
+    return NextResponse.json({ ok: true, id: (data as any).id });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: String(e?.message || e) },

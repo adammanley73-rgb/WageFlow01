@@ -1,6 +1,19 @@
-/* @ts-nocheck */
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\[id]\edit\loader.ts
 
-export async function loadAbsence(absenceId) {
+type LoadAbsenceOk = {
+  ok: true;
+  absence: unknown;
+  employee: unknown;
+};
+
+type LoadAbsenceFail = {
+  ok: false;
+  error: string;
+};
+
+type LoadAbsenceResult = LoadAbsenceOk | LoadAbsenceFail;
+
+export async function loadAbsence(absenceId: string): Promise<LoadAbsenceResult> {
   if (!absenceId) return { ok: false, error: "Missing absence ID" };
 
   try {
@@ -9,9 +22,11 @@ export async function loadAbsence(absenceId) {
       cache: "no-store",
     });
 
-    const data = await res.json().catch(() => null);
+    const data: any = await res.json().catch(() => null);
 
-    if (!res.ok) return { ok: false, error: data?.error || "Failed to load" };
+    if (!res.ok) {
+      return { ok: false, error: data?.error || "Failed to load" };
+    }
 
     return { ok: true, absence: data?.absence, employee: data?.employee };
   } catch (err) {
