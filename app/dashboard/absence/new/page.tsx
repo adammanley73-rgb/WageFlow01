@@ -1,119 +1,175 @@
 /* @ts-nocheck */
-// app/dashboard/absence/new/page.tsx
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\page.tsx
+
+"use client";
+
+import React from "react";
+import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-export default function NewAbsenceHub() {
-  // Do NOT render HeaderBanner here. The layout already did.
+const ACTION_BTN =
+  "rounded-full bg-blue-700 px-5 py-2 text-sm font-medium text-white";
+const CARD =
+  "rounded-2xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
+const TILE_ACTIVE =
+  "flex flex-col justify-between rounded-xl bg-white border border-neutral-200 shadow-sm px-5 py-4 h-full";
+const TILE_DISABLED =
+  "flex flex-col justify-between rounded-xl bg-neutral-200 border border-neutral-300 px-5 py-4 h-full opacity-70 cursor-not-allowed";
+
+export default function NewAbsencePage() {
+  const router = useRouter();
+
   return (
-    <div className="rounded-2xl overflow-hidden bg-white/90 ring-1 ring-neutral-200 shadow-sm">
-      {/* Title-only header (centered, slightly smaller than page title) */}
-      <div className="px-6 py-6 border-b border-neutral-200">
-        <h1 className="text-center text-3xl font-semibold text-blue-900">
-          Record New Absence
-        </h1>
-      </div>
-
-      {/* Content */}
-      <section className="bg-white">
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Sickness */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Sickness</h2>
-              <p className="mb-4">
-                Uses SSP rules with PIWs, linking, waiting days, and the 28-week cap.
+    <div className="min-h-screen bg-gradient-to-b from-emerald-300 via-teal-400 to-blue-600 font-[var(--font-manrope,inherit)]">
+      <div className="mx-auto max-w-6xl px-4 py-6">
+        {/* Header banner – matches other wizards */}
+        <div className="mb-6 flex flex-col gap-4 rounded-xl bg-white px-6 py-6 ring-1 ring-neutral-200 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <Image
+              src="/WageFlowLogo.png"
+              alt="WageFlow"
+              width={64}
+              height={64}
+              priority
+            />
+            <div>
+              <h1 className="text-4xl font-bold tracking-tight text-blue-800">
+                New absence
+              </h1>
+              <p className="mt-1 text-sm text-neutral-700">
+                Choose the type of absence you want to record. Each option takes
+                you into the relevant wizard so the absence feeds correctly into
+                payroll.
               </p>
-              <Link href="/dashboard/absence/new/sickness" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Maternity */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Maternity</h2>
-              <p className="mb-4">
-                Computes SMP AWE and weekly schedule. Saves totals in the record.
-              </p>
-              <Link href="/dashboard/absence/new/maternity" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Adoption */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Adoption</h2>
-              <p className="mb-4">
-                Computes SAP weekly schedule when available. Placement date optional.
-              </p>
-              <Link href="/dashboard/absence/new/adoption" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Paternity */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Paternity</h2>
-              <p className="mb-4">
-                Computes SPP schedule. Two-week entitlement where eligible.
-              </p>
-              <Link href="/dashboard/absence/new/paternity" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Shared Parental */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Shared Parental</h2>
-              <p className="mb-4">
-                Computes ShPP schedule. Requires eligible partner leave details.
-              </p>
-              <Link href="/dashboard/absence/new/shared-parental" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Parental Bereavement */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Parental Bereavement</h2>
-              <p className="mb-4">
-                Computes SPBP schedule. One or two weeks depending on circumstance.
-              </p>
-              <Link href="/dashboard/absence/new/parental-bereavement" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Annual Leave */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Annual Leave</h2>
-              <p className="mb-4">
-                Logs and manages paid annual leave, automatically reducing entitlement.
-              </p>
-              <Link href="/dashboard/absence/new/annual-leave" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Unpaid Leave */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Unpaid Leave</h2>
-              <p className="mb-4">
-                Records unpaid absence periods and adjusts payroll accordingly.
-              </p>
-              <Link href="/dashboard/absence/new/unpaid-leave" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
             </div>
           </div>
 
-          {/* View saved absences */}
-          <div className="mt-10 text-center">
-            <Link href="/dashboard/absence/list" className="inline-block bg-blue-900 text-white px-5 py-2 rounded hover:bg-blue-800">
-              View saved absences
-            </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                history.length > 1
+                  ? router.back()
+                  : router.push("/dashboard/absence")
+              }
+              className={ACTION_BTN}
+            >
+              Back
+            </button>
           </div>
         </div>
-      </section>
+
+        {/* Absence type selector – gold-standard style card */}
+        <div className={CARD}>
+          <h2 className="mb-4 text-lg font-semibold text-neutral-900">
+            Select absence type
+          </h2>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* Annual leave */}
+            <div>
+              <div className={TILE_ACTIVE}>
+                <div>
+                  <h3 className="text-base font-semibold text-neutral-900">
+                    Annual leave
+                  </h3>
+                  <p className="mt-1 text-sm text-neutral-700">
+                    Book paid holiday for an employee. Use this for standard
+                    annual leave days.
+                  </p>
+                </div>
+                <div className="mt-3 flex items-center justify-between text-sm">
+                  <Link
+                    href="/dashboard/absence/new/annual"
+                    className="font-semibold text-blue-700 hover:underline"
+                  >
+                    Start annual leave
+                  </Link>
+                  <Link
+                    href="/dashboard/absence/new/annual"
+                    className="text-xs text-neutral-600 hover:text-neutral-800"
+                  >
+                    Continue →
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Sickness */}
+            <div>
+              <div className={TILE_ACTIVE}>
+                <div>
+                  <h3 className="text-base font-semibold text-neutral-900">
+                    Sickness
+                  </h3>
+                  <p className="mt-1 text-sm text-neutral-700">
+                    Record sickness absence. This feeds into Statutory Sick Pay
+                    and sickness reporting.
+                  </p>
+                </div>
+                <div className="mt-3 flex items-center justify-between text-sm">
+                  <Link
+                    href="/dashboard/absence/new/sickness"
+                    className="font-semibold text-blue-700 hover:underline"
+                  >
+                    Start sickness
+                  </Link>
+                  <Link
+                    href="/dashboard/absence/new/sickness"
+                    className="text-xs text-neutral-600 hover:text-neutral-800"
+                  >
+                    Continue →
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Maternity / Adoption / Paternity – placeholder for SMP/SAP/SPP/ShPP */}
+            <div>
+              <div className={TILE_DISABLED} aria-disabled="true">
+                <div>
+                  <h3 className="text-base font-semibold text-neutral-800">
+                    Maternity / Adoption / Paternity
+                  </h3>
+                  <p className="mt-1 text-sm text-neutral-700">
+                    For statutory maternity, paternity or adoption absence.
+                    This will feed into statutory pay once the wizards are
+                    wired.
+                  </p>
+                </div>
+                <div className="mt-3 text-sm text-neutral-600">
+                  Coming soon
+                </div>
+              </div>
+            </div>
+
+            {/* Unpaid / Other – placeholder */}
+            <div>
+              <div className={TILE_DISABLED} aria-disabled="true">
+                <div>
+                  <h3 className="text-base font-semibold text-neutral-800">
+                    Unpaid leave / Other
+                  </h3>
+                  <p className="mt-1 text-sm text-neutral-700">
+                    Unpaid leave, compassionate leave or other special
+                    absences. Placeholder until configured.
+                  </p>
+                </div>
+                <div className="mt-3 text-sm text-neutral-600">
+                  Coming soon
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-4 text-xs text-neutral-700">
+            Absences you record here will be available for payroll runs and
+            reporting. Use Annual leave and Sickness for now, other absence
+            types will be enabled as their wizards go live.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
