@@ -1,11 +1,6 @@
 // C:\Users\adamm\Projects\wageflow01\app\api\employees\[id]\leaver\route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-);
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 type LeaverOtherLine = {
   description: string;
@@ -27,9 +22,42 @@ function badRequest(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
 }
 
+function serverMisconfig(message: string) {
+  return NextResponse.json({ ok: false, error: message }, { status: 500 });
+}
+
+function getSupabaseAdmin(): SupabaseClient<any> | null {
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_URL ||
+    "";
+
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+  if (!url || !serviceKey) return null;
+
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+function toNumberOrNull(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 export async function GET(_req: Request, context: { params: { id: string } }) {
   const employeeId = context.params?.id;
   if (!employeeId) return badRequest("Missing employee id");
+
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return serverMisconfig(
+      "Server is missing Supabase configuration. Set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
 
   try {
     const { data, error } = await supabaseAdmin
@@ -97,6 +125,13 @@ export async function POST(req: Request, context: { params: { id: string } }) {
   const employeeId = context.params?.id;
   if (!employeeId) return badRequest("Missing employee id");
 
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return serverMisconfig(
+      "Server is missing Supabase configuration. Set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+
   let body: any;
   try {
     body = await req.json();
@@ -110,8 +145,8 @@ export async function POST(req: Request, context: { params: { id: string } }) {
     typeof body.leaver_reason === "string" ? body.leaver_reason : "";
   const rawPayAfterLeaving = !!body.pay_after_leaving;
 
-  const rawHolidayDays = body.holiday_days;
-  const rawHolidayAmount = body.holiday_amount;
+  const holidayDays = toNumberOrNull(body.holiday_days);
+  const holidayAmount = toNumberOrNull(body.holiday_amount);
 
   const rawOtherEarnings = Array.isArray(body.other_earnings)
     ? body.other_earnings
@@ -119,15 +154,6 @@ export async function POST(req: Request, context: { params: { id: string } }) {
   const rawOtherDeductions = Array.isArray(body.other_deductions)
     ? body.other_deductions
     : [];
-
-  function toNumberOrNull(v: any): number | null {
-    if (v === null || v === undefined || v === "") return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  const holidayDays = toNumberOrNull(rawHolidayDays);
-  const holidayAmount = toNumberOrNull(rawHolidayAmount);
 
   const normalisedOtherEarnings: LeaverOtherLine[] = rawOtherEarnings
     .map((l: any) => ({
