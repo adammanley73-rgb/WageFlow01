@@ -161,7 +161,7 @@ export default function NewEmployeePage() {
   };
 
   return (
-    <PageTemplate title="Employees" currentSection="employees">
+    <PageTemplate title="Employees" currentSection="Employees">
       <div className="rounded-2xl ring-1 border bg-neutral-300 ring-neutral-400 border-neutral-400 p-4">
         <h2 className="text-lg font-semibold text-neutral-900 mb-4">New employee</h2>
 
@@ -300,7 +300,7 @@ export default function NewEmployeePage() {
               disabled={saving}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {saving ? 'Savingâ€¦' : 'Create employee'}
+              {saving ? 'Saving…' : 'Create employee'}
             </button>
             <button
               type="button"

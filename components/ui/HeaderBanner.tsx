@@ -1,8 +1,7 @@
-// components/ui/HeaderBanner.tsx
-// Banner with logo, title, and context-aware nav chips.
-// Accepts a currentSection prop to hide the active section from chips.
-// On Dashboard: show Employees, Payroll, Absence, Settings.
-// On other pages: show Dashboard first and hide the current page; no Settings chip.
+﻿// C:\Users\adamm\Projects\wageflow01\components\ui\HeaderBanner.tsx
+// Server component used on dashboard-style pages.
+// - White header banner with logo + title
+// - Context-aware nav chips (matches WageFlow gold standard)
 
 import React from "react";
 import Link from "next/link";
@@ -10,66 +9,67 @@ import Link from "next/link";
 type Section = "dashboard" | "employees" | "payroll" | "absence" | "settings";
 
 type HeaderBannerProps = {
-  title?: string;
-  currentSection?: Section;
+title: string;
+currentSection: Section;
 };
 
-const chipBase =
-  "inline-flex items-center justify-center rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 transition-colors w-32 text-center";
-const container =
-  "mx-auto mb-6 mt-2 w-full max-w-6xl rounded-xl border border-neutral-200 bg-white p-6 shadow-sm";
-const titleCls = "text-5xl font-extrabold tracking-tight text-neutral-900"; // larger title
-const row = "flex items-center justify-between gap-4";
-const left = "flex items-center gap-4";
-const logoCls = "h-16 w-16 rounded-lg object-contain bg-transparent";
-const chipsRow = "flex items-center gap-3";
+type NavLink = {
+key: Section;
+label: string;
+href: string;
+};
 
-function chipsFor(section: Section): { label: string; href: string; key: Section }[] {
-  if (section === "dashboard") {
-    return [
-      { label: "Employees", href: "/dashboard/employees", key: "employees" },
-      { label: "Payroll", href: "/dashboard/payroll", key: "payroll" },
-      { label: "Absence", href: "/dashboard/absence", key: "absence" },
-      { label: "Settings", href: "/dashboard/settings", key: "settings" },
-    ];
-  }
+const LINKS: NavLink[] = [
+{ key: "dashboard", label: "Dashboard", href: "/dashboard" },
+{ key: "employees", label: "Employees", href: "/dashboard/employees" },
+{ key: "payroll", label: "Payroll", href: "/dashboard/payroll" },
+{ key: "absence", label: "Absence", href: "/dashboard/absence" },
+{ key: "settings", label: "Settings", href: "/dashboard/settings" },
+];
 
-  const all: { label: string; href: string; key: Section }[] = [
-    { label: "Dashboard", href: "/dashboard", key: "dashboard" },
-    { label: "Employees", href: "/dashboard/employees", key: "employees" },
-    { label: "Payroll", href: "/dashboard/payroll", key: "payroll" },
-    { label: "Absence", href: "/dashboard/absence", key: "absence" },
-  ];
-  return all.filter((c) => c.key !== section);
+function getVisibleLinks(currentSection: Section): NavLink[] {
+if (currentSection === "dashboard") {
+return LINKS.filter((l) => l.key !== "dashboard");
 }
 
-export default function HeaderBanner({
-  title = "Dashboard",
-  currentSection = "dashboard",
-}: HeaderBannerProps) {
-  const chips = chipsFor(currentSection);
+return LINKS.filter((l) => {
+if (l.key === "settings") return false; // Settings link only shown on Dashboard
+if (l.key === currentSection) return false; // hide current page
+return l.key === "dashboard" || l.key === "employees" || l.key === "payroll" || l.key === "absence";
+});
+}
 
-  return (
-    <div className={container}>
-      <div className={row}>
-        <div className={left}>
-          <img
-            src="/WageFlowLogo.png"
-            alt="WageFlow logo"
-            className={logoCls}
-            loading="eager"
-          />
-          <h1 className={titleCls}>{title}</h1>
-        </div>
+export default function HeaderBanner({ title, currentSection }: HeaderBannerProps) {
+const visible = getVisibleLinks(currentSection);
 
-        <nav className={chipsRow} aria-label="Primary">
-          {chips.map((c) => (
-            <Link key={c.key} href={c.href} className={chipBase}>
-              {c.label}
-            </Link>
-          ))}
-        </nav>
-      </div>
+return (
+<div className="rounded-[32px] bg-white px-6 py-6 shadow-sm">
+<div className="flex flex-col gap-4">
+<div className="flex items-center gap-4">
+<div className="flex items-center justify-center">
+<img src="/WageFlowLogo.png" alt="WageFlow" className="h-16 w-auto object-contain" />
+</div>
+
+      <h1 className="text-4xl font-extrabold tracking-tight text-[#111827]">
+        {title}
+      </h1>
     </div>
-  );
+
+    <nav className="flex flex-wrap gap-3">
+      {visible.map((l) => (
+        <Link
+          key={l.key}
+          href={l.href}
+          className="inline-flex h-10 w-32 items-center justify-center rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-offset-2"
+          style={{ backgroundColor: "#0f3c85" }}
+        >
+          <span className="text-sm font-semibold">{l.label}</span>
+        </Link>
+      ))}
+    </nav>
+  </div>
+</div>
+
+
+);
 }
