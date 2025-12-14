@@ -1,124 +1,169 @@
 /* @ts-nocheck */
-import HeaderBanner from "@/components/ui/HeaderBanner";
-import Link from "next/link";
-import { supabaseServer } from "@/lib/supabaseServer";
-import { getCompanyIdFromCookie } from "@/lib/company";
-import { selectCompanyAction, clearCompanyAction } from "./actions";
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\companies\page.tsx
+
+import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
+import PageTemplate from "@/components/layout/PageTemplate";
+
+export const dynamic = "force-dynamic";
+
+type Company = {
+  id: string;
+  name: string;
+  created_at?: string;
+};
+
+function getBaseUrl(): string {
+  const h = headers();
+
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  const host =
+    h.get("x-forwarded-host") ??
+    h.get("host") ??
+    process.env.VERCEL_URL ??
+    "localhost:3000";
+
+  // VERCEL_URL is usually just the hostname without protocol.
+  const normalizedHost = host.startsWith("http") ? host : `${proto}://${host}`;
+  return normalizedHost.replace(/\/$/, "");
+}
+
+function buildCookieHeader(): string {
+  const jar = cookies();
+  const all = jar.getAll();
+  return all.map((c) => `${c.name}=${c.value}`).join("; ");
+}
+
+async function getCompanies(): Promise<Company[]> {
+  try {
+    const baseUrl = getBaseUrl();
+
+    const res = await fetch(`${baseUrl}/api/companies`, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        cookie: buildCookieHeader(),
+      },
+    });
+
+    if (!res.ok) {
+      console.error("companies page: /api/companies non-200", {
+        status: res.status,
+        statusText: res.statusText,
+      });
+      return [];
+    }
+
+    const data = await res.json();
+
+    // Expected shape: an array of companies.
+    if (Array.isArray(data)) return data;
+
+    // Defensive fallback if the API ever changes shape.
+    if (data && Array.isArray(data.companies)) return data.companies;
+
+    return [];
+  } catch (err) {
+    console.error("companies page: failed to load companies", err);
+    return [];
+  }
+}
+
+// Server action: set active company cookie and bounce back to dashboard
+async function setActiveCompanyAction(formData: FormData) {
+  "use server";
+
+  const companyId = formData.get("company_id");
+
+  if (typeof companyId !== "string" || !companyId) return;
+
+  const jar = cookies();
+
+  jar.set("active_company_id", companyId, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+
+  // Non-httpOnly mirror for any client-side helpers
+  jar.set("company_id", companyId, {
+    path: "/",
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+
+  redirect("/dashboard");
+}
 
 export default async function CompaniesPage() {
-  const supabase = supabaseServer();
-  const selectedId = getCompanyIdFromCookie();
+  const [companies, cookieStore] = await Promise.all([
+    getCompanies(),
+    Promise.resolve(cookies()),
+  ]);
 
-  const { data: rows, error } = await supabase
-    .from("my_companies_v")
-    .select("id, name")
-    .order("name", { ascending: true });
+  const activeCompanyId =
+    cookieStore.get("active_company_id")?.value ??
+    cookieStore.get("company_id")?.value ??
+    null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-500 to-blue-800">
-      <HeaderBanner currentSection="Companies" />
-      <div className="max-w-3xl mx-auto p-4 space-y-4">
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-neutral-300 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-neutral-800">
-              Select a company
-            </h2>
-            <div className="flex items-center gap-2">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 bg-neutral-200 text-neutral-900 text-sm"
-              >
-                Back to dashboard
-              </Link>
-              <Link
-                href="/dashboard/companies/new"
-                className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 bg-blue-800 text-white text-sm"
-              >
-                Create company
-              </Link>
-            </div>
+    <PageTemplate title="Companies" currentSection="settings">
+      <div className="rounded-2xl bg-white shadow-sm p-4 sm:p-6">
+        {companies.length === 0 ? (
+          <div className="text-sm text-neutral-600">
+            No companies found for your account.
           </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-separate border-spacing-y-2">
+              <thead>
+                <tr>
+                  <th className="text-left text-xs font-semibold text-neutral-500 px-2">
+                    Name
+                  </th>
+                  <th className="text-right text-xs font-semibold text-neutral-500 px-2">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
 
-          {error ? (
-            <div className="p-4 text-red-700 text-sm">
-              Failed to load companies: {error.message}
-            </div>
-          ) : rows && rows.length > 0 ? (
-            <ul className="divide-y divide-neutral-200">
-              {rows.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex items-center justify-between px-4 py-3"
-                >
-                  <div>
-                    <div className="font-medium text-neutral-900">{c.name}</div>
-                    <div className="text-xs text-neutral-600 break-all">
-                      {c.id}
-                    </div>
-                  </div>
-                  {/* @ts-expect-error Server Action */}
-                  <form action={selectCompanyAction}>
-                    <input type="hidden" name="company_id" value={c.id} />
-                    <button
-                      type="submit"
-                      className={`px-3 py-1.5 rounded-lg text-sm ${
-                        selectedId === c.id
-                          ? "bg-green-600 text-white"
-                          : "bg-blue-800 text-white"
-                      }`}
-                    >
-                      {selectedId === c.id ? "Selected" : "Select"}
-                    </button>
-                  </form>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="p-4 text-neutral-700 text-sm">
-              You have no companies yet. Create one to continue.
-            </div>
-          )}
+              <tbody>
+                {companies.map((company) => {
+                  const isActive = company.id === activeCompanyId;
 
-          <div className="p-4 border-t border-neutral-300 flex items-center justify-between">
-            <div className="text-sm text-neutral-700">
-              {selectedId ? (
-                <>
-                  Current selection:
-                  <span className="ml-2 font-mono text-neutral-900">
-                    {selectedId}
-                  </span>
-                </>
-              ) : (
-                "No company selected."
-              )}
-            </div>
-            {/* @ts-expect-error Server Action */}
-            <form action={clearCompanyAction}>
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 bg-neutral-200 text-neutral-900 text-sm"
-              >
-                Clear company selection
-              </button>
-            </form>
+                  return (
+                    <tr key={company.id}>
+                      <td className="rounded-l-xl bg-neutral-100 px-2 py-2 text-sm text-neutral-900">
+                        {company.name}
+                      </td>
+
+                      <td className="rounded-r-xl bg-neutral-100 px-2 py-2 text-right">
+                        <form action={setActiveCompanyAction} className="inline-block">
+                          <input type="hidden" name="company_id" value={company.id} />
+                          <button
+                            type="submit"
+                            className={`inline-flex items-center justify-center rounded-full px-4 py-1 text-xs font-semibold transition ${
+                              isActive
+                                ? "bg-emerald-600 text-white cursor-default"
+                                : "bg-sky-900 text-white hover:bg-sky-800"
+                            }`}
+                            disabled={isActive}
+                          >
+                            {isActive ? "Active company" : "Use this company"}
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4">
-            <h3 className="text-sm font-semibold text-neutral-800">Notes</h3>
-            <ul className="mt-2 text-sm list-disc list-inside text-neutral-700">
-              <li>
-                This page is always accessible, even without a selected company.
-              </li>
-              <li>
-                Selection writes a secure cookie. RLS still enforces membership
-                on data access.
-              </li>
-            </ul>
-          </div>
-        </div>
+        )}
       </div>
-    </div>
+    </PageTemplate>
   );
 }

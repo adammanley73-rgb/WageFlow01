@@ -6,8 +6,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 
-const NAV_CHIP =
-  'w-32 text-center rounded-full bg-blue-700 px-5 py-2 text-sm font-medium text-white';
+const ACTION_BTN =
+  'rounded-full bg-blue-700 px-5 py-2 text-sm font-medium text-white';
 const CARD =
   'rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6';
 
@@ -40,16 +40,23 @@ export default function StarterPage() {
       try {
         setLoading(true);
         setErr(null);
-        const r = await fetch(`/api/employees/${id}/starter`, { cache: 'no-store' });
-        if (!r.ok) throw new Error(`load ${r.status}`);
-        const j = await r.json();
-        const d = (j?.data ?? null) as Partial<StarterRow> | null;
 
-        if (alive && d) {
-          setP45(!!d.p45_provided);
-          setStarter((d.starter_declaration as any) || 'A');
-          setLoan((d.student_loan_plan as any) || 'none');
-          setPgLoan(!!d.postgraduate_loan);
+        const r = await fetch(`/api/employees/${id}/starter`, { cache: 'no-store' });
+
+        // New employee: no starter row yet. Treat 404/204 as "empty defaults".
+        if (r.status === 404 || r.status === 204) {
+          // nothing to map, keep defaults
+        } else if (!r.ok) {
+          throw new Error(`load ${r.status}`);
+        } else {
+          const j = await r.json().catch(() => ({}));
+          const d = (j?.data ?? j ?? null) as Partial<StarterRow> | null;
+          if (alive && d) {
+            setP45(!!d.p45_provided);
+            setStarter((d.starter_declaration as any) || 'A');
+            setLoan((d.student_loan_plan as any) || 'none');
+            setPgLoan(!!d.postgraduate_loan);
+          }
         }
       } catch (e: any) {
         if (alive) setErr(String(e?.message || e));
@@ -91,7 +98,7 @@ export default function StarterPage() {
         throw new Error(msg);
       }
 
-      // Only change: route based on P45
+      // Route based on P45
       const nextHref = p45
         ? `/dashboard/employees/${id}/wizard/p45`
         : `/dashboard/employees/${id}/wizard/bank`;
@@ -114,11 +121,21 @@ export default function StarterPage() {
             <Image src="/WageFlowLogo.png" alt="WageFlow" width={64} height={64} priority />
             <h1 className="text-4xl font-bold tracking-tight text-blue-800">Starter Details</h1>
           </div>
-          <nav className="flex flex-wrap items-center gap-3">
-            <Link href="/dashboard" className={NAV_CHIP}>Dashboard</Link>
-            <Link href="/dashboard/payroll" className={NAV_CHIP}>Payroll</Link>
-            <Link href="/dashboard/absence" className={NAV_CHIP}>Absence</Link>
-          </nav>
+
+          {/* Wizard nav: Back + Company Selection */}
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => (history.length > 1 ? router.back() : router.push('/dashboard'))}
+              className={ACTION_BTN}
+              aria-label="Back"
+            >
+              Back
+            </button>
+            <Link href="/dashboard/companies" className={ACTION_BTN} aria-label="Company Selection">
+              Company Selection
+            </Link>
+          </div>
         </div>
 
         <div className={CARD}>
@@ -210,4 +227,3 @@ export default function StarterPage() {
     </div>
   );
 }
-

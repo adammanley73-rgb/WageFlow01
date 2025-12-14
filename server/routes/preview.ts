@@ -1,9 +1,9 @@
-// server/routes/preview.ts
+﻿// server/routes/preview.ts
 // Express route to preview PAYE-calculated TAX and NET for a run.
 
 import type { Request, Response, Router } from 'express';
 import { Router as createRouter } from 'express';
-import { calculatePay } from '../../lib/payroll/calculatePay.ts';
+import { calculatePay } from '../../lib/payroll/calculatePay';
 
 // Parse "2025-09-M01" -> 1, "M12" -> 12
 function parsePeriodFromRunNumber(runNumber?: string): number | null {

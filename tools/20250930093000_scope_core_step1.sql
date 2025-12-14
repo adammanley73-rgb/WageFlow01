@@ -1,0 +1,3 @@
+-- Placeholder to reconcile local vs remote migration history.
+-- File: 20250930093000_scope_core_step1.sql
+-- Intentionally empty. Remote already applied the actual migration.

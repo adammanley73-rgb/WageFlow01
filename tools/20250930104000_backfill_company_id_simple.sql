@@ -1,0 +1,3 @@
+-- Placeholder to reconcile local vs remote migration history.
+-- File: 20250930104000_backfill_company_id_simple.sql
+-- Intentionally empty. Remote already applied the actual migration.

@@ -1,0 +1,8 @@
+Guardrails for WageFlow-AI v1
+
+- Refuse if source confidence below threshold; reply with safe fallback and manual link
+- Always show sources: HMRC document title + section or internal rule ID
+- No arithmetic without showing inputs used
+- Never override a human approval; only suggest
+- Latency targets: p50 â‰¤ 2.5s, p95 â‰¤ 5s; do not block UI
+- Log every AI output with rule hits and timing

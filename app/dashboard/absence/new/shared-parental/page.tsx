@@ -1,404 +1,406 @@
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\shared-parental\page.tsx
 /* @ts-nocheck */
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import EmployeePicker from "@/components/employees/EmployeePicker";
-import {
-  ensureStoreReady,
-  readAbsences as nsReadAbsences,
-  writeAbsences as nsWriteAbsences,
-} from "@/lib/storeVersion";
+import { Inter } from "next/font/google";
+import PageTemplate from "@/components/layout/PageTemplate";
 
-/**
- * Minimal employee shape needed by calculators and UI.
- */
-type Emp = {
-  id: string;
-  firstName?: string;
-  lastName?: string;
-  niNumber?: string;
-  payGroup?: string;
-};
+const inter = Inter({ subsets: ["latin"] });
 
-/**
- * SPP schedule/result shapes.
- * Expect weekly schedule items from client-side engines.
- */
-type SPPScheduleItem = {
-  weekStart: string; // ISO date for pay week
-  amount?: number;
-  note?: string;
-};
-
-type SPPResult = {
-  total: number;
-  schedule: SPPScheduleItem[];
-  meta?: Record<string, unknown>;
-};
-
-/**
- * Stored record for Paternity.
- */
-type AbsenceRecord = {
-  id: string;
-  type: "paternity";
+type FormState = {
   employeeId: string;
   employeeName: string;
-  startDate: string; // leave start ISO
-  endDate: string; // leave end ISO
-  birthDate: string; // ISO, for SPP eligibility
-  partnerName?: string;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-  spp?: SPPResult;
-  _version: 1;
+  employeeNumber: string;
+  startDate: string;
+  endDate: string;
+  childArrivalDate: string;
+  notes: string;
 };
 
-// ---------- helpers ----------
-function uid() {
-  return "ab_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
+type FormErrors = Partial<Record<keyof FormState, string>>;
 
-function isoDate(d: Date | string) {
-  const dt = typeof d === "string" ? new Date(d) : d;
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth() + 1).padStart(2, "0");
-  const day = String(dt.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+type SearchEmployee = {
+  id: string;
+  name: string;
+  employeeNumber: string | null;
+};
 
-function isValidDateStr(s: string) {
-  if (!s) return false;
-  const t = Date.parse(s);
-  return !Number.isNaN(t);
-}
+const initialState: FormState = {
+  employeeId: "",
+  employeeName: "",
+  employeeNumber: "",
+  startDate: "",
+  endDate: "",
+  childArrivalDate: "",
+  notes: "",
+};
 
-/**
- * Defensive SPP loader using alias "@/lib/spp".
- * Supports multiple common API shapes so this page survives refactors.
- */
-async function tryCalculateSPP(params: {
-  employee: Emp;
-  birthDate: string;
-  leaveStart: string;
-  leaveEnd: string;
-}) {
-  try {
-    const mod: any = await import("@/lib/spp");
-    const fn =
-      mod.calculateSPP ||
-      mod.computeSPP ||
-      mod.getSPPSchedule ||
-      mod.buildSPPSchedule;
-
-    if (typeof fn !== "function") return null;
-
-    const shapes = [
-      // positional, conservative
-      [params.employee, params.birthDate, params.leaveStart, params.leaveEnd],
-      // named, common keys
-      [
-        {
-          employee: params.employee,
-          birthDate: params.birthDate,
-          startDate: params.leaveStart,
-          endDate: params.leaveEnd,
-        },
-      ],
-      // slight variants
-      [
-        {
-          employee: params.employee,
-          dueOrBirth: params.birthDate,
-          leaveStart: params.leaveStart,
-          leaveEnd: params.leaveEnd,
-        },
-      ],
-    ];
-
-    for (const args of shapes) {
-      try {
-        const out = await fn(...(Array.isArray(args) ? args : [args]));
-        if (!out) continue;
-
-        // Normalize a few shapes
-        if (typeof out.total === "number" && Array.isArray(out.schedule)) {
-          return {
-            total: out.total,
-            schedule: out.schedule as SPPScheduleItem[],
-            meta: out.meta ?? {},
-          } as SPPResult;
-        }
-        if (Array.isArray(out)) {
-          const schedule = out as SPPScheduleItem[];
-          const total = schedule.reduce((sum, w) => sum + (w.amount || 0), 0);
-          return { total, schedule };
-        }
-        if (out && Array.isArray(out.weeks) && typeof out.amount === "number") {
-          return {
-            total: out.amount,
-            schedule: out.weeks,
-            meta: { source: "spp.weeks+amount" },
-          };
-        }
-      } catch {
-        // try next shape
-      }
-    }
-  } catch {
-    // module not present or alias unresolved at runtime
-  }
-  return null;
-}
-
-// ---------- page ----------
-export default function NewPaternityAbsencePage() {
+export default function SharedParentalLeaveWizardPage() {
   const router = useRouter();
 
-  const [hydrated, setHydrated] = useState(false);
+  const [form, setForm] = useState<FormState>(initialState);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [submitting, setSubmitting] = useState(false);
 
-  const [employeeId, setEmployeeId] = useState("");
-  const [birthDate, setBirthDate] = useState("");
-  const [leaveStart, setLeaveStart] = useState("");
-  const [leaveEnd, setLeaveEnd] = useState("");
-  const [partnerName, setPartnerName] = useState("");
-  const [notes, setNotes] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchEmployee[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
-
-  useEffect(() => {
-    ensureStoreReady();
-    setHydrated(true);
-  }, []);
-
-  // resolve employee for display and calc
-  const selectedEmployee = useMemo(() => {
-    try {
-      const raw = localStorage.getItem("wfStore");
-      if (!raw) return undefined;
-      const parsed = JSON.parse(raw);
-      const list = Array.isArray(parsed?.employees) ? (parsed.employees as Emp[]) : ([] as Emp[]);
-      return list.find((e) => e.id === employeeId);
-    } catch {
-      return undefined;
-    }
-  }, [employeeId]);
-
-  function resetForm() {
-    setEmployeeId("");
-    setBirthDate("");
-    setLeaveStart("");
-    setLeaveEnd("");
-    setPartnerName("");
-    setNotes("");
-    setError(null);
-    setInfo(null);
+  function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
-  async function onSave(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setInfo(null);
+  async function handleEmployeeSearchChange(value: string) {
+    setForm((prev) => ({
+      ...prev,
+      employeeName: value,
+      employeeNumber: "",
+      employeeId: "",
+    }));
+    setErrors((prev) => ({ ...prev, employeeName: undefined }));
 
-    if (!employeeId) {
-      setError("Select an employee.");
-      return;
-    }
-    if (!isValidDateStr(birthDate)) {
-      setError("Enter a valid birth date.");
-      return;
-    }
-    if (!isValidDateStr(leaveStart)) {
-      setError("Enter a valid leave start date.");
-      return;
-    }
-    if (!isValidDateStr(leaveEnd)) {
-      setError("Enter a valid leave end date.");
-      return;
-    }
-    if (new Date(leaveEnd) < new Date(leaveStart)) {
-      setError("Leave end date cannot be before leave start.");
+    const trimmed = value.trim();
+
+    if (trimmed.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      setSearchError(null);
       return;
     }
 
-    const emp = selectedEmployee as Emp;
-    const record: AbsenceRecord = {
-      id: uid(),
-      type: "paternity",
-      employeeId: emp.id,
-      employeeName: `${emp.firstName || ""} ${emp.lastName || ""}`.trim(),
-      startDate: isoDate(leaveStart),
-      endDate: isoDate(leaveEnd),
-      birthDate: isoDate(birthDate),
-      partnerName: partnerName?.trim() || undefined,
-      notes: notes?.trim() || undefined,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      _version: 1,
-    };
-
-    setSaving(true);
     try {
-      const spp = await tryCalculateSPP({
-        employee: emp,
-        birthDate: record.birthDate,
-        leaveStart: record.startDate,
-        leaveEnd: record.endDate,
-      });
-      if (spp) record.spp = spp;
+      setSearching(true);
+      setSearchError(null);
 
-      const current = (nsReadAbsences() as AbsenceRecord[]) ?? [];
-      nsWriteAbsences([record, ...current]);
-
-      setInfo(
-        spp
-          ? `Saved. SPP total £${spp.total.toFixed(2)} with ${spp.schedule.length} weeks.`
-          : "Saved. SPP schedule not available in this build."
+      const res = await fetch(
+        `/api/employees/search?q=${encodeURIComponent(trimmed)}`
       );
-    } catch {
-      setError("Failed to save absence. Try again.");
+
+      if (!res.ok) {
+        setSearchResults([]);
+        setSearchError("Search failed. Try again.");
+        return;
+      }
+
+      const data = await res.json();
+      const employees: SearchEmployee[] = Array.isArray(data?.employees)
+        ? data.employees
+        : [];
+
+      setSearchResults(employees);
+    } catch (err) {
+      console.error("Employee search error", err);
+      setSearchResults([]);
+      setSearchError("Search failed. Check your connection.");
     } finally {
-      setSaving(false);
+      setSearching(false);
     }
   }
 
-  if (!hydrated) {
-    return (
-      <div className="p-4">
-        <div className="text-sm text-gray-500">Loading…</div>
-      </div>
-    );
+  function handleSelectEmployee(emp: SearchEmployee) {
+    setForm((prev) => ({
+      ...prev,
+      employeeId: emp.id,
+      employeeName: emp.name,
+      employeeNumber: emp.employeeNumber ?? "",
+    }));
+    setErrors((prev) => ({ ...prev, employeeName: undefined }));
+    setSearchResults([]);
+    setSearchError(null);
+  }
+
+  function validate(): boolean {
+    const nextErrors: FormErrors = {};
+
+    if (!form.employeeName.trim()) {
+      nextErrors.employeeName = "Employee name is required";
+    }
+
+    if (!form.startDate) {
+      nextErrors.startDate = "Start date is required";
+    }
+
+    if (!form.endDate) {
+      nextErrors.endDate = "End date is required";
+    }
+
+    if (form.startDate && form.endDate && form.startDate > form.endDate) {
+      nextErrors.endDate = "End date cannot be before start date";
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validate()) return;
+
+    try {
+      setSubmitting(true);
+
+      const payload = {
+        employeeId: form.employeeId || null,
+        employeeName: form.employeeName,
+        employeeNumber: form.employeeNumber || null,
+        startDate: form.startDate,
+        endDate: form.endDate,
+        childArrivalDate: form.childArrivalDate || null,
+        notes: form.notes || null,
+      };
+
+      const res = await fetch("/api/absence/shared-parental", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // ignore
+      }
+
+      if (!res.ok || data?.ok === false) {
+        const message =
+          data?.message ||
+          data?.error ||
+          "The server could not save this shared parental leave record.";
+        console.error("Shared parental wizard error", {
+          status: res.status,
+          data,
+        });
+        alert(
+          "Something went wrong saving the form.\n\n" +
+            message +
+            "\n\nCheck the console or Supabase logs for more detail."
+        );
+        return;
+      }
+
+      alert(
+        "Shared parental leave recorded. It now appears in the Absence list."
+      );
+      setForm(initialState);
+      setSearchResults([]);
+      setSearchError(null);
+      router.push("/dashboard/absence");
+    } catch (err) {
+      console.error("Shared parental wizard unexpected error", err);
+      alert("Something went wrong saving the form. Check the console.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-4">
-      <h1 className="text-2xl font-semibold tracking-tight mb-2">Record Paternity Absence</h1>
-      <p className="text-sm text-gray-600 mb-6">
-        Enter birth and leave dates. Saves to localStorage and updates Absence stats.
-      </p>
-
-      <form onSubmit={onSave} className="grid gap-4">
-        <EmployeePicker value={employeeId} onChange={setEmployeeId} required allowClear />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="grid gap-2">
-            <label htmlFor="birthDate" className="text-sm font-medium">
-              Child birth date
-            </label>
-            <input
-              id="birthDate"
-              type="date"
-              value={birthDate}
-              onChange={(e) => setBirthDate(e.target.value)}
-              className="border rounded-md px-3 py-2"
-              required
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <label htmlFor="leaveStart" className="text-sm font-medium">
-              Leave start date
-            </label>
-            <input
-              id="leaveStart"
-              type="date"
-              value={leaveStart}
-              onChange={(e) => setLeaveStart(e.target.value)}
-              className="border rounded-md px-3 py-2"
-              required
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <label htmlFor="leaveEnd" className="text-sm font-medium">
-              Leave end date
-            </label>
-            <input
-              id="leaveEnd"
-              type="date"
-              value={leaveEnd}
-              onChange={(e) => setLeaveEnd(e.target.value)}
-              className="border rounded-md px-3 py-2"
-              required
-            />
-          </div>
-
-          <div className="grid gap-2 md:col-span-2">
-            <label htmlFor="partnerName" className="text-sm font-medium">
-              Partner name
-            </label>
-            <input
-              id="partnerName"
-              type="text"
-              value={partnerName}
-              onChange={(e) => setPartnerName(e.target.value)}
-              className="border rounded-md px-3 py-2"
-              placeholder="Optional"
-            />
-          </div>
+    <PageTemplate title="Absence" currentSection="absence">
+      <div className="flex flex-col gap-4 flex-1 min-h-0">
+        {/* Header card */}
+        <div className="rounded-2xl bg-white/80 px-4 py-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-[#0f3c85]">
+            Shared parental leave wizard
+          </h1>
+          <p className="mt-1 text-sm text-neutral-800">
+            Record a shared parental leave period for an employee. This creates
+            an absence record for compliance and future ShPP wiring.
+          </p>
         </div>
 
-        <div className="grid gap-2">
-          <label htmlFor="notes" className="text-sm font-medium">
-            Notes
-          </label>
-          <textarea
-            id="notes"
-            rows={3}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="border rounded-md px-3 py-2"
-            placeholder="Optional"
-          />
+        {/* Form card */}
+        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 px-4 py-6">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            {/* Employee details */}
+            <section className="flex flex-col gap-4">
+              <h2 className="text-base font-semibold text-neutral-900">
+                Employee details
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                    Employee name
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={form.employeeName}
+                      onChange={(e) => handleEmployeeSearchChange(e.target.value)}
+                      className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                      placeholder="Start typing the employee name"
+                    />
+
+                    {errors.employeeName && (
+                      <p className="mt-1 text-xs text-red-600">
+                        {errors.employeeName}
+                      </p>
+                    )}
+
+                    {searchError && (
+                      <p className="mt-1 text-xs text-red-600">{searchError}</p>
+                    )}
+                    {searching && !searchError && (
+                      <p className="mt-1 text-xs text-neutral-600">
+                        Searchingâ€¦
+                      </p>
+                    )}
+
+                    {searchResults.length > 0 && (
+                      <div className="absolute z-20 mt-1 w-full rounded-xl border border-neutral-300 bg-white shadow-lg max-h-48 overflow-y-auto">
+                        {searchResults.map((emp) => (
+                          <button
+                            key={emp.id}
+                            type="button"
+                            onClick={() => handleSelectEmployee(emp)}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-100"
+                          >
+                            <div className="font-medium">{emp.name}</div>
+                            <div className="text-[11px] text-neutral-600">
+                              {emp.employeeNumber
+                                ? `Employee no: ${emp.employeeNumber}`
+                                : "No employee number set"}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                    Employee number (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={form.employeeNumber}
+                    onChange={(e) => updateField("employeeNumber", e.target.value)}
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                    placeholder="Payroll number if known"
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* Child context */}
+            <section className="flex flex-col gap-4">
+              <h2 className="text-base font-semibold text-neutral-900">
+                Child details (optional for v1)
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                    Child birth / placement date
+                  </label>
+                  <input
+                    type="date"
+                    value={form.childArrivalDate}
+                    onChange={(e) => updateField("childArrivalDate", e.target.value)}
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                  />
+                  <p className="mt-1 text-[11px] text-neutral-600">
+                    Stored for future eligibility and ShPP calculations.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* Leave dates */}
+            <section className="flex flex-col gap-4">
+              <h2 className="text-base font-semibold text-neutral-900">
+                Leave period
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                    Start date
+                  </label>
+                  <input
+                    type="date"
+                    value={form.startDate}
+                    onChange={(e) => updateField("startDate", e.target.value)}
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                  />
+                  {errors.startDate && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {errors.startDate}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                    End date
+                  </label>
+                  <input
+                    type="date"
+                    value={form.endDate}
+                    onChange={(e) => updateField("endDate", e.target.value)}
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                  />
+                  {errors.endDate && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {errors.endDate}
+                    </p>
+                  )}
+                </div>
+
+                <div className="hidden md:block" />
+              </div>
+            </section>
+
+            {/* Notes */}
+            <section className="flex flex-col gap-3">
+              <h2 className="text-base font-semibold text-neutral-900">
+                Notes and context
+              </h2>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  Notes (optional)
+                </label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => updateField("notes", e.target.value)}
+                  rows={4}
+                  className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                  placeholder="Any context that helps you reconcile this leave with statutory rules and scheduling."
+                />
+              </div>
+            </section>
+
+            {/* Footer actions */}
+            <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between mt-2">
+              <p className="text-[11px] text-neutral-600">
+                This wizard records the leave period now. ShPP calculation and
+                multi-block SPL scheduling can be layered in once statutory
+                flows are fully stabilised.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => router.push("/dashboard/absence")}
+                  className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {submitting ? "Savingâ€¦" : "Save shared parental leave"}
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
-
-        {error && <div className="px-3 py-2 rounded-md bg-red-50 text-red-700 text-sm">{error}</div>}
-        {info && <div className="px-3 py-2 rounded-md bg-green-50 text-green-700 text-sm">{info}</div>}
-
-        <div className="flex flex-wrap gap-3 pt-2">
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-4 py-2 rounded-md bg-blue-700 text-white font-medium disabled:opacity-60"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <button type="button" onClick={resetForm} className="px-4 py-2 rounded-md border">
-            Reset
-          </button>
-          <button type="button" onClick={() => router.push("/dashboard/absence")} className="px-4 py-2 rounded-md border">
-            Cancel
-          </button>
-          <button type="button" onClick={() => router.push("/dashboard/absence/list")} className="px-4 py-2 rounded-md border">
-            Go to Absence list
-          </button>
-        </div>
-
-        {employeeId && (
-          <details className="mt-4 border rounded-md p-3">
-            <summary className="cursor-pointer text-sm font-medium">Preview payload</summary>
-            <pre className="text-xs overflow-auto mt-2">
-{JSON.stringify(
-  {
-    employeeId,
-    birthDate,
-    startDate: leaveStart,
-    endDate: leaveEnd,
-    partnerName: partnerName || undefined,
-    notes: notes || undefined,
-  },
-  null,
-  2
-)}
-            </pre>
-          </details>
-        )}
-      </form>
-    </div>
+      </div>
+    </PageTemplate>
   );
 }
-

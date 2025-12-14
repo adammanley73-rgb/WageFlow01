@@ -1,59 +1,125 @@
-/* @ts-nocheck */
-// app/api/counts/route.ts
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+/* @ts-nocheck /
+/ C:\Users\adamm\Projects\wageflow01\app\api\counts\route.ts */
 
-export const dynamic = 'force-dynamic';
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 
-function admin() {
-  const url = process.env.SUPABASE_URL || '';
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE ||
-    '';
-  const companyId = process.env.COMPANY_ID || '';
-  if (!url || !key || !companyId) {
-    throw new Error('counts: missing env');
-  }
-  return {
-    supabase: createClient(url, key, { auth: { persistSession: false } }),
-    companyId,
-  };
+type Counts = {
+employeeCount: number;
+payrollRunCount: number;
+absenceRecordCount: number;
+};
+
+function adminClient() {
+const url = process.env.SUPABASE_URL;
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!url || !key) {
+throw new Error("counts api: missing Supabase env");
+}
+
+return createClient(url, key, {
+auth: { persistSession: false },
+});
+}
+
+function getActiveCompanyId(): string | null {
+const jar = cookies();
+return (
+jar.get("active_company_id")?.value ??
+jar.get("company_id")?.value ??
+null
+);
+}
+
+async function safeCountByCompany(
+tableName: string,
+companyId: string
+): Promise<number | null> {
+try {
+const supabase = adminClient();
+
+const { count, error } = await supabase
+  .from(tableName)
+  .select("id", { count: "exact", head: true })
+  .eq("company_id", companyId);
+
+if (error) return null;
+if (typeof count !== "number") return 0;
+return count;
+
+
+} catch {
+return null;
+}
+}
+
+async function countWithFallback(
+tables: string[],
+companyId: string
+): Promise<number> {
+for (const t of tables) {
+const c = await safeCountByCompany(t, companyId);
+if (c !== null) return c;
+}
+return 0;
 }
 
 export async function GET() {
-  try {
-    const { supabase, companyId } = admin();
+try {
+const activeCompanyId = getActiveCompanyId();
 
-    // Employees count
-    const { count: employeesCount, error: empErr } = await supabase
-      .from('employees')
-      .select('id', { count: 'exact', head: true })
-      .eq('company_id', companyId);
-
-    if (empErr) {
-      return NextResponse.json(
-        { employees: 0, runs: 0, tasks: 0, notices: 0, detail: empErr.message },
-        { status: 200, headers: { 'Cache-Control': 'no-store' } },
-      );
-    }
-
-    // Runs, tasks, notices left as 0 for now
-    return NextResponse.json(
-      {
-        employees: employeesCount ?? 0,
-        runs: 0,
-        tasks: 0,
-        notices: 0,
+if (!activeCompanyId) {
+  return NextResponse.json(
+    {
+      ok: true,
+      activeCompanyId: null,
+      counts: {
+        employeeCount: 0,
+        payrollRunCount: 0,
+        absenceRecordCount: 0,
       },
-      { status: 200, headers: { 'Cache-Control': 'no-store' } },
-    );
-  } catch (e: any) {
-    return NextResponse.json(
-      { employees: 0, runs: 0, tasks: 0, notices: 0, detail: String(e?.message || e) },
-      { status: 200, headers: { 'Cache-Control': 'no-store' } },
-    );
-  }
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
+const [employeeCount, payrollRunCount, absenceRecordCount] =
+  await Promise.all([
+    countWithFallback(["employees"], activeCompanyId),
+    countWithFallback(
+      ["payroll_runs", "pay_runs", "payroll_run"],
+      activeCompanyId
+    ),
+    countWithFallback(["absences", "absence_records"], activeCompanyId),
+  ]);
 
+const counts: Counts = {
+  employeeCount,
+  payrollRunCount,
+  absenceRecordCount,
+};
+
+return NextResponse.json(
+  { ok: true, activeCompanyId, counts },
+  { headers: { "Cache-Control": "no-store" } }
+);
+
+
+} catch (err: any) {
+return NextResponse.json(
+{
+ok: false,
+error: "counts api failed",
+detail: err?.message ?? String(err),
+counts: {
+employeeCount: 0,
+payrollRunCount: 0,
+absenceRecordCount: 0,
+},
+},
+{ status: 500, headers: { "Cache-Control": "no-store" } }
+);
+}
+}

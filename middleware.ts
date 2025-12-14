@@ -1,41 +1,57 @@
-import type { NextRequest } from 'next/server';
-import { NextResponse } from 'next/server';
+/* middleware.ts */
+import { NextResponse } from "next/server";
 
-function hasSupabaseSession(req: NextRequest) {
-  // Supabase sets a project-scoped cookie like: sb-<project-ref>-auth-token
-  for (const c of req.cookies.getAll()) {
-    if (c.name === 'sb-access-token' || c.name === 'supabase-auth-token') return true;
-    if (c.name.startsWith('sb-') && c.name.endsWith('-auth-token')) return true;
+/**
+ * Rules
+ * - If user visits any /dashboard page except /dashboard/companies
+ *   and has no company cookie, send them to /dashboard/companies.
+ * - Allow /dashboard/companies always (needed to pick the company).
+ * - Allow API endpoints used by this flow.
+ * - Do not touch static assets or Next internals.
+ */
+export function middleware(request: Request) {
+  const url = new URL(request.url);
+  const pathname = url.pathname;
+
+  // Only care about /dashboard routes
+  if (!pathname.startsWith("/dashboard")) {
+    return NextResponse.next();
   }
-  return false;
-}
 
-export function middleware(req: NextRequest) {
-  const { pathname, origin } = req.nextUrl;
+  // Always allow the selection page itself
+  if (pathname === "/dashboard/companies") {
+    return NextResponse.next();
+  }
 
-  // allow static, images, favicon, and sign-in
+  // Allow our company APIs
   if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/assets') ||
-    pathname.startsWith('/images') ||
-    pathname === '/favicon.ico' ||
-    pathname.startsWith('/auth/sign-in')
+    pathname.startsWith("/api/companies") ||
+    pathname.startsWith("/api/select-company")
   ) {
     return NextResponse.next();
   }
 
-  // protect dashboard
-  if (pathname.startsWith('/dashboard')) {
-    if (!hasSupabaseSession(req)) {
-      const url = new URL('/auth/sign-in', origin);
-      url.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(url);
-    }
+  // Read cookies directly from the header
+  const cookieHeader = request.headers.get("cookie") || "";
+  const hasActive = /active_company_id=([^;]+)/.test(cookieHeader);
+  const hasLegacy = /company_id=([^;]+)/.test(cookieHeader);
+
+  const hasCompany = hasActive || hasLegacy;
+
+  // If no company cookie, force selection
+  if (!hasCompany) {
+    const redirectUrl = new URL("/dashboard/companies", request.url);
+    redirectUrl.search = "";
+    return NextResponse.redirect(redirectUrl);
   }
 
+  // Otherwise, allow through
   return NextResponse.next();
 }
 
+/**
+ * Only run this middleware on /dashboard/** routes.
+ */
 export const config = {
-  matcher: ['/dashboard/:path*', '/auth/:path*'],
+  matcher: ["/dashboard/:path*"],
 };
