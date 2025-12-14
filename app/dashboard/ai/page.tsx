@@ -8,10 +8,8 @@ export default function AIDashboardTestPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-[#1fc7a1] to-[#0f3c85] px-4 py-4 sm:px-6 sm:py-6">
       <div className="mx-auto max-w-6xl space-y-6">
-        {/* Header with consistent WageFlow design */}
-        <HeaderBanner title="AI Copilot test" currentSection="AI" />
+        <HeaderBanner title="AI Copilot test" />
 
-        {/* Main content area matching header width */}
         <section className="mx-auto w-full">
           <div className="rounded-3xl bg-white/90 shadow-sm p-6">
             <AICopilotTest />
