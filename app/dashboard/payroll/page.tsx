@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\payroll\page.tsx
 
 import Link from "next/link";import { cookies, headers } from "next/headers";
@@ -89,7 +89,7 @@ export default async function PayrollPage() {
   }[] = [];
 
   return (
-    <PageTemplate title="Payroll" currentSection="Payroll">
+    <PageTemplate title="Payroll" currentSection="payroll">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (

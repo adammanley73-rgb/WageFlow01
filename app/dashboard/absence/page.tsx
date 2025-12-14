@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\page.tsx
 
 import Link from "next/link";
@@ -258,7 +258,7 @@ export default async function AbsencePage() {
   const absences = activeCompany ? await getAbsencesForCompany(activeCompany.id) : [];
 
   return (
-    <PageTemplate title="Absence" currentSection="Absence">
+    <PageTemplate title="Absence" currentSection="absence">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompany ? (

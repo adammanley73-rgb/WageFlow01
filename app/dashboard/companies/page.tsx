@@ -110,7 +110,7 @@ export default async function CompaniesPage() {
     null;
 
   return (
-    <PageTemplate title="Companies" currentSection="Companies">
+    <PageTemplate title="Companies" currentSection="settings">
       <div className="rounded-2xl bg-white shadow-sm p-4 sm:p-6">
         {companies.length === 0 ? (
           <div className="text-sm text-neutral-600">

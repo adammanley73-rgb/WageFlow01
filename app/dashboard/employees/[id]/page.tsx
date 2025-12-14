@@ -136,7 +136,7 @@ export default async function EmployeeDetailsPage({
 
   if (employeeError || !employee) {
     return (
-      <PageTemplate title="Employee details" currentSection="Employees">
+      <PageTemplate title="Employee details" currentSection="employees">
         <div className="flex flex-col gap-3 flex-1 min-h-0">
           <div className="rounded-2xl bg-white/80 px-4 py-4">
             <p className="text-lg text-neutral-900 font-semibold">
@@ -154,7 +154,7 @@ export default async function EmployeeDetailsPage({
                 href="/dashboard/employees"
                 className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
               >
-                ← Back to employees
+                â† Back to employees
               </Link>
             </div>
           </div>
@@ -214,7 +214,7 @@ export default async function EmployeeDetailsPage({
       : "No, no payments after leaving";
 
   return (
-    <PageTemplate title="Employee details" currentSection="Employees">
+    <PageTemplate title="Employee details" currentSection="employees">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (
@@ -304,7 +304,7 @@ export default async function EmployeeDetailsPage({
                 href="/dashboard/employees"
                 className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
               >
-                ← Back to employees
+                â† Back to employees
               </Link>
               <Link
                 href={`/dashboard/employees/${employee.employee_id}/edit`}

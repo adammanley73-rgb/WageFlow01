@@ -202,7 +202,7 @@ export default function AdoptionLeaveWizardPage() {
   }
 
   return (
-    <PageTemplate title="Absence" currentSection="Absence">
+    <PageTemplate title="Absence" currentSection="absence">
       <div className="flex flex-col gap-4 flex-1 min-h-0">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           <h1 className="text-xl sm:text-2xl font-bold text-[#0f3c85]">
@@ -253,7 +253,7 @@ export default function AdoptionLeaveWizardPage() {
 
                     {searching && !searchError && (
                       <p className="mt-1 text-xs text-neutral-600">
-                        Searching…
+                        Searchingâ€¦
                       </p>
                     )}
 
@@ -384,7 +384,7 @@ export default function AdoptionLeaveWizardPage() {
 
             <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between mt-2">
               <p className="text-[11px] text-neutral-600">
-                This creates a draft adoption leave record in Absences. You’ll
+                This creates a draft adoption leave record in Absences. Youâ€™ll
                 add SAP schedule logic later without rebuilding the UI.
               </p>
 
@@ -401,7 +401,7 @@ export default function AdoptionLeaveWizardPage() {
                   disabled={submitting}
                   className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {submitting ? "Saving…" : "Save adoption leave"}
+                  {submitting ? "Savingâ€¦" : "Save adoption leave"}
                 </button>
               </div>
             </div>

@@ -9,7 +9,7 @@ import PageTemplate from "@/components/layout/PageTemplate";
 // ID rules for this wizard:
 // - Use employees.id (employee_row_id) in all API calls.
 // - Use companies.id as company_id on the server side.
-// - Any UI “employee id” shown on cards is just display, not a foreign key.
+// - Any UI â€œemployee idâ€ shown on cards is just display, not a foreign key.
 
 const CARD =
   "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
@@ -239,7 +239,7 @@ export default function MaternityWizardPage() {
     if (trimmedSearch.length < 2) return null;
 
     if (isSearching) {
-      return <div className="mt-2 text-xs text-neutral-700">Searching…</div>;
+      return <div className="mt-2 text-xs text-neutral-700">Searchingâ€¦</div>;
     }
 
     if (searchError) {
@@ -290,7 +290,7 @@ export default function MaternityWizardPage() {
   }
 
   return (
-    <PageTemplate title="Absence" currentSection="Absence">
+    <PageTemplate title="Absence" currentSection="absence">
       <div className="space-y-4">
         {/* Lightweight header card to match your wizard pattern */}
         <div className="rounded-2xl bg-white/80 px-4 py-4">

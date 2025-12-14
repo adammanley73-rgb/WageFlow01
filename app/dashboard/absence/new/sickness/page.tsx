@@ -132,7 +132,7 @@ export default function NewSicknessAbsencePage() {
     setOverlapPreview(null);
   }
 
-  // Overlap preview – runs when employee + firstDay are set
+  // Overlap preview â€“ runs when employee + firstDay are set
   useEffect(() => {
     async function runOverlapCheck() {
       if (!selectedEmployee || !firstDay) {
@@ -281,7 +281,7 @@ export default function NewSicknessAbsencePage() {
 
   // Render
   return (
-    <PageTemplate title="Absence" currentSection="Absence">
+    <PageTemplate title="Absence" currentSection="absence">
       <div className="flex flex-col gap-4 flex-1 min-h-0">
         {/* Header card aligned with Annual leave wizard */}
         <div className="rounded-2xl bg-white/80 px-4 py-4">
@@ -376,7 +376,7 @@ export default function NewSicknessAbsencePage() {
                 </p>
               )}
               {searchLoading && (
-                <p className="text-xs text-neutral-500">Searching…</p>
+                <p className="text-xs text-neutral-500">Searchingâ€¦</p>
               )}
             </div>
           </section>
@@ -466,7 +466,7 @@ export default function NewSicknessAbsencePage() {
                 disabled={saving}
                 className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
               >
-                {saving ? "Saving…" : "Save sickness absence"}
+                {saving ? "Savingâ€¦" : "Save sickness absence"}
               </button>
             </div>
           </div>

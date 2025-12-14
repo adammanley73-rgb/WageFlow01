@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\page.tsx
 
 import Link from "next/link";
@@ -269,7 +269,7 @@ export default async function EmployeesPage() {
   });
 
   return (
-    <PageTemplate title="Employees" currentSection="Employees">
+    <PageTemplate title="Employees" currentSection="employees">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (

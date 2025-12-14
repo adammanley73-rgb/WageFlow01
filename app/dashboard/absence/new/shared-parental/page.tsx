@@ -198,7 +198,7 @@ export default function SharedParentalLeaveWizardPage() {
   }
 
   return (
-    <PageTemplate title="Absence" currentSection="Absence">
+    <PageTemplate title="Absence" currentSection="absence">
       <div className="flex flex-col gap-4 flex-1 min-h-0">
         {/* Header card */}
         <div className="rounded-2xl bg-white/80 px-4 py-4">
@@ -245,7 +245,7 @@ export default function SharedParentalLeaveWizardPage() {
                     )}
                     {searching && !searchError && (
                       <p className="mt-1 text-xs text-neutral-600">
-                        Searching…
+                        Searchingâ€¦
                       </p>
                     )}
 
@@ -394,7 +394,7 @@ export default function SharedParentalLeaveWizardPage() {
                   disabled={submitting}
                   className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {submitting ? "Saving…" : "Save shared parental leave"}
+                  {submitting ? "Savingâ€¦" : "Save shared parental leave"}
                 </button>
               </div>
             </div>

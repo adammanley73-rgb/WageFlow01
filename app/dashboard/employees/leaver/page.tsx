@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\leaver\page.tsx
 
 import Link from "next/link";
@@ -133,7 +133,7 @@ export default async function LeaverWizardEntryPage() {
 
   if (!companyId) {
     return (
-      <PageTemplate title="Leaver wizard" currentSection="Employees">
+      <PageTemplate title="Leaver wizard" currentSection="employees">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           <p className="text-sm text-neutral-800">
             No active company selected. Go to the Companies page on the dashboard and choose a company before starting the leaver wizard.
@@ -154,7 +154,7 @@ export default async function LeaverWizardEntryPage() {
   const { data: employees, error } = await loadEmployeesForCompany(companyId);
 
   return (
-    <PageTemplate title="Leaver wizard" currentSection="Employees">
+    <PageTemplate title="Leaver wizard" currentSection="employees">
       <div className="space-y-4">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

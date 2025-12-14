@@ -209,7 +209,7 @@ export default function EditAbsencePage() {
   }
 
   return (
-    <PageTemplate title="Edit absence" currentSection="Absence">
+    <PageTemplate title="Edit absence" currentSection="absence">
       <div className="space-y-6">
         <div className="rounded-2xl bg-gradient-to-r from-emerald-100 to-sky-100 px-6 py-5 md:px-8 md:py-6 shadow-sm">
           <h1 className="text-2xl font-semibold text-neutral-900">
@@ -241,7 +241,7 @@ export default function EditAbsencePage() {
 
         {loading ? (
           <div className="rounded-2xl bg-white shadow-sm ring-1 ring-neutral-300 px-6 py-6 md:px-8 md:py-8 text-sm text-neutral-600">
-            Loading absence…
+            Loading absenceÃ¢â‚¬Â¦
           </div>
         ) : (
           <form
@@ -335,7 +335,7 @@ export default function EditAbsencePage() {
                   saving ? "opacity-70 cursor-not-allowed" : ""
                 }`}
               >
-                {saving ? "Saving…" : "Save changes"}
+                {saving ? "SavingÃ¢â‚¬Â¦" : "Save changes"}
               </button>
             </div>
           </form>

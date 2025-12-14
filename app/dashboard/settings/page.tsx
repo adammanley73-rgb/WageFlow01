@@ -3,7 +3,7 @@ import PageTemplate from "@/components/layout/PageTemplate";
 
 export default function SettingsPage() {
   return (
-    <PageTemplate title="Settings" currentSection="Settings">
+    <PageTemplate title="Settings" currentSection="settings">
       {/* Single centered card wrapper, identical to other pages */}
       <div className="rounded-2xl bg-neutral-100 ring-1 ring-neutral-300 p-4">
         <div className="rounded-xl bg-white ring-1 ring-neutral-200 p-4 sm:p-6">

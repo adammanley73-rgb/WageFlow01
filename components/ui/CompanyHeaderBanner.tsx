@@ -73,7 +73,7 @@ export default function HeaderBanner({
             {heading}
             {companyName ? (
               <span className="ml-2 font-semibold text-neutral-700">
-                – {companyName}
+                â€“ {companyName}
               </span>
             ) : null}
           </h1>

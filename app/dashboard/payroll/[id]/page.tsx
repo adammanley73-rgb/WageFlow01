@@ -86,7 +86,7 @@ function toNumberSafe(v: string | number): number {
 }
 
 function getFrequencyLabel(freq?: Frequency | string | null): string {
-  if (!freq) return "—";
+  if (!freq) return "â€”";
   switch (freq) {
     case "weekly":
       return "Weekly";
@@ -491,7 +491,7 @@ export default function RunDetailPage() {
   }).length;
 
   return (
-    <PageTemplate title="Payroll" currentSection="Payroll">
+    <PageTemplate title="Payroll" currentSection="payroll">
       <div className="flex flex-col gap-4 pb-10">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col gap-2">
@@ -522,7 +522,7 @@ export default function RunDetailPage() {
                   : "bg-[#f97316] hover:bg-[#ea580c]",
               ].join(" ")}
             >
-              {attaching ? "Attaching…" : "Attach due employees"}
+              {attaching ? "Attachingâ€¦" : "Attach due employees"}
             </button>
             <button
               type="button"
@@ -538,7 +538,7 @@ export default function RunDetailPage() {
           <div className="flex items-center gap-2">
             <span className="font-medium text-slate-600">Run:</span>
             <span className={`${inter.className} font-semibold text-[#0f3c85]`}>
-              {data?.run.runNumber ?? "—"}
+              {data?.run.runNumber ?? "â€”"}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -548,19 +548,19 @@ export default function RunDetailPage() {
                 ? `${formatUkDate(data.run.periodStart)} to ${formatUkDate(
                     data.run.periodEnd
                   )}`
-                : "—"}
+                : "â€”"}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="font-medium text-slate-600">Pay date:</span>
             <span className={`${inter.className} font-semibold text-[#0f3c85]`}>
-              {data ? formatUkDate(data.run.payDate) : "—"}
+              {data ? formatUkDate(data.run.payDate) : "â€”"}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="font-medium text-slate-600">Frequency:</span>
             <span className={`${inter.className} font-semibold text-[#0f3c85]`}>
-              {data ? getFrequencyLabel(data.run.frequency) : "—"}
+              {data ? getFrequencyLabel(data.run.frequency) : "â€”"}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -677,7 +677,7 @@ export default function RunDetailPage() {
                 {loading && (
                   <tr>
                     <td colSpan={7} className="px-3 py-4 text-sm text-slate-600">
-                      Loading…
+                      Loadingâ€¦
                     </td>
                   </tr>
                 )}
@@ -755,7 +755,7 @@ export default function RunDetailPage() {
                         </div>
                       </td>
                       <td className="px-3 py-2 text-center text-sm text-slate-900">
-                        {r.employeeNumber || "—"}
+                        {r.employeeNumber || "â€”"}
                       </td>
                       <td className="px-3 py-2 text-center text-sm">
                         <input
@@ -831,7 +831,7 @@ export default function RunDetailPage() {
                 : "hover:bg-emerald-700",
             ].join(" ")}
           >
-            {saving ? "Saving…" : "Save Changes"}
+            {saving ? "Savingâ€¦" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -851,12 +851,12 @@ export default function RunDetailPage() {
                   Pay breakdown: {breakdownRow.employeeName}
                 </div>
                 <div className="mt-0.5 text-xs text-slate-500">
-                  Run {data?.run.runNumber ?? "—"} ·{" "}
+                  Run {data?.run.runNumber ?? "â€”"} Â·{" "}
                   {data
                     ? `${formatUkDate(data.run.periodStart)} to ${formatUkDate(
                         data.run.periodEnd
                       )}`
-                    : "—"}
+                    : "â€”"}
                 </div>
               </div>
               <button
@@ -906,14 +906,14 @@ export default function RunDetailPage() {
                                     el.typeCode ||
                                     el.description ||
                                     el.typeDescription ||
-                                    "—"}
+                                    "â€”"}
                                 </td>
                                 <td className="px-3 py-2 text-sm text-slate-700">
                                   {el.description ||
                                     el.typeDescription ||
                                     el.code ||
                                     el.typeCode ||
-                                    "—"}
+                                    "â€”"}
                                 </td>
                                 <td className="px-3 py-2 text-center text-sm text-slate-900">
                                   <span className={inter.className}>
@@ -972,14 +972,14 @@ export default function RunDetailPage() {
                                     el.typeCode ||
                                     el.description ||
                                     el.typeDescription ||
-                                    "—"}
+                                    "â€”"}
                                 </td>
                                 <td className="px-3 py-2 text-sm text-slate-700">
                                   {el.description ||
                                     el.typeDescription ||
                                     el.code ||
                                     el.typeCode ||
-                                    "—"}
+                                    "â€”"}
                                 </td>
                                 <td className="px-3 py-2 text-center text-sm text-slate-900">
                                   <span className={inter.className}>
@@ -1013,7 +1013,7 @@ export default function RunDetailPage() {
                     <div>
                       From elements:{" "}
                       <span className={inter.className}>
-                        {gbp(earningsTotal)} earnings − {gbp(deductionsTotal)} deductions ={" "}
+                        {gbp(earningsTotal)} earnings âˆ’ {gbp(deductionsTotal)} deductions ={" "}
                         {gbp(netFromElements)} net
                       </span>
                     </div>

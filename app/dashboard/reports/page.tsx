@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\reports\page.tsx
 
 import Link from "next/link";import { cookies, headers } from "next/headers";
@@ -69,7 +69,7 @@ export default async function ReportsPage() {
   const activeCompanyName = await getActiveCompanyNameViaApi();
 
   return (
-    <PageTemplate title="Reports" currentSection="Reports">
+    <PageTemplate title="Reports" currentSection="settings">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (
@@ -108,11 +108,11 @@ export default async function ReportsPage() {
             </div>
             <div className="rounded-2xl bg-neutral-200 px-4 py-6 text-center ring-1 ring-neutral-300">
               <div className="text-sm font-semibold text-neutral-900">Total Gross</div>
-              <div className="mt-2 text-2xl font-semibold">£0.00</div>
+              <div className="mt-2 text-2xl font-semibold">Â£0.00</div>
             </div>
             <div className="rounded-2xl bg-neutral-200 px-4 py-6 text-center ring-1 ring-neutral-300">
               <div className="text-sm font-semibold text-neutral-900">Total Deductions</div>
-              <div className="mt-2 text-2xl font-semibold">£0.00</div>
+              <div className="mt-2 text-2xl font-semibold">Â£0.00</div>
             </div>
           </div>
 
