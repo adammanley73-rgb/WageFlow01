@@ -28,6 +28,10 @@ export default function AuthCallbackPage() {
   const [newPassword, setNewPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
 
+  const showPasswordForm =
+    status === "needs_password" || status === "updating_password";
+  const isUpdating = status === "updating_password";
+
   useEffect(() => {
     let cancelled = false;
 
@@ -108,6 +112,7 @@ export default function AuthCallbackPage() {
     }
 
     run();
+
     return () => {
       cancelled = true;
     };
@@ -141,6 +146,7 @@ export default function AuthCallbackPage() {
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
       });
+
       if (error) throw new Error(error.message);
 
       setStatus("done");
@@ -161,7 +167,7 @@ export default function AuthCallbackPage() {
 
         <p className="text-sm text-gray-600 text-center mt-2">{message}</p>
 
-        {status === "needs_password" && (
+        {showPasswordForm && (
           <form onSubmit={onSetPassword} className="mt-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">
@@ -193,10 +199,10 @@ export default function AuthCallbackPage() {
 
             <button
               type="submit"
-              disabled={status === "updating_password"}
+              disabled={isUpdating}
               className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 text-white py-2.5 font-medium transition-colors disabled:opacity-60"
             >
-              {status === "updating_password" ? "Saving..." : "Set password"}
+              {isUpdating ? "Saving..." : "Set password"}
             </button>
           </form>
         )}
