@@ -1,9 +1,9 @@
-﻿/* app/dashboard/employees/new/page.tsx */
-"use client";
+/* app/dashboard/employees/new/page.tsx */
+'use client';
 
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import PageTemplate from "@/components/layout/PageTemplate";
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import PageTemplate from '@/components/layout/PageTemplate';
 
 interface FormState {
   first_name: string;
@@ -28,34 +28,33 @@ export default function NewEmployeePage() {
   const [companyErr, setCompanyErr] = useState<string | null>(null);
 
   const [form, setForm] = useState<FormState>({
-    first_name: "",
-    last_name: "",
-    email: "",
-    job_title: "",
-    start_date: "",
-    employment_type: "full_time",
-    salary: "",
-    hourly_rate: "",
-    hours_per_week: "",
-    ni_number: "",
-    pay_frequency: "monthly",
+    first_name: '',
+    last_name: '',
+    email: '',
+    job_title: '',
+    start_date: '',
+    employment_type: 'full_time',
+    salary: '',
+    hourly_rate: '',
+    hours_per_week: '',
+    ni_number: '',
+    pay_frequency: 'monthly',
   });
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const payOptions = [
-    { value: "weekly", label: "Weekly" },
-    { value: "fortnightly", label: "Fortnightly" },
-    { value: "four_weekly", label: "Four-weekly" },
-    { value: "monthly", label: "Monthly" },
-    { value: "quarterly", label: "Quarterly" },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'fortnightly', label: 'Fortnightly' },
+    { value: 'four_weekly', label: 'Four-weekly' },
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'quarterly', label: 'Quarterly' },
   ];
-
   const employmentTypes = [
-    { value: "full_time", label: "Full-time" },
-    { value: "part_time", label: "Part-time" },
-    { value: "contract", label: "Contract" },
+    { value: 'full_time', label: 'Full-time' },
+    { value: 'part_time', label: 'Part-time' },
+    { value: 'contract', label: 'Contract' },
   ];
 
   useEffect(() => {
@@ -63,25 +62,23 @@ export default function NewEmployeePage() {
     (async () => {
       try {
         setCompanyErr(null);
-        const r = await fetch("/api/active-company", { cache: "no-store" });
-
-        if (r.status === 204 || r.status === 404) {
+        const r = await fetch('/api/active-company', { cache: 'no-store' });
+        if (r.status === 204) {
           if (alive) {
             setCompany(null);
-            setCompanyErr("No active company selected. Use Company Selection first.");
+            setCompanyErr('No active company selected. Use Company Selection first.');
           }
           return;
         }
-
-        if (!r.ok) throw new Error(`active-company ${r.status}`);
-
+        if (!r.ok) {
+          throw new Error(`active-company ${r.status}`);
+        }
         const j = await r.json().catch(() => ({}));
         if (alive) setCompany(j || null);
       } catch (e: any) {
         if (alive) setCompanyErr(String(e?.message || e));
       }
     })();
-
     return () => {
       alive = false;
     };
@@ -91,21 +88,18 @@ export default function NewEmployeePage() {
     const { name, value } = e.target;
     setForm((prev) => ({
       ...prev,
-      [name]: name === "ni_number" ? value.toUpperCase().replace(/\s+/g, "") : value,
+      [name]: name === 'ni_number' ? value.toUpperCase().replace(/\s+/g, '') : value,
     }));
   };
 
   async function ensureCompanyOrFail(): Promise<boolean> {
     try {
-      const r = await fetch("/api/active-company", { cache: "no-store" });
-
-      if (r.status === 204 || r.status === 404) {
-        setCompanyErr("No active company selected. Use Company Selection first.");
+      const r = await fetch('/api/active-company', { cache: 'no-store' });
+      if (r.status === 204) {
+        setCompanyErr('No active company selected. Use Company Selection first.');
         return false;
       }
-
       if (!r.ok) throw new Error(`active-company ${r.status}`);
-
       const j = await r.json().catch(() => ({}));
       setCompany(j || null);
       return Boolean(j?.id);
@@ -119,13 +113,13 @@ export default function NewEmployeePage() {
     e.preventDefault();
     setError(null);
 
+    // Hard stop if no company is selected
     const ok = await ensureCompanyOrFail();
     if (!ok) return;
 
     setSaving(true);
-
     const payload = {
-      name: [form.first_name, form.last_name].filter(Boolean).join(" ").trim(),
+      name: [form.first_name, form.last_name].filter(Boolean).join(' ').trim(),
       email: form.email.trim() || null,
       job_title: form.job_title.trim() || null,
       start_date: form.start_date || null,
@@ -138,12 +132,13 @@ export default function NewEmployeePage() {
     };
 
     try {
-      const res = await fetch("/api/employees", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
+      // Try to read a body either way for better errors
       const json = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
@@ -152,11 +147,14 @@ export default function NewEmployeePage() {
       }
 
       const id = json?.id;
-      if (!id) throw new Error("create succeeded but no employee id returned");
+      if (!id) {
+        throw new Error('create succeeded but no employee id returned');
+      }
 
+      // Success: jump straight into the wizard
       router.replace(`/dashboard/employees/${id}/wizard/starter`);
     } catch (err: any) {
-      setError(err?.message || "Failed to create employee.");
+      setError(err?.message || 'Failed to create employee.');
     } finally {
       setSaving(false);
     }
@@ -184,7 +182,6 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               />
             </div>
-
             <div>
               <label className="block text-sm text-neutral-700">Last name</label>
               <input
@@ -194,7 +191,6 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               />
             </div>
-
             <div className="md:col-span-2">
               <label className="block text-sm text-neutral-700">Email</label>
               <input
@@ -205,7 +201,6 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               />
             </div>
-
             <div>
               <label className="block text-sm text-neutral-700">Job title</label>
               <input
@@ -215,7 +210,6 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               />
             </div>
-
             <div>
               <label className="block text-sm text-neutral-700">Start date</label>
               <input
@@ -226,7 +220,6 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               />
             </div>
-
             <div>
               <label className="block text-sm text-neutral-700">Employment type</label>
               <select
@@ -236,13 +229,10 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               >
                 {employmentTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
+                  <option key={type.value} value={type.value}>{type.label}</option>
                 ))}
               </select>
             </div>
-
             <div>
               <label className="block text-sm text-neutral-700">Salary (annual)</label>
               <input
@@ -254,7 +244,6 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               />
             </div>
-
             <div>
               <label className="block text-sm text-neutral-700">Hourly rate</label>
               <input
@@ -267,7 +256,6 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               />
             </div>
-
             <div>
               <label className="block text-sm text-neutral-700">Hours per week</label>
               <input
@@ -280,7 +268,6 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               />
             </div>
-
             <div>
               <label className="block text-sm text-neutral-700">NI number</label>
               <input
@@ -290,7 +277,6 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 uppercase"
               />
             </div>
-
             <div>
               <label className="block text-sm text-neutral-700">Pay frequency</label>
               <select
@@ -300,9 +286,7 @@ export default function NewEmployeePage() {
                 className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2"
               >
                 {payOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
+                  <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             </div>
@@ -316,12 +300,11 @@ export default function NewEmployeePage() {
               disabled={saving}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {saving ? "Saving…" : "Create employee"}
+              {saving ? 'Saving…' : 'Create employee'}
             </button>
-
             <button
               type="button"
-              onClick={() => router.push("/dashboard/employees")}
+              onClick={() => router.push('/dashboard/employees')}
               className="rounded-lg bg-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-300"
             >
               Cancel

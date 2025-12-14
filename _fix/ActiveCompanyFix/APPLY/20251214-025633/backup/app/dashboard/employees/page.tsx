@@ -1,73 +1,60 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\page.tsx
 
-import Link from "next/link";import { cookies, headers } from "next/headers";
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+import PageTemplate from "@/components/layout/PageTemplate";
+import ActionButton from "@/components/ui/ActionButton";
 
-type Company = {
-  id: string;
-  name: string;
-  created_at?: string;
-};
+function createAdminClient() {
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-function getBaseUrl(): string {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host =
-    h.get("x-forwarded-host") ??
-    h.get("host") ??
-    process.env.VERCEL_URL ??
-    "localhost:3000";
+  if (!url || !serviceKey) {
+    throw new Error("employees: missing Supabase env");
+  }
 
-  const normalizedHost = host.startsWith("http") ? host : `${proto}://${host}`;
-  return normalizedHost.replace(/\/$/, "");
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false },
+  });
 }
 
-function buildCookieHeader(): string {
-  const jar = cookies();
-  const all = jar.getAll();
-  return all.map((c) => `${c.name}=${c.value}`).join("; ");
-}
-
-async function getActiveCompanyNameViaApi(): Promise<string | null> {
+async function getActiveCompanyName(): Promise<string | null> {
   try {
     const jar = cookies();
+
     const activeCompanyId =
       jar.get("active_company_id")?.value ??
       jar.get("company_id")?.value ??
       null;
 
-    if (!activeCompanyId) return null;
+    if (!activeCompanyId) {
+      return null;
+    }
 
-    const baseUrl = getBaseUrl();
-    const res = await fetch(`${baseUrl}/api/companies`, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        cookie: buildCookieHeader(),
-      },
-    });
+    const supabase = createAdminClient();
 
-    if (!res.ok) return null;
+    const { data, error } = await supabase
+      .from("companies")
+      .select("id, name")
+      .eq("id", activeCompanyId)
+      .maybeSingle();
 
-    const data = await res.json();
-    const companies: Company[] = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.companies)
-      ? data.companies
-      : [];
+    if (error || !data) {
+      console.error("employees: error loading active company", error);
+      return null;
+    }
 
-    const match = companies.find((c) => c.id === activeCompanyId);
-    return match?.name ?? null;
-  } catch {
+    return data.name ?? null;
+  } catch (err) {
+    console.error("employees: admin client error", err);
     return null;
   }
-}import PageTemplate from "@/components/layout/PageTemplate";
-import ActionButton from "@/components/ui/ActionButton";
-
-export const dynamic = "force-dynamic";
+}
 
 export default async function EmployeesPage() {
-  const activeCompanyName = await getActiveCompanyNameViaApi();
+  const activeCompanyName = await getActiveCompanyName();
 
   const employees: {
     id: string;
@@ -81,6 +68,7 @@ export default async function EmployeesPage() {
   return (
     <PageTemplate title="Employees" currentSection="Employees">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
+        {/* Active company banner */}
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -98,7 +86,8 @@ export default async function EmployeesPage() {
           ) : (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm sm:text-base text-neutral-800">
-                No active company selected. Go to the Companies page to choose one.
+                No active company selected. Go to the Companies page to choose
+                one.
               </p>
               <Link
                 href="/dashboard/companies"
@@ -110,19 +99,26 @@ export default async function EmployeesPage() {
           )}
         </div>
 
+        {/* Employees table card */}
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          {/* Table header */}
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
-            <div className="text-sm font-semibold text-neutral-900">Employee list</div>
+            <div className="text-sm font-semibold text-neutral-900">
+              Employee list
+            </div>
             <div className="text-xs text-neutral-700">
               Sticky first column, 2 px separators, actions on the right.
             </div>
           </div>
 
+          {/* Table */}
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-neutral-100">
                 <tr className="border-b-2 border-neutral-300">
-                  <th className="text-left px-4 py-3 sticky left-0 bg-neutral-100">Name</th>
+                  <th className="text-left px-4 py-3 sticky left-0 bg-neutral-100">
+                    Name
+                  </th>
                   <th className="text-left px-4 py-3">Email</th>
                   <th className="text-left px-4 py-3">NI</th>
                   <th className="text-left px-4 py-3">Pay Frequency</th>
@@ -132,10 +128,14 @@ export default async function EmployeesPage() {
               <tbody>
                 {employees.length === 0 ? (
                   <tr className="border-b-2 border-neutral-300">
-                    <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
+                    <td
+                      className="px-4 py-6 sticky left-0 bg-white"
+                      colSpan={4}
+                    >
                       <div className="text-neutral-800">No employees yet.</div>
                       <div className="text-neutral-700 text-xs">
-                        Use the New Employee Wizard on the Dashboard to create your first record.
+                        Use the New Employee Wizard on the Dashboard to create
+                        your first record.
                       </div>
                     </td>
                     <td className="px-4 py-6 text-right bg-white"></td>
@@ -143,19 +143,28 @@ export default async function EmployeesPage() {
                 ) : (
                   employees.map((e) => (
                     <tr key={e.id} className="border-b-2 border-neutral-300">
-                      <td className="px-4 py-3 sticky left-0 bg-white">{e.name}</td>
+                      <td className="px-4 py-3 sticky left-0 bg-white">
+                        {e.name}
+                      </td>
                       <td className="px-4 py-3">{e.email}</td>
                       <td className="px-4 py-3">{e.ni}</td>
                       <td className="px-4 py-3">{e.payFreq}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex gap-2">
-                          <ActionButton href={`/dashboard/employees/${e.id}/edit`} variant="success">
+                          <ActionButton
+                            href={`/dashboard/employees/${e.id}/edit`}
+                            variant="success"
+                          >
                             Edit
                           </ActionButton>
                           <ActionButton
                             href="#"
                             variant="primary"
-                            className={e.hasPayroll ? "opacity-50 pointer-events-none" : ""}
+                            className={
+                              e.hasPayroll
+                                ? "opacity-50 pointer-events-none"
+                                : ""
+                            }
                           >
                             Delete
                           </ActionButton>

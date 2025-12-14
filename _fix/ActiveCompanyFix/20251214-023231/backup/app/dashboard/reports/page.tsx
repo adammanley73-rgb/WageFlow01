@@ -1,76 +1,64 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\reports\page.tsx
 
-import Link from "next/link";import { cookies, headers } from "next/headers";
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+import PageTemplate from "@/components/layout/PageTemplate";
 
-type Company = {
-  id: string;
-  name: string;
-  created_at?: string;
-};
+function adminClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-function getBaseUrl(): string {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host =
-    h.get("x-forwarded-host") ??
-    h.get("host") ??
-    process.env.VERCEL_URL ??
-    "localhost:3000";
+  if (!url || !key) {
+    throw new Error("reports page: missing Supabase env");
+  }
 
-  const normalizedHost = host.startsWith("http") ? host : `${proto}://${host}`;
-  return normalizedHost.replace(/\/$/, "");
+  return createClient(url, key, {
+    auth: { persistSession: false },
+  });
 }
 
-function buildCookieHeader(): string {
-  const jar = cookies();
-  const all = jar.getAll();
-  return all.map((c) => `${c.name}=${c.value}`).join("; ");
-}
-
-async function getActiveCompanyNameViaApi(): Promise<string | null> {
+async function getActiveCompanyName(): Promise<string | null> {
   try {
     const jar = cookies();
+
     const activeCompanyId =
       jar.get("active_company_id")?.value ??
       jar.get("company_id")?.value ??
       null;
 
-    if (!activeCompanyId) return null;
+    if (!activeCompanyId) {
+      return null;
+    }
 
-    const baseUrl = getBaseUrl();
-    const res = await fetch(`${baseUrl}/api/companies`, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        cookie: buildCookieHeader(),
-      },
-    });
+    const supabase = adminClient();
 
-    if (!res.ok) return null;
+    const { data, error } = await supabase
+      .from("companies")
+      .select("id, name")
+      .eq("id", activeCompanyId)
+      .maybeSingle();
 
-    const data = await res.json();
-    const companies: Company[] = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.companies)
-      ? data.companies
-      : [];
+    if (error || !data) {
+      console.error("reports page: error loading active company", error);
+      return null;
+    }
 
-    const match = companies.find((c) => c.id === activeCompanyId);
-    return match?.name ?? null;
-  } catch {
+    return data.name ?? null;
+  } catch (err) {
+    console.error("reports page: admin client error", err);
     return null;
   }
-}import PageTemplate from "@/components/layout/PageTemplate";
-
-export const dynamic = "force-dynamic";
+}
 
 export default async function ReportsPage() {
-  const activeCompanyName = await getActiveCompanyNameViaApi();
+  const activeCompanyName = await getActiveCompanyName();
 
   return (
     <PageTemplate title="Reports" currentSection="Reports">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
+        {/* Active company banner */}
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -88,7 +76,8 @@ export default async function ReportsPage() {
           ) : (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm sm:text-base text-neutral-800">
-                No active company selected. Go to the Companies page to choose one.
+                No active company selected. Go to the Companies page to choose
+                one.
               </p>
               <Link
                 href="/dashboard/companies"
@@ -100,22 +89,31 @@ export default async function ReportsPage() {
           )}
         </div>
 
+        {/* Main reports content wrapper */}
         <div className="rounded-2xl bg-neutral-100 ring-1 ring-neutral-300 p-3 sm:p-4">
+          {/* Summary tiles */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
             <div className="rounded-2xl bg-neutral-200 px-4 py-6 text-center ring-1 ring-neutral-300">
-              <div className="text-sm font-semibold text-neutral-900">Payroll Runs</div>
+              <div className="text-sm font-semibold text-neutral-900">
+                Payroll Runs
+              </div>
               <div className="mt-2 text-2xl font-semibold">0</div>
             </div>
             <div className="rounded-2xl bg-neutral-200 px-4 py-6 text-center ring-1 ring-neutral-300">
-              <div className="text-sm font-semibold text-neutral-900">Total Gross</div>
+              <div className="text-sm font-semibold text-neutral-900">
+                Total Gross
+              </div>
               <div className="mt-2 text-2xl font-semibold">£0.00</div>
             </div>
             <div className="rounded-2xl bg-neutral-200 px-4 py-6 text-center ring-1 ring-neutral-300">
-              <div className="text-sm font-semibold text-neutral-900">Total Deductions</div>
+              <div className="text-sm font-semibold text-neutral-900">
+                Total Deductions
+              </div>
               <div className="mt-2 text-2xl font-semibold">£0.00</div>
             </div>
           </div>
 
+          {/* Payroll summary table */}
           <div className="rounded-xl bg-white ring-1 ring-neutral-200 overflow-hidden">
             <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50 text-sm font-semibold text-neutral-900">
               Payroll Summary
@@ -135,7 +133,8 @@ export default async function ReportsPage() {
                 <tbody>
                   <tr>
                     <td className="px-4 py-6 text-neutral-700" colSpan={6}>
-                      No payroll runs found. Create a run in Payroll and come back to view reports.
+                      No payroll runs found. Create a run in Payroll and come
+                      back to view reports.
                     </td>
                   </tr>
                 </tbody>
@@ -143,6 +142,7 @@ export default async function ReportsPage() {
             </div>
           </div>
 
+          {/* RTI log */}
           <div className="rounded-xl bg-white ring-1 ring-neutral-200 overflow-hidden mt-4">
             <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50 text-sm font-semibold text-neutral-900">
               RTI Submission Log
@@ -162,7 +162,8 @@ export default async function ReportsPage() {
                 <tbody>
                   <tr>
                     <td className="px-4 py-6 text-neutral-700" colSpan={6}>
-                      No submissions logged yet. Submit FPS from a payroll run to populate this table.
+                      No submissions logged yet. Submit FPS from a payroll run
+                      to populate this table.
                     </td>
                   </tr>
                 </tbody>

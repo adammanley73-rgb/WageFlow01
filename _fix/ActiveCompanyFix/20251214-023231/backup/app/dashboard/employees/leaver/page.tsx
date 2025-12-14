@@ -1,12 +1,10 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\leaver\page.tsx
 
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
-
-export const dynamic = "force-dynamic";
 
 type EmployeeRow = {
   id: string;
@@ -15,100 +13,33 @@ type EmployeeRow = {
   employee_number: string | null;
 };
 
+function createAdminClient() {
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceKey) {
+    throw new Error("leaver wizard: missing Supabase env");
+  }
+
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false },
+  });
+}
+
 function getActiveCompanyId(): string | null {
   const jar = cookies();
-  return jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
-}
-
-function getSupabaseUrl(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
-}
-
-function getSupabaseKey(): string {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-}
-
-function readChunkedCookieValue(
-  all: { name: string; value: string }[],
-  baseName: string
-): string | null {
-  const exact = all.find((c) => c.name === baseName);
-  if (exact) return exact.value;
-
-  const parts = all
-    .filter((c) => c.name.startsWith(baseName + "."))
-    .map((c) => {
-      const m = c.name.match(/\.(\d+)$/);
-      const idx = m ? Number(m[1]) : 0;
-      return { idx, value: c.value };
-    })
-    .sort((a, b) => a.idx - b.idx);
-
-  if (parts.length === 0) return null;
-  return parts.map((p) => p.value).join("");
-}
-
-function extractAccessTokenFromCookies(): string | null {
-  try {
-    const jar = cookies();
-    const all = jar.getAll();
-
-    const bases = new Set<string>();
-    for (const c of all) {
-      const n = c.name;
-      if (!n.includes("auth-token")) continue;
-      if (!n.startsWith("sb-") && !n.includes("sb-")) continue;
-      bases.add(n.replace(/\.\d+$/, ""));
-    }
-
-    for (const base of bases) {
-      const raw = readChunkedCookieValue(all as any, base);
-      if (!raw) continue;
-
-      const decoded = (() => {
-        try {
-          return decodeURIComponent(raw);
-        } catch {
-          return raw;
-        }
-      })();
-
-      try {
-        const obj = JSON.parse(decoded);
-        if (obj && typeof obj.access_token === "string") return obj.access_token;
-      } catch {}
-
-      try {
-        const asJson = Buffer.from(decoded, "base64").toString("utf8");
-        const obj = JSON.parse(asJson);
-        if (obj && typeof obj.access_token === "string") return obj.access_token;
-      } catch {}
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function createSupabaseRequestClient() {
-  const url = getSupabaseUrl();
-  const key = getSupabaseKey();
-  if (!url || !key) return null;
-
-  const token = extractAccessTokenFromCookies();
-  const opts: any = { auth: { persistSession: false, autoRefreshToken: false } };
-  if (token) opts.global = { headers: { Authorization: `Bearer ${token}` } };
-
-  return createClient(url, key, opts);
+  return (
+    jar.get("active_company_id")?.value ??
+    jar.get("company_id")?.value ??
+    null
+  );
 }
 
 async function loadEmployeesForCompany(
   companyId: string
 ): Promise<{ data: EmployeeRow[]; error: string | null }> {
   try {
-    const supabase = createSupabaseRequestClient();
-    if (!supabase) return { data: [], error: "Supabase env missing" };
+    const supabase = createAdminClient();
 
     const { data, error } = await supabase
       .from("employees")
@@ -124,7 +55,10 @@ async function loadEmployeesForCompany(
     return { data: (data as EmployeeRow[]) || [], error: null };
   } catch (err: any) {
     console.error("leaver wizard: unexpected error", err);
-    return { data: [], error: err?.message || "Unexpected error loading employees" };
+    return {
+      data: [],
+      error: err?.message || "Unexpected error loading employees",
+    };
   }
 }
 
@@ -136,7 +70,8 @@ export default async function LeaverWizardEntryPage() {
       <PageTemplate title="Leaver wizard" currentSection="Employees">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           <p className="text-sm text-neutral-800">
-            No active company selected. Go to the Companies page on the dashboard and choose a company before starting the leaver wizard.
+            No active company selected. Go to the Companies page on the
+            dashboard and choose a company before starting the leaver wizard.
           </p>
           <div className="mt-4">
             <Link
@@ -159,9 +94,12 @@ export default async function LeaverWizardEntryPage() {
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-[#0f3c85]">Start leaver wizard</h2>
+              <h2 className="text-lg font-semibold text-[#0f3c85]">
+                Start leaver wizard
+              </h2>
               <p className="text-sm text-neutral-800">
-                Choose the employee who is leaving. The wizard will walk you through final pay, holiday pay and other leaver details.
+                Choose the employee who is leaving. The wizard will walk you
+                through final pay, holiday pay and other leaver details.
               </p>
             </div>
             <Link
@@ -180,26 +118,42 @@ export default async function LeaverWizardEntryPage() {
             </div>
           ) : employees.length === 0 ? (
             <div className="text-sm text-neutral-800">
-              No employees found for this company yet. Create an employee first using the New Employees Wizard.
+              No employees found for this company yet. Create an employee first
+              using the New Employees Wizard.
             </div>
           ) : (
             <table className="min-w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-neutral-400 bg-neutral-200">
-                  <th className="px-3 py-2 text-left font-semibold text-neutral-900">Employee no</th>
-                  <th className="px-3 py-2 text-left font-semibold text-neutral-900">Name</th>
-                  <th className="px-3 py-2 text-right font-semibold text-neutral-900">Actions</th>
+                  <th className="px-3 py-2 text-left font-semibold text-neutral-900">
+                    Employee no
+                  </th>
+                  <th className="px-3 py-2 text-left font-semibold text-neutral-900">
+                    Name
+                  </th>
+                  <th className="px-3 py-2 text-right font-semibold text-neutral-900">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {employees.map((emp) => {
                   const displayName =
-                    [emp.first_name, emp.last_name].filter(Boolean).join(" ") || "Unnamed employee";
+                    [emp.first_name, emp.last_name]
+                      .filter(Boolean)
+                      .join(" ") || "Unnamed employee";
 
                   return (
-                    <tr key={emp.id} className="border-b border-neutral-300 last:border-b-0 bg-neutral-100">
-                      <td className="px-3 py-2 align-middle">{emp.employee_number || "–"}</td>
-                      <td className="px-3 py-2 align-middle">{displayName}</td>
+                    <tr
+                      key={emp.id}
+                      className="border-b border-neutral-300 last:border-b-0 bg-neutral-100"
+                    >
+                      <td className="px-3 py-2 align-middle">
+                        {emp.employee_number || "–"}
+                      </td>
+                      <td className="px-3 py-2 align-middle">
+                        {displayName}
+                      </td>
                       <td className="px-3 py-2 align-middle text-right">
                         <Link
                           href={`/dashboard/employees/${emp.id}/wizard/leaver`}

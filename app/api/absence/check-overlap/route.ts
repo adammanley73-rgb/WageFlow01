@@ -1,87 +1,174 @@
-/* @ts-nocheck */
+﻿/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\api\absence\check-overlap\route.ts
 
-import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { createClient } from "@supabase/supabase-js"
-
-function getSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!url || !serviceKey) {
-    throw new Error("Supabase environment variables are not configured")
-  }
-
-  return createClient(url, serviceKey)
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+function getSupabaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    ""
+  );
 }
 
+function getSupabaseKey(): string {
+  // Prefer service role if present. Fall back to anon key.
+  return (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ""
+  );
+}
+
+function readChunkedCookieValue(
+  all: { name: string; value: string }[],
+  baseName: string
+): string | null {
+  const exact = all.find((c) => c.name === baseName);
+  if (exact) return exact.value;
+
+  const parts = all
+    .filter((c) => c.name.startsWith(baseName + "."))
+    .map((c) => {
+      const m = c.name.match(/\.(\d+)$/);
+      const idx = m ? Number(m[1]) : 0;
+      return { idx, value: c.value };
+    })
+    .sort((a, b) => a.idx - b.idx);
+
+  if (parts.length === 0) return null;
+  return parts.map((p) => p.value).join("");
+}
+
+function extractAccessTokenFromCookies(): string | null {
+  try {
+    const jar = cookies();
+    const all = jar.getAll();
+
+    // Group potential auth-token cookies by base name, handle chunked cookies (.0, .1, ...)
+    const bases = new Set<string>();
+
+    for (const c of all) {
+      const n = c.name;
+      if (!n.includes("auth-token")) continue;
+      if (!n.startsWith("sb-") && !n.includes("sb-")) continue;
+      bases.add(n.replace(/\.\d+$/, ""));
+    }
+
+    for (const base of bases) {
+      const raw = readChunkedCookieValue(all as any, base);
+      if (!raw) continue;
+
+      const decoded = (() => {
+        try {
+          return decodeURIComponent(raw);
+        } catch {
+          return raw;
+        }
+      })();
+
+      // Try plain JSON
+      try {
+        const obj = JSON.parse(decoded);
+        if (obj && typeof obj.access_token === "string") return obj.access_token;
+      } catch {}
+
+      // Try base64 JSON
+      try {
+        const asJson = Buffer.from(decoded, "base64").toString("utf8");
+        const obj = JSON.parse(asJson);
+        if (obj && typeof obj.access_token === "string") return obj.access_token;
+      } catch {}
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function createSupabaseRequestClient() {
+  const url = getSupabaseUrl();
+  const key = getSupabaseKey();
+
+  if (!url || !key) {
+    throw new Error("Supabase env is missing (URL or key)");
+  }
+
+  const accessToken = extractAccessTokenFromCookies();
+
+  const opts: any = {
+    auth: { persistSession: false, autoRefreshToken: false },
+  };
+
+  if (accessToken) {
+    opts.global = { headers: { Authorization: `Bearer ${accessToken}` } };
+  }
+
+  return createClient(url, key, opts);
+}
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const employeeId = searchParams.get("employee_id")
-    const firstDay = searchParams.get("first_day")
+    const { searchParams } = new URL(request.url);
+    const employeeId = searchParams.get("employee_id");
+    const firstDay = searchParams.get("first_day");
 
-    // Not enough info to check
     if (!employeeId || !firstDay) {
       return NextResponse.json({
         ok: true,
         code: "NO_CHECK",
         message: "Not enough information to check overlaps.",
-      })
+      });
     }
 
-    const cookieStore = cookies()
+    const cookieStore = cookies();
     const companyId =
       cookieStore.get("active_company_id")?.value ||
       cookieStore.get("company_id")?.value ||
-      null
+      null;
 
     if (!companyId) {
       return NextResponse.json({
         ok: true,
         code: "NO_COMPANY",
         message: "No active company selected.",
-      })
+      });
     }
 
-    const supabase = getSupabaseClient()
+    const supabase = createSupabaseRequestClient();
 
     const { data: rows, error } = await supabase
       .from("absences")
       .select("id, first_day, last_day_expected, last_day_actual")
       .eq("company_id", companyId)
-      .eq("employee_id", employeeId)
+      .eq("employee_id", employeeId);
 
     if (error) {
-      console.error("Overlap check DB error:", error)
+      console.error("Overlap check DB error:", error);
       return NextResponse.json({
         ok: true,
         code: "DB_ERROR",
         message: "Could not check overlaps.",
-      })
+      });
     }
 
-    const newStart = firstDay
+    const newStart = firstDay;
 
     const conflicts =
-      rows?.map((row) => {
-        const end =
-          row.last_day_actual ||
-          row.last_day_expected ||
-          row.first_day
+      rows
+        ?.map((row: any) => {
+          const end = row.last_day_actual || row.last_day_expected || row.first_day;
+          const overlaps = newStart >= row.first_day && newStart <= end;
+          if (!overlaps) return null;
 
-        const overlaps =
-          newStart >= row.first_day && newStart <= end
-
-        if (!overlaps) return null
-
-        return {
-          id: row.id,
-          startDate: row.first_day,
-          endDate: end,
-        }
-      }).filter(Boolean) || []
+          return {
+            id: row.id,
+            startDate: row.first_day,
+            endDate: end,
+          };
+        })
+        .filter(Boolean) || [];
 
     if (conflicts.length > 0) {
       return NextResponse.json({
@@ -89,16 +176,16 @@ export async function GET(request: Request) {
         code: "ABSENCE_DATE_OVERLAP",
         message: "This absence would overlap another existing absence.",
         conflicts,
-      })
+      });
     }
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Overlap check unexpected error:", err)
+    console.error("Overlap check unexpected error:", err);
     return NextResponse.json({
       ok: true,
       code: "UNEXPECTED_ERROR",
       message: "Could not check overlaps.",
-    })
+    });
   }
 }

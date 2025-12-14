@@ -1,70 +1,11 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\payroll\page.tsx
 
-import Link from "next/link";import { cookies, headers } from "next/headers";
-
-type Company = {
-  id: string;
-  name: string;
-  created_at?: string;
-};
-
-function getBaseUrl(): string {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host =
-    h.get("x-forwarded-host") ??
-    h.get("host") ??
-    process.env.VERCEL_URL ??
-    "localhost:3000";
-
-  const normalizedHost = host.startsWith("http") ? host : `${proto}://${host}`;
-  return normalizedHost.replace(/\/$/, "");
-}
-
-function buildCookieHeader(): string {
-  const jar = cookies();
-  const all = jar.getAll();
-  return all.map((c) => `${c.name}=${c.value}`).join("; ");
-}
-
-async function getActiveCompanyNameViaApi(): Promise<string | null> {
-  try {
-    const jar = cookies();
-    const activeCompanyId =
-      jar.get("active_company_id")?.value ??
-      jar.get("company_id")?.value ??
-      null;
-
-    if (!activeCompanyId) return null;
-
-    const baseUrl = getBaseUrl();
-    const res = await fetch(`${baseUrl}/api/companies`, {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        cookie: buildCookieHeader(),
-      },
-    });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    const companies: Company[] = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.companies)
-      ? data.companies
-      : [];
-
-    const match = companies.find((c) => c.id === activeCompanyId);
-    return match?.name ?? null;
-  } catch {
-    return null;
-  }
-}import PageTemplate from "@/components/layout/PageTemplate";
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+import PageTemplate from "@/components/layout/PageTemplate";
 import ActionButton from "@/components/ui/ActionButton";
-
-export const dynamic = "force-dynamic";
 
 type RunStatus =
   | "draft"
@@ -73,13 +14,64 @@ type RunStatus =
   | "rti_submitted"
   | "completed";
 
+function adminClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error("payroll page: missing Supabase env");
+  }
+
+  return createClient(url, key, {
+    auth: { persistSession: false },
+  });
+}
+
+async function getActiveCompanyName(): Promise<string | null> {
+  try {
+    const jar = cookies();
+
+    const activeCompanyId =
+      jar.get("active_company_id")?.value ??
+      jar.get("company_id")?.value ??
+      null;
+
+    if (!activeCompanyId) {
+      return null;
+    }
+
+    const supabase = adminClient();
+
+    const { data, error } = await supabase
+      .from("companies")
+      .select("id, name")
+      .eq("id", activeCompanyId)
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error("payroll page: error loading active company", error);
+      return null;
+    }
+
+    return data.name ?? null;
+  } catch (err) {
+    console.error("payroll page: admin client error", err);
+    return null;
+  }
+}
+
 function cannotDelete(status: RunStatus) {
-  return status === "rti_submitted" || status === "completed" || status === "approved";
+  return (
+    status === "rti_submitted" ||
+    status === "completed" ||
+    status === "approved"
+  );
 }
 
 export default async function PayrollPage() {
-  const activeCompanyName = await getActiveCompanyNameViaApi();
+  const activeCompanyName = await getActiveCompanyName();
 
+  // Placeholder data. Replace with Supabase data later.
   const runs: {
     id: string;
     periodStart: string;
@@ -91,6 +83,7 @@ export default async function PayrollPage() {
   return (
     <PageTemplate title="Payroll" currentSection="Payroll">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
+        {/* Active company banner */}
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -108,7 +101,8 @@ export default async function PayrollPage() {
           ) : (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm sm:text-base text-neutral-800">
-                No active company selected. Go to the Companies page to choose one.
+                No active company selected. Go to the Companies page to choose
+                one.
               </p>
               <Link
                 href="/dashboard/companies"
@@ -120,14 +114,20 @@ export default async function PayrollPage() {
           )}
         </div>
 
+        {/* Payroll runs table card */}
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          {/* Table header */}
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
-            <div className="text-sm font-semibold text-neutral-900">Payroll runs</div>
+            <div className="text-sm font-semibold text-neutral-900">
+              Payroll runs
+            </div>
             <div className="text-xs text-neutral-700">
-              Use the Create Payroll Run Wizard from the Dashboard to start a run.
+              Use the Create Payroll Run Wizard from the Dashboard to start a
+              run.
             </div>
           </div>
 
+          {/* Table */}
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <colgroup>
@@ -140,7 +140,9 @@ export default async function PayrollPage() {
               </colgroup>
               <thead className="bg-neutral-100">
                 <tr className="border-b-2 border-neutral-300">
-                  <th className="text-left px-4 py-3 sticky left-0 bg-neutral-100">Run ID</th>
+                  <th className="text-left px-4 py-3 sticky left-0 bg-neutral-100">
+                    Run ID
+                  </th>
                   <th className="text-left px-4 py-3">Period Start</th>
                   <th className="text-left px-4 py-3">Period End</th>
                   <th className="text-left px-4 py-3">Status</th>
@@ -151,10 +153,16 @@ export default async function PayrollPage() {
               <tbody>
                 {runs.length === 0 ? (
                   <tr className="border-b-2 border-neutral-300">
-                    <td className="px-4 py-6 sticky left-0 bg-white" colSpan={5}>
-                      <div className="text-neutral-800">No payroll runs yet.</div>
+                    <td
+                      className="px-4 py-6 sticky left-0 bg-white"
+                      colSpan={5}
+                    >
+                      <div className="text-neutral-800">
+                        No payroll runs yet.
+                      </div>
                       <div className="text-neutral-700 text-xs">
-                        Start one via the Create Payroll Run Wizard on the Dashboard.
+                        Start one via the Create Payroll Run Wizard on the
+                        Dashboard.
                       </div>
                     </td>
                     <td className="px-4 py-6 text-right bg-white" />
@@ -162,20 +170,31 @@ export default async function PayrollPage() {
                 ) : (
                   runs.map((r) => (
                     <tr key={r.id} className="border-b-2 border-neutral-300">
-                      <td className="px-4 py-3 sticky left-0 bg-white">{r.id}</td>
+                      <td className="px-4 py-3 sticky left-0 bg-white">
+                        {r.id}
+                      </td>
                       <td className="px-4 py-3">{r.periodStart}</td>
                       <td className="px-4 py-3">{r.periodEnd}</td>
-                      <td className="px-4 py-3 capitalize">{r.status.replace("_", " ")}</td>
+                      <td className="px-4 py-3 capitalize">
+                        {r.status.replace("_", " ")}
+                      </td>
                       <td className="px-4 py-3">{r.createdAt}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex gap-2">
-                          <ActionButton href={`/dashboard/payroll/${r.id}/edit`} variant="success">
+                          <ActionButton
+                            href={`/dashboard/payroll/${r.id}/edit`}
+                            variant="success"
+                          >
                             Edit
                           </ActionButton>
                           <ActionButton
                             href="#"
                             variant="primary"
-                            className={cannotDelete(r.status) ? "opacity-50 pointer-events-none" : ""}
+                            className={
+                              cannotDelete(r.status)
+                                ? "opacity-50 pointer-events-none"
+                                : ""
+                            }
                           >
                             Delete
                           </ActionButton>
