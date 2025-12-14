@@ -1,111 +1,302 @@
-import React from "react";
-import { headers } from "next/headers";
+﻿/* @ts-nocheck */
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\page.tsx
+
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
 
-type ActiveCompany = {
-  id: string | null;
-  name: string | null;
-};
+function createAdminClient() {
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-async function getActiveCompany(): Promise<ActiveCompany> {
-  const h = headers();
-  const cookieHeader = h.get("cookie") ?? "";
-  const parts = cookieHeader.split(";").map((p) => p.trim());
-
-  let id: string | null = null;
-  let name: string | null = null;
-
-  for (const p of parts) {
-    if (p.startsWith("active_company_id=")) {
-      id = decodeURIComponent(p.slice("active_company_id=".length));
-    }
-    if (p.startsWith("active_company_name=")) {
-      name = decodeURIComponent(p.slice("active_company_name=".length));
-    }
+  if (!url || !serviceKey) {
+    throw new Error("employees: missing Supabase env");
   }
 
-  return { id, name };
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false },
+  });
 }
 
-export default async function EmployeesPage() {
-  const active = await getActiveCompany();
+type EmployeesPageProps = {
+  searchParams?: {
+    sort?: string;
+    direction?: string;
+    showLeavers?: string;
+  };
+};
+
+export default async function EmployeesPage({ searchParams }: EmployeesPageProps) {
+  const jar = cookies();
+
+  const activeCompanyId =
+    jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+
+  // No active company -> hard redirect to companies
+  if (!activeCompanyId) {
+    redirect("/dashboard/companies");
+  }
+
+  const sortParam = searchParams?.sort;
+  const directionParam = searchParams?.direction;
+  const showLeaversParam = searchParams?.showLeavers;
+
+  const sortKey: "name" | "number" = sortParam === "number" ? "number" : "name";
+
+  const sortDirection: "asc" | "desc" =
+    directionParam === "desc" ? "desc" : "asc";
+
+  // When showLeavers is "1" we include leavers, otherwise we hide them
+  const showLeavers = showLeaversParam === "1";
+
+  const supabase = createAdminClient();
+
+  const companyPromise = supabase
+    .from("companies")
+    .select("id, name")
+    .eq("id", activeCompanyId)
+    .maybeSingle();
+
+  let employeesQuery = supabase
+    .from("employees")
+    .select(
+      "employee_id, employee_number, first_name, last_name, email, ni_number, pay_frequency, status, leaving_date"
+    )
+    .eq("company_id", activeCompanyId);
+
+  if (sortKey === "number") {
+    employeesQuery = employeesQuery
+      .order("employee_number", { ascending: sortDirection === "asc" })
+      .order("last_name", { ascending: true })
+      .order("first_name", { ascending: true });
+  } else {
+    employeesQuery = employeesQuery
+      .order("last_name", { ascending: sortDirection === "asc" })
+      .order("first_name", { ascending: sortDirection === "asc" });
+  }
+
+  const [
+    { data: company, error: companyError },
+    { data: employeesData, error: employeesError },
+  ] = await Promise.all([companyPromise, employeesQuery]);
+
+  const activeCompanyName =
+    !companyError && company ? company.name ?? null : null;
+
+  const employees = Array.isArray(employeesData) ? employeesData : [];
+  const loadError = employeesError
+    ? "There was a problem loading employees."
+    : null;
+
+  // Hide leavers by default unless showLeavers=1
+  const visibleEmployees = showLeavers
+    ? employees
+    : employees.filter((emp) => (emp.status ?? "active") !== "leaver");
+
+  const hasAnyEmployees = employees.length > 0;
+
+  const isNameSorted = sortKey === "name";
+  const isNumberSorted = sortKey === "number";
+
+  const nextNameDirection =
+    isNameSorted && sortDirection === "asc" ? "desc" : "asc";
+  const nextNumberDirection =
+    isNumberSorted && sortDirection === "asc" ? "desc" : "asc";
+
+  const nameSortLabel = isNameSorted
+    ? sortDirection === "asc"
+      ? "Sort Ôåæ"
+      : "Sort Ôåô"
+    : "Sort";
+
+  const numberSortLabel = isNumberSorted
+    ? sortDirection === "asc"
+      ? "Sort Ôåæ"
+      : "Sort Ôåô"
+    : "Sort";
+
+  const currentSortParam = sortKey === "number" ? "number" : "name";
+
+  const toggleShowLeaversHref = `/dashboard/employees?sort=${currentSortParam}&direction=${sortDirection}${
+    showLeavers ? "" : "&showLeavers=1"
+  }`;
+
+  const nameSortHref = `/dashboard/employees?sort=name&direction=${nextNameDirection}${
+    showLeavers ? "&showLeavers=1" : ""
+  }`;
+
+  const numberSortHref = `/dashboard/employees?sort=number&direction=${nextNumberDirection}${
+    showLeavers ? "&showLeavers=1" : ""
+  }`;
 
   return (
     <PageTemplate title="Employees" currentSection="Employees">
-      <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden mb-6">
-        {/* company stripe */}
-        <div className="px-6 py-3 bg-white border-b-2 border-neutral-200 flex items-baseline gap-3">
-          <span className="text-xs uppercase tracking-wide text-neutral-500 leading-none">
-            Company
-          </span>
-          <span className="text-lg font-semibold text-[#0f3c85] leading-none">
-            {active.name ?? "No active company selected"}
-          </span>
+      <div className="flex flex-col gap-3 flex-1 min-h-0">
+        {/* Active company banner */}
+        <div className="rounded-2xl bg-white/80 px-4 py-4">
+          {activeCompanyName ? (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-lg sm:text-xl text-[#0f3c85]">
+                <span className="font-semibold">Active company:</span>{" "}
+                <span className="font-bold">{activeCompanyName}</span>
+              </p>
+              <Link
+                href="/dashboard/companies"
+                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+              >
+                Change company
+              </Link>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm sm:text-base text-neutral-800">
+                Active company is selected, but details could not be loaded.
+              </p>
+              <Link
+                href="/dashboard/companies"
+                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+              >
+                Check companies
+              </Link>
+            </div>
+          )}
         </div>
 
-        {/* header actions */}
-        <div className="flex items-center justify-between px-6 py-4 bg-neutral-100">
-          <div className="text-sm text-neutral-700">
-            Active employees for this company.
+        {/* Employees card */}
+        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-neutral-900">
+                  Employees
+                </div>
+                <div className="text-xs text-neutral-700">
+                  {showLeavers
+                    ? "All employees for the active company, including leavers."
+                    : "Active employees for the active company. Leavers are hidden by default."}
+                </div>
+              </div>
+              <div className="flex items-center">
+                <Link
+                  href={toggleShowLeaversHref}
+                  className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                    showLeavers
+                      ? "border-neutral-400 bg-white text-neutral-800 hover:bg-neutral-100 focus-visible:ring-neutral-400"
+                      : "border-[#0f3c85] bg-[#0f3c85] text-white hover:bg-[#0c2f68] focus-visible:ring-[#0f3c85]"
+                  }`}
+                >
+                  {showLeavers ? "Hide leavers" : "Show leavers"}
+                </Link>
+              </div>
+            </div>
           </div>
-          <a
-            href="/dashboard/employees/new"
-            className="px-4 py-2 rounded-full bg-[#0f3c85] text-white text-sm font-semibold hover:bg-[#0c2f68] transition"
-          >
-            Create employee
-          </a>
-        </div>
 
-        {/* table */}
-        <div className="px-6 pb-6 bg-neutral-100">
-          <div className="overflow-x-auto rounded-lg ring-1 ring-neutral-200 bg-white">
+          {loadError ? (
+            <div className="px-4 py-3 text-sm text-red-800 bg-red-50 border-t border-red-200">
+              {loadError}
+            </div>
+          ) : null}
+
+          <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-neutral-100">
+              <thead className="bg-neutral-200 text-xs font-semibold uppercase text-neutral-700">
                 <tr>
-                  <th className="sticky left-0 bg-neutral-100 px-4 py-3 text-neutral-700 border-b-2 border-neutral-200">
-                    Name
+                  <th className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span>Emp no</span>
+                      <Link
+                        href={numberSortHref}
+                        className="inline-flex items-center justify-center rounded-full border border-neutral-400 bg-white px-2 py-0.5 text-[11px] font-medium text-neutral-800 hover:bg-neutral-100"
+                      >
+                        {numberSortLabel}
+                      </Link>
+                    </div>
                   </th>
-                  <th className="px-4 py-3 text-neutral-700 border-b-2 border-neutral-200">
-                    NI Number
+                  <th className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span>Name</span>
+                      <Link
+                        href={nameSortHref}
+                        className="inline-flex items-center justify-center rounded-full border border-neutral-400 bg-white px-2 py-0.5 text-[11px] font-medium text-neutral-800 hover:bg-neutral-100"
+                      >
+                        {nameSortLabel}
+                      </Link>
+                    </div>
                   </th>
-                  <th className="px-4 py-3 text-neutral-700 border-b-2 border-neutral-200">
-                    Job title
-                  </th>
-                  <th className="px-4 py-3 text-neutral-700 border-b-2 border-neutral-200">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-neutral-700 text-right border-b-2 border-neutral-200">
-                    Actions
-                  </th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">NI</th>
+                  <th className="px-4 py-3">Pay frequency</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody>
-                <tr className="border-b-2 border-neutral-200">
-                  <td className="sticky left-0 bg-white px-4 py-3 text-neutral-800">
-                    No employees yet
-                  </td>
-                  <td className="px-4 py-3 text-neutral-500">–</td>
-                  <td className="px-4 py-3 text-neutral-500">–</td>
-                  <td className="px-4 py-3 text-neutral-500">–</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-2">
-                      <button
-                        type="button"
-                        className="px-3 py-1 rounded-md bg-neutral-200 text-neutral-700 text-xs"
-                        disabled
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="px-3 py-1 rounded-md bg-red-100 text-red-700 text-xs"
-                        disabled
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+              <tbody className="bg-neutral-100 divide-y divide-neutral-300">
+                {visibleEmployees.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-4 py-4 text-sm text-neutral-700"
+                    >
+                      {!hasAnyEmployees
+                        ? "No employees yet. Use the New Employee Wizard on the Dashboard to create your first record."
+                        : showLeavers
+                        ? "No employees found for this filter."
+                        : "No active employees to show. You may only have leavers. Use ÔÇ£Show leaversÔÇØ to view them."}
+                    </td>
+                  </tr>
+                ) : (
+                  visibleEmployees.map((employee) => {
+                    const name = `${employee.first_name ?? ""} ${
+                      employee.last_name ?? ""
+                    }`.trim();
+
+                    const rawStatus = employee.status ?? "active";
+                    const isLeaver = rawStatus === "leaver";
+                    const statusLabel = isLeaver ? "Leaver" : "Active";
+
+                    const statusClass = isLeaver
+                      ? "border-red-300 bg-red-100 text-red-800"
+                      : "border-emerald-300 bg-emerald-100 text-emerald-800";
+
+                    return (
+                      <tr key={employee.employee_id}>
+                        <td className="px-4 py-3 text-neutral-900">
+                          {employee.employee_number ?? "ÔÇö"}
+                        </td>
+                        <td className="px-4 py-3 text-neutral-900">
+                          {name || "Unnamed employee"}
+                        </td>
+                        <td className="px-4 py-3 text-neutral-800">
+                          {employee.email ?? "ÔÇö"}
+                        </td>
+                        <td className="px-4 py-3 text-neutral-800">
+                          {employee.ni_number ?? "ÔÇö"}
+                        </td>
+                        <td className="px-4 py-3 text-neutral-800">
+                          {employee.pay_frequency ?? "ÔÇö"}
+                        </td>
+                        <td className="px-4 py-3 text-neutral-800">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusClass}`}
+                          >
+                            {statusLabel}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {/* IMPORTANT: now links to details page, not /edit */}
+                          <Link
+                            href={`/dashboard/employees/${employee.employee_id}`}
+                            className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85] min-w-[88px] justify-end"
+                          >
+                            View / edit
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>

@@ -1,4 +1,4 @@
-/* @ts-nocheck */
+﻿/* @ts-nocheck */
 "use client";
 
 import React from "react";
@@ -11,7 +11,7 @@ type Counts = {
   notices?: number;
 };
 
-const CARD_BG = "#c8c8c8"; // unified tile background (your “neutral-325”)
+const CARD_BG = "#c8c8c8"; // unified tile background (your ÔÇ£neutral-325ÔÇØ)
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
@@ -96,11 +96,11 @@ export default function DashboardClient({ counts }: { counts: Counts }) {
         </Card>
 
         <Card>
-          <div className="text-lg font-semibold text-neutral-900">View Employees</div>
-          <p className={bodyText}>Browse and edit your employee list.</p>
+          <div className="text-lg font-semibold text-neutral-900">Leaver Wizard</div>
+          <p className={bodyText}>Start the employee leaver process.</p>
           <div className="mt-4 flex justify-center">
-            <Link href="/dashboard/employees" className={btn}>
-              View Employees
+            <Link href="/dashboard/employees/leaver" className={btn}>
+              Leaver Wizard
             </Link>
           </div>
         </Card>
@@ -128,4 +128,3 @@ export default function DashboardClient({ counts }: { counts: Counts }) {
     </div>
   );
 }
-
