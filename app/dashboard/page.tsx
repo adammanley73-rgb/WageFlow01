@@ -2,10 +2,11 @@
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\page.tsx
 
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Inter } from "next/font/google";
-import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
+
+export const dynamic = "force-dynamic";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -27,17 +28,29 @@ type CountsResponse = {
   absenceRecordCount?: number;
 };
 
-function createAdminClient() {
-  const url = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+type Company = {
+  id: string;
+  name: string;
+  created_at?: string;
+};
 
-  if (!url || !serviceKey) {
-    throw new Error("dashboard: missing Supabase env");
-  }
+function getBaseUrl(): string {
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  const host =
+    h.get("x-forwarded-host") ??
+    h.get("host") ??
+    process.env.VERCEL_URL ??
+    "localhost:3000";
 
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
+  const normalizedHost = host.startsWith("http") ? host : `${proto}://${host}`;
+  return normalizedHost.replace(/\/$/, "");
+}
+
+function buildCookieHeader(): string {
+  const jar = cookies();
+  const all = jar.getAll();
+  return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
 async function getActiveCompanyName(): Promise<string | null> {
@@ -49,37 +62,49 @@ async function getActiveCompanyName(): Promise<string | null> {
       jar.get("company_id")?.value ??
       null;
 
-    if (!activeCompanyId) {
+    if (!activeCompanyId) return null;
+
+    const baseUrl = getBaseUrl();
+
+    const res = await fetch(`${baseUrl}/api/companies`, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        cookie: buildCookieHeader(),
+      },
+    });
+
+    if (!res.ok) {
+      console.error("dashboard: /api/companies returned", res.status);
       return null;
     }
 
-    const supabase = createAdminClient();
+    const data = await res.json();
 
-    const { data, error } = await supabase
-      .from("companies")
-      .select("id, name")
-      .eq("id", activeCompanyId)
-      .maybeSingle();
+    const companies: Company[] = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.companies)
+      ? data.companies
+      : [];
 
-    if (error || !data) {
-      console.error("dashboard: error loading active company", error);
-      return null;
-    }
-
-    return data.name ?? null;
+    const match = companies.find((c) => c.id === activeCompanyId);
+    return match?.name ?? null;
   } catch (err) {
-    console.error("dashboard: admin client error", err);
+    console.error("dashboard: getActiveCompanyName error", err);
     return null;
   }
 }
 
 async function getCounts(): Promise<Counts> {
   try {
-    const base = process.env.NEXT_PUBLIC_BASE_URL;
-    const url = base ? `${base}/api/counts` : "/api/counts";
+    const baseUrl = getBaseUrl();
 
-    const res = await fetch(url, {
+    const res = await fetch(`${baseUrl}/api/counts`, {
+      method: "GET",
       cache: "no-store",
+      headers: {
+        cookie: buildCookieHeader(),
+      },
     });
 
     if (!res.ok) {
@@ -94,6 +119,7 @@ async function getCounts(): Promise<Counts> {
     const raw = (await res.json()) as CountsResponse;
 
     const fromNested = raw.counts ?? {};
+
     const employeeCount =
       typeof fromNested.employeeCount === "number"
         ? fromNested.employeeCount
@@ -156,11 +182,7 @@ function StatTile(props: { label: string; value: string | number }) {
   );
 }
 
-function GreyTile(props: {
-  title: string;
-  description?: string;
-  href?: string;
-}) {
+function GreyTile(props: { title: string; description?: string; href?: string }) {
   const body = (
     <div
       className="h-full rounded-2xl ring-1 border bg-neutral-300 ring-neutral-400 border-neutral-400 p-4"
@@ -199,7 +221,6 @@ export default async function DashboardPage() {
   return (
     <PageTemplate title="Dashboard" currentSection="Dashboard">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
-        {/* Active company banner */}
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -217,8 +238,7 @@ export default async function DashboardPage() {
           ) : (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm sm:text-base text-neutral-800">
-                No active company selected. Go to the Companies page to choose
-                one.
+                No active company selected. Go to the Companies page to choose one.
               </p>
               <Link
                 href="/dashboard/companies"
@@ -230,19 +250,13 @@ export default async function DashboardPage() {
           )}
         </div>
 
-        {/* Main grid */}
         <div className="grid grid-rows-2 gap-3 flex-1 min-h-0">
-          {/* Row 1: three KPIs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 h-full min-h-0">
             <StatTile label="Employees" value={counts.employeeCount} />
             <StatTile label="Payroll runs" value={counts.payrollRunCount} />
-            <StatTile
-              label="Absence records"
-              value={counts.absenceRecordCount}
-            />
+            <StatTile label="Absence records" value={counts.absenceRecordCount} />
           </div>
 
-          {/* Row 2: four wizard tiles */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 h-full min-h-0">
             <GreyTile
               title="New Employees Wizard"
