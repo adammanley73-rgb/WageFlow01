@@ -1,13 +1,39 @@
 ﻿/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\page.tsx
 
-import Link from "next/link";import { cookies, headers } from "next/headers";
+import Link from "next/link";
+import { cookies, headers } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
+import PageTemplate from "@/components/layout/PageTemplate";
+import ActionButton from "@/components/ui/ActionButton";
+
+export const dynamic = "force-dynamic";
 
 type Company = {
   id: string;
   name: string;
   created_at?: string;
 };
+
+type EmployeeRow = {
+  id?: string | null;
+  employee_id?: string | null;
+
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+
+  employee_number?: string | null;
+  ni_number?: string | null;
+
+  pay_frequency?: string | null;
+  pay_basis?: string | null;
+};
+
+function getActiveCompanyIdFromCookies(): string | null {
+  const jar = cookies();
+  return jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+}
 
 function getBaseUrl(): string {
   const h = headers();
@@ -30,12 +56,7 @@ function buildCookieHeader(): string {
 
 async function getActiveCompanyNameViaApi(): Promise<string | null> {
   try {
-    const jar = cookies();
-    const activeCompanyId =
-      jar.get("active_company_id")?.value ??
-      jar.get("company_id")?.value ??
-      null;
-
+    const activeCompanyId = getActiveCompanyIdFromCookies();
     if (!activeCompanyId) return null;
 
     const baseUrl = getBaseUrl();
@@ -61,22 +82,191 @@ async function getActiveCompanyNameViaApi(): Promise<string | null> {
   } catch {
     return null;
   }
-}import PageTemplate from "@/components/layout/PageTemplate";
-import ActionButton from "@/components/ui/ActionButton";
+}
 
-export const dynamic = "force-dynamic";
+function getSupabaseUrl(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+}
+
+function getSupabaseKey(): string {
+  // Prefer service role if present. Fall back to anon key.
+  return (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ""
+  );
+}
+
+function readChunkedCookieValue(
+  all: { name: string; value: string }[],
+  baseName: string
+): string | null {
+  const exact = all.find((c) => c.name === baseName);
+  if (exact) return exact.value;
+
+  const parts = all
+    .filter((c) => c.name.startsWith(baseName + "."))
+    .map((c) => {
+      const m = c.name.match(/\.(\d+)$/);
+      const idx = m ? Number(m[1]) : 0;
+      return { idx, value: c.value };
+    })
+    .sort((a, b) => a.idx - b.idx);
+
+  if (parts.length === 0) return null;
+  return parts.map((p) => p.value).join("");
+}
+
+function extractAccessTokenFromCookies(): string | null {
+  try {
+    const jar = cookies();
+    const all = jar.getAll();
+
+    const bases = new Set<string>();
+
+    for (const c of all) {
+      const n = c.name;
+      if (!n.includes("auth-token")) continue;
+      if (!n.startsWith("sb-") && !n.includes("sb-")) continue;
+      bases.add(n.replace(/\.\d+$/, ""));
+    }
+
+    for (const base of bases) {
+      const raw = readChunkedCookieValue(all as any, base);
+      if (!raw) continue;
+
+      const decoded = (() => {
+        try {
+          return decodeURIComponent(raw);
+        } catch {
+          return raw;
+        }
+      })();
+
+      // Try plain JSON
+      try {
+        const obj = JSON.parse(decoded);
+        if (obj && typeof obj.access_token === "string") return obj.access_token;
+      } catch {}
+
+      // Try base64 JSON
+      try {
+        const asJson = Buffer.from(decoded, "base64").toString("utf8");
+        const obj = JSON.parse(asJson);
+        if (obj && typeof obj.access_token === "string") return obj.access_token;
+      } catch {}
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function createSupabaseRequestClient() {
+  const url = getSupabaseUrl();
+  const key = getSupabaseKey();
+
+  if (!url || !key) {
+    return null;
+  }
+
+  const accessToken = extractAccessTokenFromCookies();
+
+  const opts: any = {
+    auth: { persistSession: false, autoRefreshToken: false },
+  };
+
+  if (accessToken) {
+    opts.global = { headers: { Authorization: `Bearer ${accessToken}` } };
+  }
+
+  return createClient(url, key, opts);
+}
+
+function formatFrequency(v: string | null | undefined): string {
+  if (!v) return "—";
+  const s = String(v).trim();
+  if (!s) return "—";
+  if (s === "four_weekly") return "Four-weekly";
+  if (s === "fortnightly") return "Fortnightly";
+  if (s === "weekly") return "Weekly";
+  if (s === "monthly") return "Monthly";
+  if (s === "quarterly") return "Quarterly";
+  return s.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function formatNI(v: string | null | undefined): string {
+  const s = (v ?? "").toString().trim();
+  return s ? s.toUpperCase() : "—";
+}
+
+async function loadEmployeesForCompany(companyId: string): Promise<EmployeeRow[]> {
+  try {
+    const supabase = createSupabaseRequestClient();
+    if (!supabase) return [];
+
+    // Try full set first
+    const fullSelect =
+      "id, employee_id, first_name, last_name, email, employee_number, ni_number, pay_frequency, pay_basis";
+
+    let { data, error } = await supabase
+      .from("employees")
+      .select(fullSelect)
+      .eq("company_id", companyId)
+      .order("first_name", { ascending: true });
+
+    // Fallback if schema differs
+    if (error) {
+      const minimalSelect = "id, employee_id, first_name, last_name, employee_number";
+      const fallback = await supabase
+        .from("employees")
+        .select(minimalSelect)
+        .eq("company_id", companyId)
+        .order("first_name", { ascending: true });
+
+      if (fallback.error) {
+        console.error("employees page: employees load error", fallback.error);
+        return [];
+      }
+
+      return (fallback.data as any[]) || [];
+    }
+
+    return (data as any[]) || [];
+  } catch (err) {
+    console.error("employees page: unexpected load error", err);
+    return [];
+  }
+}
 
 export default async function EmployeesPage() {
-  const activeCompanyName = await getActiveCompanyNameViaApi();
+  const companyId = getActiveCompanyIdFromCookies();
 
-  const employees: {
-    id: string;
-    name: string;
-    email: string;
-    ni: string;
-    payFreq: string;
-    hasPayroll: boolean;
-  }[] = [];
+  const [activeCompanyName, employeeRows] = await Promise.all([
+    getActiveCompanyNameViaApi(),
+    companyId ? loadEmployeesForCompany(companyId) : Promise.resolve([]),
+  ]);
+
+  const employees = (employeeRows || []).map((r) => {
+    const rowId = (r.id || r.employee_id || "").toString();
+    const fullName = [r.first_name, r.last_name].filter(Boolean).join(" ").trim();
+
+    const displayName =
+      fullName ||
+      (r.employee_number ? `Employee (${r.employee_number})` : "") ||
+      (r.email ? r.email : "") ||
+      "Employee";
+
+    return {
+      id: rowId,
+      name: displayName,
+      email: (r.email ?? "").toString() || "—",
+      ni: formatNI((r as any).ni_number ?? (r as any).ni ?? null),
+      payFreq: formatFrequency((r as any).pay_frequency ?? (r as any).pay_freq ?? null),
+      hasPayroll: false, // TODO: wire real delete guard when payroll tables are reconnected
+    };
+  });
 
   return (
     <PageTemplate title="Employees" currentSection="Employees">
@@ -133,9 +323,11 @@ export default async function EmployeesPage() {
                 {employees.length === 0 ? (
                   <tr className="border-b-2 border-neutral-300">
                     <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
-                      <div className="text-neutral-800">No employees yet.</div>
+                      <div className="text-neutral-800">
+                        {activeCompanyName ? "No employees found for this company yet." : "No active company selected."}
+                      </div>
                       <div className="text-neutral-700 text-xs">
-                        Use the New Employee Wizard on the Dashboard to create your first record.
+                        Create an employee using the New Employee Wizard.
                       </div>
                     </td>
                     <td className="px-4 py-6 text-right bg-white"></td>
@@ -166,6 +358,12 @@ export default async function EmployeesPage() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="px-4 py-4 bg-neutral-50 border-t-2 border-neutral-300">
+            <ActionButton href="/dashboard/employees/new" variant="primary">
+              Create employee
+            </ActionButton>
           </div>
         </div>
       </div>
