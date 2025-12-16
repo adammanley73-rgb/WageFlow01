@@ -1,119 +1,81 @@
 /* @ts-nocheck */
-// app/dashboard/absence/new/page.tsx
+/* C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\page.tsx */
+
 import Link from "next/link";
+import PageTemplate, { ActionTile } from "@/components/ui/PageTemplate";
+
+const CARD =
+  "w-full rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
+
+const PRIMARY_BTN =
+  "inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-6 py-2 text-sm font-semibold text-white hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-white/60";
 
 export default function NewAbsenceHub() {
-  // Do NOT render HeaderBanner here. The layout already did.
   return (
-    <div className="rounded-2xl overflow-hidden bg-white/90 ring-1 ring-neutral-200 shadow-sm">
-      {/* Title-only header (centered, slightly smaller than page title) */}
-      <div className="px-6 py-6 border-b border-neutral-200">
-        <h1 className="text-center text-3xl font-semibold text-blue-900">
-          Record New Absence
-        </h1>
-      </div>
-
-      {/* Content */}
-      <section className="bg-white">
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Sickness */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Sickness</h2>
-              <p className="mb-4">
-                Uses SSP rules with PIWs, linking, waiting days, and the 28-week cap.
-              </p>
-              <Link href="/dashboard/absence/new/sickness" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Maternity */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Maternity</h2>
-              <p className="mb-4">
-                Computes SMP AWE and weekly schedule. Saves totals in the record.
-              </p>
-              <Link href="/dashboard/absence/new/maternity" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Adoption */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Adoption</h2>
-              <p className="mb-4">
-                Computes SAP weekly schedule when available. Placement date optional.
-              </p>
-              <Link href="/dashboard/absence/new/adoption" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Paternity */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Paternity</h2>
-              <p className="mb-4">
-                Computes SPP schedule. Two-week entitlement where eligible.
-              </p>
-              <Link href="/dashboard/absence/new/paternity" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Shared Parental */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Shared Parental</h2>
-              <p className="mb-4">
-                Computes ShPP schedule. Requires eligible partner leave details.
-              </p>
-              <Link href="/dashboard/absence/new/shared-parental" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Parental Bereavement */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Parental Bereavement</h2>
-              <p className="mb-4">
-                Computes SPBP schedule. One or two weeks depending on circumstance.
-              </p>
-              <Link href="/dashboard/absence/new/parental-bereavement" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Annual Leave */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Annual Leave</h2>
-              <p className="mb-4">
-                Logs and manages paid annual leave, automatically reducing entitlement.
-              </p>
-              <Link href="/dashboard/absence/new/annual-leave" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Unpaid Leave */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Unpaid Leave</h2>
-              <p className="mb-4">
-                Records unpaid absence periods and adjusts payroll accordingly.
-              </p>
-              <Link href="/dashboard/absence/new/unpaid-leave" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-          </div>
-
-          {/* View saved absences */}
-          <div className="mt-10 text-center">
-            <Link href="/dashboard/absence/list" className="inline-block bg-blue-900 text-white px-5 py-2 rounded hover:bg-blue-800">
-              View saved absences
-            </Link>
-          </div>
+    <PageTemplate title="Absence" currentSection="absence">
+      <div className={CARD}>
+        {/* Top CTA: full width on mobile, normal on desktop */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <Link
+            href="/dashboard/absence/list"
+            className={`${PRIMARY_BTN} w-full sm:w-auto`}
+          >
+            View saved absences
+          </Link>
         </div>
-      </section>
-    </div>
+
+        <div className="mb-6 text-center">
+          <h2 className="text-2xl font-semibold text-blue-900">
+            Record new absence
+          </h2>
+          <p className="mt-1 text-sm text-neutral-800">
+            Choose the absence type you want to record.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ActionTile
+            title="Sickness"
+            href="/dashboard/absence/new/sickness"
+            description="SSP rules with PIWs, linking, waiting days, and the 28-week cap."
+          />
+          <ActionTile
+            title="Maternity"
+            href="/dashboard/absence/new/maternity"
+            description="SMP AWE and weekly schedule. Saves totals in the record."
+          />
+          <ActionTile
+            title="Adoption"
+            href="/dashboard/absence/new/adoption"
+            description="SAP weekly schedule when available. Placement date optional."
+          />
+          <ActionTile
+            title="Paternity"
+            href="/dashboard/absence/new/paternity"
+            description="SPP schedule. Two-week entitlement where eligible."
+          />
+          <ActionTile
+            title="Shared Parental"
+            href="/dashboard/absence/new/shared-parental"
+            description="ShPP schedule. Requires eligible partner leave details."
+          />
+          <ActionTile
+            title="Parental Bereavement"
+            href="/dashboard/absence/new/parental-bereavement"
+            description="SPBP schedule. One or two weeks depending on circumstances."
+          />
+          <ActionTile
+            title="Annual Leave"
+            href="/dashboard/absence/new/annual"
+            description="Record annual leave and reduce entitlement automatically."
+          />
+          <ActionTile
+            title="Requests"
+            href="/dashboard/absence/requests"
+            description="View and manage incoming absence requests."
+          />
+        </div>
+      </div>
+    </PageTemplate>
   );
 }

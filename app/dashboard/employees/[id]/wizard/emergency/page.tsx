@@ -1,17 +1,25 @@
 /* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\wizard\emergency\page.tsx
+
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import PageTemplate from "@/components/ui/PageTemplate";
+
+const CARD = "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
 
 const BTN_PRIMARY =
   "w-44 inline-flex items-center justify-center rounded-lg bg-blue-700 px-5 py-2 text-white disabled:opacity-50";
 const BTN_SECONDARY =
   "w-32 inline-flex items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 py-2 text-neutral-800";
-const CARD = "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
+
+type ToastState = {
+  open: boolean;
+  message: string;
+  tone: "success" | "error" | "info";
+};
 
 function canonPhone(raw: string) {
   const trimmed = String(raw || "").trim();
@@ -29,8 +37,25 @@ export default function EmergencyContactPage() {
   const [relationship, setRelationship] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const [toast, setToast] = useState<ToastState>({
+    open: false,
+    message: "",
+    tone: "info",
+  });
+
+  const toastTimerRef = useRef<any>(null);
+
+  function showToast(message: string, tone: ToastState["tone"] = "info") {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ open: true, message, tone });
+    toastTimerRef.current = setTimeout(() => {
+      setToast((t) => ({ ...t, open: false }));
+    }, 4500);
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -43,6 +68,7 @@ export default function EmergencyContactPage() {
 
     if (!name) {
       setErr("Contact name is required.");
+      showToast("Contact name is required.", "error");
       return;
     }
 
@@ -67,12 +93,31 @@ export default function EmergencyContactPage() {
         throw new Error(j?.error || "Failed to save emergency contact");
       }
 
-      router.push(`/dashboard/employees/${id}/edit`);
-    } catch (err: any) {
-      setErr(err?.message || "Failed to save emergency contact");
+      showToast("Emergency contact saved.", "success");
+
+      router.replace("/dashboard/employees");
+
+      setTimeout(() => {
+        try {
+          if (!location.pathname.endsWith("/dashboard/employees")) {
+            window.location.href = "/dashboard/employees";
+          }
+        } catch {}
+      }, 50);
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      setErr(msg);
+      showToast(msg, "error");
       setBusy(false);
     }
   }
+
+  const toastStyles =
+    toast.tone === "error"
+      ? "bg-red-600 text-white"
+      : toast.tone === "success"
+      ? "bg-emerald-600 text-white"
+      : "bg-neutral-900 text-white";
 
   return (
     <PageTemplate
@@ -82,10 +127,26 @@ export default function EmergencyContactPage() {
       backHref={`/dashboard/employees/${id}/wizard/bank`}
       backLabel="Back"
     >
+      {toast.open && (
+        <div className="fixed top-4 left-1/2 z-50 w-[min(720px,92vw)] -translate-x-1/2">
+          <div className={`rounded-xl px-4 py-3 shadow-lg ring-1 ring-black/10 ${toastStyles}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-sm font-medium">{toast.message}</div>
+              <button
+                type="button"
+                onClick={() => setToast((t) => ({ ...t, open: false }))}
+                className="text-xs opacity-90 hover:opacity-100"
+                aria-label="Close toast"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={onSubmit} className={CARD}>
-        <h2 className="text-lg font-semibold text-center mb-4">
-          Emergency Contact
-        </h2>
+        <h2 className="text-lg font-semibold text-center mb-4">Emergency Contact</h2>
 
         {err ? (
           <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">
@@ -95,9 +156,7 @@ export default function EmergencyContactPage() {
 
         <div className="space-y-5">
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Contact name
-            </label>
+            <label className="block text-sm font-medium mb-1">Contact name</label>
             <input
               className="w-full rounded-lg border border-neutral-300 px-3 py-2 bg-white"
               value={contactName}
@@ -108,9 +167,7 @@ export default function EmergencyContactPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Relationship
-            </label>
+            <label className="block text-sm font-medium mb-1">Relationship</label>
             <input
               className="w-full rounded-lg border border-neutral-300 px-3 py-2 bg-white"
               value={relationship}
@@ -130,6 +187,7 @@ export default function EmergencyContactPage() {
                 inputMode="tel"
               />
             </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">Email</label>
               <input
@@ -143,11 +201,11 @@ export default function EmergencyContactPage() {
           </div>
 
           <div className="pt-2 flex items-center justify-end gap-3">
-            <Link href={`/dashboard/employees/${id}/edit`} className={BTN_SECONDARY}>
+            <Link href={`/dashboard/employees/${id}/wizard/bank`} className={BTN_SECONDARY}>
               Cancel
             </Link>
             <button type="submit" className={BTN_PRIMARY} disabled={busy}>
-              {busy ? "Saving…" : "Save and finish"}
+              {busy ? "Saving..." : "Save and finish"}
             </button>
           </div>
         </div>
