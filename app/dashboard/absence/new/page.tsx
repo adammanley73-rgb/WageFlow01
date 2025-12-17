@@ -1,118 +1,138 @@
-/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\page.tsx
 
 import Link from "next/link";
+import PageTemplate from "@/components/layout/PageTemplate";
 
-function Card(props: {
+type HubCardProps = {
 title: string;
 description: string;
 href?: string;
 disabled?: boolean;
 disabledNote?: string;
-}) {
-const body = (
-<div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200 h-full flex flex-col">
-<h2 className="text-lg font-semibold mb-2 text-neutral-900">
-{props.title}
-</h2>
+};
 
-  <p className="mb-4 text-neutral-800">{props.description}</p>
+function HubCard({
+title,
+description,
+href,
+disabled,
+disabledNote,
+}: HubCardProps) {
+const base =
+"rounded-2xl bg-white/95 shadow-sm ring-1 ring-neutral-300 p-5 flex flex-col text-left";
+const titleCls = "text-base font-bold text-neutral-900";
+const descCls = "mt-2 text-sm text-neutral-700";
+const footerCls = "mt-4";
 
-  <div className="mt-auto">
-    {props.disabled ? (
-      <span className="inline-block bg-neutral-300 text-neutral-700 px-4 py-2 rounded cursor-not-allowed select-none">
-        {props.disabledNote ?? "Coming soon"}
-      </span>
-    ) : (
-      <Link
-        href={props.href || "#"}
-        className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800"
-      >
-        Open
-      </Link>
-    )}
-  </div>
+if (disabled) {
+return (
+<div className={base + " opacity-80"}>
+<div className={titleCls}>{title}</div>
+<div className={descCls}>{description}</div>
+<div className={footerCls}>
+<span className="inline-flex items-center rounded-full bg-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-700 ring-1 ring-neutral-300">
+{disabledNote ?? "Not available"}
+</span>
 </div>
-
-
+</div>
 );
-
-return body;
 }
 
-export default function NewAbsenceHub() {
 return (
-<div className="rounded-2xl overflow-hidden bg-white/90 ring-1 ring-neutral-200 shadow-sm">
-<div className="px-6 py-6 border-b border-neutral-200">
-<h1 className="text-center text-3xl font-semibold text-blue-900">
-Record New Absence
-</h1>
+<Link
+href={href ?? "#"}
+className={
+base +
+" transition-transform hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2"
+}
+aria-label={"Open " + title}
+>
+<div className={titleCls}>{title}</div>
+<div className={descCls}>{description}</div>
+<div className={footerCls}>
+<span
+className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white"
+style={{ backgroundColor: "var(--wf-blue)" }}
+>
+Open
+</span>
+</div>
+</Link>
+);
+}
+
+export default function NewAbsenceHubPage() {
+return (
+<PageTemplate title="New absence" currentSection="absence">
+<div className="rounded-2xl bg-white/90 ring-1 ring-neutral-300 shadow-sm p-6">
+<div className="text-sm text-neutral-700">
+Pick the absence type you want to record. Annual leave is available.
+The other types are currently placeholders and will be standardised
+next.
 </div>
 
-  <section className="bg-white">
-    <div className="p-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card
-          title="Sickness"
-          description="Uses SSP rules with PIWs, linking, waiting days, and the 28-week cap."
-          href="/dashboard/absence/new/sickness"
-        />
+    <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+      <HubCard
+        title="Sickness"
+        description="Uses SSP rules with PIWs, linking, waiting days, and the 28-week cap."
+        href="/dashboard/absence/new/sickness"
+      />
 
-        <Card
-          title="Annual Leave"
-          description="Logs and manages paid annual leave, automatically reducing entitlement."
-          href="/dashboard/absence/new/annual"
-        />
+      <HubCard
+        title="Annual leave"
+        description="Record paid annual leave. This will feed holiday pay calculations for the relevant pay period."
+        href="/dashboard/absence/new/annual"
+      />
 
-        <Card
-          title="Maternity"
-          description="Computes SMP AWE and weekly schedule. Saves totals in the record."
-          href="/dashboard/absence/new/maternity"
-        />
+      <HubCard
+        title="Maternity"
+        description="SMP wizard placeholder. AWE and schedule will be implemented here."
+        href="/dashboard/absence/new/maternity"
+      />
 
-        <Card
-          title="Adoption"
-          description="Computes SAP weekly schedule when available. Placement date optional."
-          href="/dashboard/absence/new/adoption"
-        />
+      <HubCard
+        title="Adoption"
+        description="SAP wizard placeholder. Placement date support will be implemented here."
+        href="/dashboard/absence/new/adoption"
+      />
 
-        <Card
-          title="Paternity"
-          description="Computes SPP schedule. Two-week entitlement where eligible."
-          href="/dashboard/absence/new/paternity"
-        />
+      <HubCard
+        title="Paternity"
+        description="SPP wizard placeholder. Eligibility and schedule will be implemented here."
+        href="/dashboard/absence/new/paternity"
+      />
 
-        <Card
-          title="Shared Parental"
-          description="Computes ShPP schedule. Requires eligible partner leave details."
-          href="/dashboard/absence/new/shared-parental"
-        />
+      <HubCard
+        title="Shared parental"
+        description="ShPP wizard placeholder. Shared leave details will be implemented here."
+        href="/dashboard/absence/new/shared-parental"
+      />
 
-        <Card
-          title="Parental Bereavement"
-          description="Computes SPBP schedule. One or two weeks depending on circumstance."
-          href="/dashboard/absence/new/parental-bereavement"
-        />
+      <HubCard
+        title="Parental bereavement"
+        description="SPBP wizard placeholder. One or two weeks depending on circumstance."
+        href="/dashboard/absence/new/parental-bereavement"
+      />
 
-        <Card
-          title="Unpaid Leave"
-          description="Records unpaid absence periods and adjusts payroll accordingly."
-          disabled
-          disabledNote="Not available in this build"
-        />
-      </div>
-
-      <div className="mt-10 text-center">
-        <Link
-          href="/dashboard/absence/list"
-          className="inline-block bg-blue-900 text-white px-5 py-2 rounded hover:bg-blue-800"
-        >
-          View saved absences
-        </Link>
-      </div>
+      <HubCard
+        title="Unpaid leave"
+        description="Route not implemented. When built, it will record unpaid absence periods for payroll adjustments."
+        disabled
+        disabledNote="Not built yet"
+      />
     </div>
-  </section>
-</div>
+
+    <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+      <Link
+        href="/dashboard/absence/list"
+        className="inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-semibold text-white"
+        style={{ backgroundColor: "var(--wf-blue)" }}
+      >
+        View saved absences
+      </Link>
+    </div>
+  </div>
+</PageTemplate>
 
 
 );
