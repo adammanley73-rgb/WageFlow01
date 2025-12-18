@@ -7,7 +7,7 @@ type NonEmpty = string & { __brand: "NonEmpty" };
 function must(name: string): NonEmpty {
 const v = process.env[name];
 if (!v || v.trim() === "") {
-throw new Error(Missing required environment variable: ${name});
+throw new Error(`Missing required environment variable: ${name}`);
 }
 return v as NonEmpty;
 }
@@ -24,7 +24,8 @@ const isProd = vercelEnv === "production" || nodeEnv === "production";
 
 // Preview means Vercel Preview deployments only.
 // Local dev should NOT be treated as preview.
-const preview = vercelEnv === "preview" || process.env.NEXT_PUBLIC_VERCEL_ENV === "preview";
+const preview =
+vercelEnv === "preview" || process.env.NEXT_PUBLIC_VERCEL_ENV === "preview";
 
 export type EnvShape = {
 NEXT_PUBLIC_SUPABASE_URL: NonEmpty;
@@ -44,3 +45,5 @@ vercelEnv,
 
 export default env;
 export { env };
+
+
