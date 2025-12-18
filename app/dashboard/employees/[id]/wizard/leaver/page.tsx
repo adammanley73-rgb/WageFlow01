@@ -4,13 +4,10 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
+import PageTemplate from '@/components/ui/PageTemplate';
 
-const ACTION_BTN =
-  'rounded-full bg-blue-700 px-5 py-2 text-sm font-medium text-white';
-const CARD =
-  'rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6';
+const CARD = 'rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6';
 
 type OtherLine = {
   description: string;
@@ -240,305 +237,280 @@ export default function LeaverWizardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-300 via-teal-400 to-blue-600 font-[var(--font-manrope,inherit)]">
+    <PageTemplate
+      title="Leaver details"
+      currentSection="employees"
+      headerMode="wizard"
+      backHref={`/dashboard/employees/${id}/edit`}
+      backLabel="Back"
+    >
       {toast && (
         <div className="fixed right-4 top-4 z-50 rounded-md bg-green-600 px-4 py-2 text-sm text-white shadow-lg">
           {toast}
         </div>
       )}
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        {/* Header banner */}
-        <div className="mb-6 flex items-center justify-between gap-6 rounded-xl bg-white px-6 py-6 ring-1 ring-neutral-200">
-          <div className="flex items-center gap-4">
-            <Image
-              src="/WageFlowLogo.png"
-              alt="WageFlow"
-              width={64}
-              height={64}
-              priority
-            />
-            <h1 className="text-4xl font-bold tracking-tight text-blue-800">
-              Leaver details
-            </h1>
-          </div>
 
-          {/* Wizard nav: Back only, no other nav pills */}
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() =>
-                history.length > 1 ? router.back() : router.push('/dashboard/employees')
-              }
-              className={ACTION_BTN}
-              aria-label="Back"
-            >
-              Back
-            </button>
-          </div>
-        </div>
+      <div className={CARD}>
+        {loading ? (
+          <div>Loading…</div>
+        ) : (
+          <form onSubmit={onSubmit}>
+            {err ? (
+              <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">
+                {err}
+              </div>
+            ) : null}
 
-        <div className={CARD}>
-          {loading ? (
-            <div>Loading…</div>
-          ) : (
-            <form onSubmit={onSubmit}>
-              {err ? (
-                <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">
-                  {err}
+            {/* Section: Leaver basics */}
+            <div className="mb-6 border-b border-neutral-400 pb-4">
+              <h2 className="mb-3 text-lg font-semibold text-neutral-900">
+                Leaver basics
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-neutral-900">
+                    Last working day
+                  </label>
+                  <input
+                    type="date"
+                    name="leaving_date"
+                    value={form.leaving_date}
+                    onChange={(e) => updateField('leaving_date', e.target.value)}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
                 </div>
-              ) : null}
+                <div>
+                  <label className="block text-sm text-neutral-900">
+                    Final pay date
+                  </label>
+                  <input
+                    type="date"
+                    name="final_pay_date"
+                    value={form.final_pay_date}
+                    onChange={(e) => updateField('final_pay_date', e.target.value)}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm text-neutral-900">
+                    Reason for leaving
+                  </label>
+                  <select
+                    name="leaver_reason"
+                    value={form.leaver_reason}
+                    onChange={(e) => updateField('leaver_reason', e.target.value)}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  >
+                    <option value="">Select…</option>
+                    <option value="resignation">Resignation</option>
+                    <option value="dismissal">Dismissal</option>
+                    <option value="redundancy">Redundancy</option>
+                    <option value="end_of_contract">End of contract</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <label className="mt-2 flex items-center gap-2 md:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={form.pay_after_leaving}
+                    onChange={(e) =>
+                      updateField('pay_after_leaving', e.target.checked)
+                    }
+                  />
+                  <span className="text-sm text-neutral-900">
+                    There may be payments after leaving
+                  </span>
+                </label>
+              </div>
+            </div>
 
-              {/* Section: Leaver basics */}
-              <div className="mb-6 border-b border-neutral-400 pb-4">
-                <h2 className="mb-3 text-lg font-semibold text-neutral-900">
-                  Leaver basics
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm text-neutral-900">
-                      Last working day
-                    </label>
+            {/* Section: Holiday on termination */}
+            <div className="mb-6 border-b border-neutral-400 pb-4">
+              <h2 className="mb-3 text-lg font-semibold text-neutral-900">
+                Holiday on termination
+              </h2>
+              <p className="mb-3 text-sm text-neutral-800">
+                Enter the unused holiday days and payout amount for this employee. In
+                a later version, this can be driven from your holiday entitlement
+                and absence records.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-neutral-900">
+                    Unused holiday days to pay
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    name="holiday_days"
+                    value={form.holiday_days}
+                    onChange={(e) => updateField('holiday_days', e.target.value)}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-neutral-900">
+                    Holiday payout amount
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    name="holiday_amount"
+                    value={form.holiday_amount}
+                    onChange={(e) => updateField('holiday_amount', e.target.value)}
+                    className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Section: Other final earnings */}
+            <div className="mb-6 border-b border-neutral-400 pb-4">
+              <h2 className="mb-3 text-lg font-semibold text-neutral-900">
+                Other final earnings
+              </h2>
+              <p className="mb-3 text-sm text-neutral-800">
+                Use this for bonuses, outstanding commission or any other earnings
+                that should be included in the final pay run.
+              </p>
+              <div className="space-y-3">
+                {form.other_earnings.map((line, index) => (
+                  <div
+                    key={`earn-${index}`}
+                    className="grid grid-cols-1 md:grid-cols-[2fr,1fr,auto] gap-3 items-center"
+                  >
                     <input
-                      type="date"
-                      name="leaving_date"
-                      value={form.leaving_date}
-                      onChange={(e) => updateField('leaving_date', e.target.value)}
-                      className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-neutral-900">
-                      Final pay date
-                    </label>
-                    <input
-                      type="date"
-                      name="final_pay_date"
-                      value={form.final_pay_date}
-                      onChange={(e) => updateField('final_pay_date', e.target.value)}
-                      className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm text-neutral-900">
-                      Reason for leaving
-                    </label>
-                    <select
-                      name="leaver_reason"
-                      value={form.leaver_reason}
-                      onChange={(e) => updateField('leaver_reason', e.target.value)}
-                      className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
-                    >
-                      <option value="">Select…</option>
-                      <option value="resignation">Resignation</option>
-                      <option value="dismissal">Dismissal</option>
-                      <option value="redundancy">Redundancy</option>
-                      <option value="end_of_contract">End of contract</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <label className="mt-2 flex items-center gap-2 md:col-span-2">
-                    <input
-                      type="checkbox"
-                      checked={form.pay_after_leaving}
+                      className="rounded-md border border-neutral-400 bg-white p-2"
+                      placeholder="Description"
+                      value={line.description}
                       onChange={(e) =>
-                        updateField('pay_after_leaving', e.target.checked)
+                        updateOtherLine(
+                          'other_earnings',
+                          index,
+                          'description',
+                          e.target.value
+                        )
                       }
                     />
-                    <span className="text-sm text-neutral-900">
-                      There may be payments after leaving
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Section: Holiday on termination */}
-              <div className="mb-6 border-b border-neutral-400 pb-4">
-                <h2 className="mb-3 text-lg font-semibold text-neutral-900">
-                  Holiday on termination
-                </h2>
-                <p className="mb-3 text-sm text-neutral-800">
-                  Enter the unused holiday days and payout amount for this employee. In
-                  a later version, this can be driven from your holiday entitlement
-                  and absence records.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm text-neutral-900">
-                      Unused holiday days to pay
-                    </label>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
-                      name="holiday_days"
-                      value={form.holiday_days}
-                      onChange={(e) => updateField('holiday_days', e.target.value)}
-                      className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
+                      className="rounded-md border border-neutral-400 bg-white p-2"
+                      placeholder="Amount"
+                      value={line.amount}
+                      onChange={(e) =>
+                        updateOtherLine(
+                          'other_earnings',
+                          index,
+                          'amount',
+                          e.target.value
+                        )
+                      }
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-neutral-900">
-                      Holiday payout amount
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      name="holiday_amount"
-                      value={form.holiday_amount}
-                      onChange={(e) => updateField('holiday_amount', e.target.value)}
-                      className="mt-1 w-full rounded-md border border-neutral-400 bg-white p-2"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section: Other final earnings */}
-              <div className="mb-6 border-b border-neutral-400 pb-4">
-                <h2 className="mb-3 text-lg font-semibold text-neutral-900">
-                  Other final earnings
-                </h2>
-                <p className="mb-3 text-sm text-neutral-800">
-                  Use this for bonuses, outstanding commission or any other earnings
-                  that should be included in the final pay run.
-                </p>
-                <div className="space-y-3">
-                  {form.other_earnings.map((line, index) => (
-                    <div
-                      key={`earn-${index}`}
-                      className="grid grid-cols-1 md:grid-cols-[2fr,1fr,auto] gap-3 items-center"
+                    <button
+                      type="button"
+                      onClick={() => removeOtherLine('other_earnings', index)}
+                      className="text-sm text-red-700"
                     >
-                      <input
-                        className="rounded-md border border-neutral-400 bg-white p-2"
-                        placeholder="Description"
-                        value={line.description}
-                        onChange={(e) =>
-                          updateOtherLine(
-                            'other_earnings',
-                            index,
-                            'description',
-                            e.target.value
-                          )
-                        }
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="rounded-md border border-neutral-400 bg-white p-2"
-                        placeholder="Amount"
-                        value={line.amount}
-                        onChange={(e) =>
-                          updateOtherLine(
-                            'other_earnings',
-                            index,
-                            'amount',
-                            e.target.value
-                          )
-                        }
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeOtherLine('other_earnings', index)}
-                        className="text-sm text-red-700"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => addOtherLine('other_earnings')}
-                    className="text-sm font-medium text-blue-800"
-                  >
-                    + Add another earning line
-                  </button>
-                </div>
-              </div>
-
-              {/* Section: Other final deductions */}
-              <div className="mb-6">
-                <h2 className="mb-3 text-lg font-semibold text-neutral-900">
-                  Other final deductions
-                </h2>
-                <p className="mb-3 text-sm text-neutral-800">
-                  Use this for recovery of overpayments, over-taken holiday or any
-                  final deductions that should be applied in the final pay run.
-                </p>
-                <div className="space-y-3">
-                  {form.other_deductions.map((line, index) => (
-                    <div
-                      key={`ded-${index}`}
-                      className="grid grid-cols-1 md:grid-cols-[2fr,1fr,auto] gap-3 items-center"
-                    >
-                      <input
-                        className="rounded-md border border-neutral-400 bg-white p-2"
-                        placeholder="Description"
-                        value={line.description}
-                        onChange={(e) =>
-                          updateOtherLine(
-                            'other_deductions',
-                            index,
-                            'description',
-                            e.target.value
-                          )
-                        }
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="rounded-md border border-neutral-400 bg-white p-2"
-                        placeholder="Amount"
-                        value={line.amount}
-                        onChange={(e) =>
-                          updateOtherLine(
-                            'other_deductions',
-                            index,
-                            'amount',
-                            e.target.value
-                          )
-                        }
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeOtherLine('other_deductions', index)}
-                        className="text-sm text-red-700"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => addOtherLine('other_deductions')}
-                    className="text-sm font-medium text-blue-800"
-                  >
-                    + Add another deduction line
-                  </button>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="mt-6 flex justify-end gap-3">
-                <Link
-                  href="/dashboard/employees"
-                  className="rounded-md bg-neutral-400 px-4 py-2 text-white"
-                >
-                  Cancel
-                </Link>
+                      Remove
+                    </button>
+                  </div>
+                ))}
                 <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-md bg-blue-700 px-4 py-2 text-white disabled:opacity-50"
+                  type="button"
+                  onClick={() => addOtherLine('other_earnings')}
+                  className="text-sm font-medium text-blue-800"
                 >
-                  {saving ? 'Saving…' : 'Save leaver details'}
+                  + Add another earning line
                 </button>
               </div>
-            </form>
-          )}
-        </div>
+            </div>
+
+            {/* Section: Other final deductions */}
+            <div className="mb-6">
+              <h2 className="mb-3 text-lg font-semibold text-neutral-900">
+                Other final deductions
+              </h2>
+              <p className="mb-3 text-sm text-neutral-800">
+                Use this for recovery of overpayments, over-taken holiday or any
+                final deductions that should be applied in the final pay run.
+              </p>
+              <div className="space-y-3">
+                {form.other_deductions.map((line, index) => (
+                  <div
+                    key={`ded-${index}`}
+                    className="grid grid-cols-1 md:grid-cols-[2fr,1fr,auto] gap-3 items-center"
+                  >
+                    <input
+                      className="rounded-md border border-neutral-400 bg-white p-2"
+                      placeholder="Description"
+                      value={line.description}
+                      onChange={(e) =>
+                        updateOtherLine(
+                          'other_deductions',
+                          index,
+                          'description',
+                          e.target.value
+                        )
+                      }
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="rounded-md border border-neutral-400 bg-white p-2"
+                      placeholder="Amount"
+                      value={line.amount}
+                      onChange={(e) =>
+                        updateOtherLine(
+                          'other_deductions',
+                          index,
+                          'amount',
+                          e.target.value
+                        )
+                      }
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeOtherLine('other_deductions', index)}
+                      className="text-sm text-red-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => addOtherLine('other_deductions')}
+                  className="text-sm font-medium text-blue-800"
+                >
+                  + Add another deduction line
+                </button>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="mt-6 flex justify-end gap-3">
+              <Link
+                href={`/dashboard/employees/${id}/edit`}
+                className="rounded-md bg-neutral-400 px-4 py-2 text-white"
+              >
+                Cancel
+              </Link>
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-md bg-blue-700 px-4 py-2 text-white disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save and continue'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
-    </div>
+    </PageTemplate>
   );
 }
