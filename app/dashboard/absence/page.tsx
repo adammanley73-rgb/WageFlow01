@@ -196,7 +196,7 @@ const { data: empData, error: empErr } = await supabase
     }
   }
 } catch {
-  // If employee lookup fails, we fall back to showing employee_id.
+  // fall back to showing employee_id
 }
 
 
@@ -286,9 +286,11 @@ Company
           {absences.length === 0 ? (
             <tr className="border-b-2 border-neutral-300">
               <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
-                <div className="text-neutral-800">No absences found for this company.</div>
+                <div className="text-neutral-800">
+                  No absences found for this company.
+                </div>
                 <div className="text-neutral-700 text-xs">
-                  If you know records exist, the most common cause is they were saved under a different company_id.
+                  If you know records exist, they were likely saved under a different company_id.
                 </div>
               </td>
               <td className="px-4 py-6 text-right bg-white" />
@@ -296,7 +298,9 @@ Company
           ) : (
             absences.map((a) => (
               <tr key={a.id} className="border-b-2 border-neutral-300">
-                <td className="px-4 py-3 sticky left-0 bg-white">{a.employee}</td>
+                <td className="px-4 py-3 sticky left-0 bg-white">
+                  {a.employee}
+                </td>
                 <td className="px-4 py-3">{a.startDate}</td>
                 <td className="px-4 py-3">{a.endDate}</td>
                 <td className="px-4 py-3">{a.type}</td>
