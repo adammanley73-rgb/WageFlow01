@@ -7,6 +7,8 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageTemplate from "@/components/layout/PageTemplate";
 
+const CARD = "rounded-2xl bg-white/90 ring-1 ring-neutral-300 shadow-sm p-6";
+
 type EmployeeOption = {
   id: string;
   companyId: string;
@@ -60,7 +62,6 @@ export default function NewSicknessAbsencePage() {
   // Overlap warning (preview only)
   const [overlapPreview, setOverlapPreview] = useState<string | null>(null);
 
-  // Employee search
   async function fetchEmployees(query: string) {
     if (!query.trim()) {
       setEmployeeOptions([]);
@@ -73,20 +74,14 @@ export default function NewSicknessAbsencePage() {
 
       const res = await fetch(
         `/api/employees/search?q=${encodeURIComponent(query)}`,
-        {
-          method: "GET",
-        }
+        { method: "GET" }
       );
 
-      if (!res.ok) {
-        throw new Error("Search request failed");
-      }
+      if (!res.ok) throw new Error("Search request failed");
 
       const data = await res.json();
 
-      if (data?.ok && Array.isArray(data.employees)) {
-        setEmployeeOptions(data.employees);
-      } else if (Array.isArray(data.employees)) {
+      if (Array.isArray(data?.employees)) {
         setEmployeeOptions(data.employees);
       } else {
         setEmployeeOptions([]);
@@ -107,7 +102,6 @@ export default function NewSicknessAbsencePage() {
     setOverlapPreview(null);
   }
 
-  // Debounced search
   useEffect(() => {
     if (!employeeQuery.trim()) {
       setEmployeeOptions([]);
@@ -132,7 +126,7 @@ export default function NewSicknessAbsencePage() {
     setOverlapPreview(null);
   }
 
-  // Overlap preview ├óÔé¼ÔÇ£ runs when employee + firstDay are set
+  // Overlap preview runs when employee + firstDay are set
   useEffect(() => {
     async function runOverlapCheck() {
       if (!selectedEmployee || !firstDay) {
@@ -159,12 +153,11 @@ export default function NewSicknessAbsencePage() {
           const firstConflict = data.conflicts[0];
           if (firstConflict) {
             setOverlapPreview(
-              `This absence would overlap another absence from ${firstConflict.startDate} to ${firstConflict.endDate}.`
+              `This sickness would overlap another absence from ${firstConflict.startDate} to ${firstConflict.endDate}.`
             );
           } else {
             setOverlapPreview(
-              data.message ||
-                "This absence would overlap another existing absence."
+              data.message || "This sickness would overlap another absence."
             );
           }
         } else {
@@ -179,7 +172,6 @@ export default function NewSicknessAbsencePage() {
     runOverlapCheck();
   }, [selectedEmployee, firstDay]);
 
-  // Local validation
   function validateForm(): boolean {
     if (!selectedEmployee) {
       setLocalValidationError("Select an employee for this sickness record.");
@@ -214,10 +206,8 @@ export default function NewSicknessAbsencePage() {
     return true;
   }
 
-  // Submit
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-
     if (saving) return;
 
     setSaveError(null);
@@ -243,9 +233,7 @@ export default function NewSicknessAbsencePage() {
 
       const res = await fetch("/api/absence/sickness", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
@@ -268,209 +256,203 @@ export default function NewSicknessAbsencePage() {
       router.push("/dashboard/absence");
     } catch (err) {
       console.error("Error creating sickness absence:", err);
-      setSaveError(
-        "Unexpected error while saving this sickness absence. Please try again."
-      );
+      setSaveError("Unexpected error while saving this sickness absence.");
       setSaving(false);
     }
   }
 
   function handleCancel() {
-    router.push("/dashboard/absence");
+    router.push("/dashboard/absence/new");
   }
 
-  // Render
   return (
-    <PageTemplate title="Absence" currentSection="absence">
-      <div className="flex flex-col gap-4 flex-1 min-h-0">
-        {/* Header card aligned with Annual leave wizard */}
-        <div className="rounded-2xl bg-white/80 px-4 py-4">
-          <h1 className="text-xl sm:text-2xl font-bold text-[#0f3c85]">
-            Sickness absence wizard
-          </h1>
-          <p className="mt-1 text-sm text-neutral-800">
+    <PageTemplate
+      title="Sickness absence"
+      currentSection="absence"
+      headerMode="wizard"
+      backHref="/dashboard/absence/new"
+      backLabel="Back"
+    >
+      <div className="flex flex-col gap-4">
+        <div className={CARD}>
+          <div className="text-sm text-neutral-700">
             Record a sickness absence. These dates will drive SSP and sickness
             pay calculations for the employee.
-          </p>
-        </div>
-
-        {/* Overlap preview warning (non-blocking) */}
-        {overlapPreview && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            {overlapPreview}
           </div>
-        )}
 
-        {/* Errors / warnings */}
-        {localValidationError && (
-          <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
-            {localValidationError}
-          </div>
-        )}
+          {overlapPreview && (
+            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              {overlapPreview}
+            </div>
+          )}
 
-        {saveError && (
-          <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
-            {saveError}
-          </div>
-        )}
+          {localValidationError && (
+            <div className="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {localValidationError}
+            </div>
+          )}
 
-        {searchError && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            {searchError}
-          </div>
-        )}
+          {saveError && (
+            <div className="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {saveError}
+            </div>
+          )}
 
-        {/* Form card matching Annual leave wizard styling */}
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 px-4 py-6 space-y-6"
-        >
-          {/* Employee search */}
-          <section className="space-y-2">
-            <h2 className="text-base font-semibold text-neutral-900">
-              Employee details
-            </h2>
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-neutral-700">
-                Employee
-              </label>
-              <div className="relative">
-                <input
-                  className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
-                  type="text"
-                  placeholder="Start typing a name or employee number"
-                  value={employeeQuery}
-                  onChange={handleEmployeeInputChange}
-                  onFocus={() => {
-                    setShowEmployeeDropdown(true);
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => setShowEmployeeDropdown(false), 150);
-                  }}
-                />
-                {showEmployeeDropdown && employeeOptions.length > 0 && (
-                  <div className="absolute z-20 mt-1 w-full rounded-xl border border-neutral-200 bg-white shadow-lg max-h-52 overflow-auto">
-                    {employeeOptions.map((emp) => (
-                      <button
-                        key={emp.id}
-                        type="button"
-                        className="flex w-full items-center justify-between px-4 py-2 text-sm text-left hover:bg-neutral-100"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          handleEmployeeSelect(emp);
-                        }}
-                      >
-                        <span className="font-medium">{emp.name}</span>
-                        <span className="ml-2 text-xs text-neutral-500">
-                          {emp.employeeNumber}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+          {searchError && (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {searchError}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-6">
+            <section className="flex flex-col gap-3">
+              <h2 className="text-base font-semibold text-neutral-900">
+                Employee details
+              </h2>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
+                  Employee
+                </label>
+
+                <div className="relative">
+                  <input
+                    className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
+                    type="text"
+                    placeholder="Start typing a name or employee number"
+                    value={employeeQuery}
+                    onChange={handleEmployeeInputChange}
+                    onFocus={() => setShowEmployeeDropdown(true)}
+                    onBlur={() =>
+                      setTimeout(() => setShowEmployeeDropdown(false), 150)
+                    }
+                  />
+
+                  {showEmployeeDropdown && employeeOptions.length > 0 && (
+                    <div className="absolute z-20 mt-1 w-full max-h-52 overflow-auto rounded-xl border border-neutral-200 bg-white shadow-lg">
+                      {employeeOptions.map((emp) => (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          className="flex w-full items-center justify-between px-4 py-2 text-sm text-left hover:bg-neutral-100"
+                          onMouseDown={(ev) => {
+                            ev.preventDefault();
+                            handleEmployeeSelect(emp);
+                          }}
+                        >
+                          <span className="font-medium">{emp.name}</span>
+                          <span className="ml-2 text-xs text-neutral-500">
+                            {emp.employeeNumber}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {selectedEmployee && (
+                  <p className="mt-2 text-xs text-neutral-600">
+                    Selected: {selectedEmployee.name} (
+                    {selectedEmployee.employeeNumber})
+                  </p>
+                )}
+
+                {searchLoading && (
+                  <p className="mt-2 text-xs text-neutral-500">Searching…</p>
                 )}
               </div>
-              {selectedEmployee && (
-                <p className="text-xs text-neutral-600">
-                  Selected: {selectedEmployee.name} (
-                  {selectedEmployee.employeeNumber})
+            </section>
+
+            <section className="flex flex-col gap-3">
+              <h2 className="text-base font-semibold text-neutral-900">
+                Sickness dates
+              </h2>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-neutral-700">
+                    First day of sickness
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
+                    value={firstDay}
+                    onChange={(e) => setFirstDay(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-neutral-700">
+                    Last day (expected)
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
+                    value={lastDayExpected}
+                    onChange={(e) => setLastDayExpected(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
+                  Last day (actual)
+                </label>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
+                  value={lastDayActual}
+                  onChange={(e) => setLastDayActual(e.target.value)}
+                />
+                <p className="mt-1 text-xs text-neutral-600">
+                  Leave this blank until the absence has ended. You can update
+                  it later from the Edit absence page.
                 </p>
-              )}
-              {searchLoading && (
-                <p className="text-xs text-neutral-500">Searching├óÔé¼┬ª</p>
-              )}
-            </div>
-          </section>
-
-          {/* Dates row */}
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold text-neutral-900">
-              Sickness dates
-            </h2>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-700">
-                  First day of sickness
-                </label>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
-                  value={firstDay}
-                  onChange={(e) => {
-                    setFirstDay(e.target.value);
-                  }}
-                />
               </div>
+            </section>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-700">
-                  Last day (expected)
-                </label>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
-                  value={lastDayExpected}
-                  onChange={(e) => setLastDayExpected(e.target.value)}
-                />
-              </div>
-            </div>
+            <section className="flex flex-col gap-2">
+              <h2 className="text-base font-semibold text-neutral-900">
+                Notes and context
+              </h2>
 
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-neutral-700">
-                Last day (actual)
+              <label className="text-sm font-medium text-neutral-700">
+                Reference notes
               </label>
-              <input
-                type="date"
-                className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
-                value={lastDayActual}
-                onChange={(e) => setLastDayActual(e.target.value)}
+              <textarea
+                className="w-full min-h-[96px] rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
+                value={referenceNotes}
+                onChange={(e) => setReferenceNotes(e.target.value)}
+                placeholder="Optional notes for this sickness record."
               />
-              <p className="text-xs text-neutral-600">
-                Leave this blank until the absence has ended. You can update it
-                later from the Edit absence page.
+            </section>
+
+            <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <p className="text-[11px] text-neutral-600">
+                Sickness dates recorded here will drive SSP and sickness pay
+                calculations in the payroll engine.
               </p>
-            </div>
-          </section>
 
-          {/* Reference notes */}
-          <section className="space-y-2">
-            <h2 className="text-base font-semibold text-neutral-900">
-              Notes and context
-            </h2>
-            <label className="block text-sm font-medium text-neutral-700">
-              Reference notes
-            </label>
-            <textarea
-              className="w-full min-h-[96px] rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
-              value={referenceNotes}
-              onChange={(e) => setReferenceNotes(e.target.value)}
-              placeholder="Optional notes for this sickness record."
-            />
-          </section>
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
+                >
+                  Cancel
+                </button>
 
-          {/* Footer actions aligned with Annual leave wizard */}
-          <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between mt-2">
-            <p className="text-[11px] text-neutral-600">
-              This wizard is step one. Sickness dates recorded here will drive
-              SSP and sickness pay calculations in the payroll engine.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-              >
-                {saving ? "Saving├óÔé¼┬ª" : "Save sickness absence"}
-              </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {saving ? "Saving…" : "Save sickness absence"}
+                </button>
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </PageTemplate>
   );
