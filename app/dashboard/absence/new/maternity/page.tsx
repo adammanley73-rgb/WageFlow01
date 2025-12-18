@@ -9,12 +9,9 @@ import PageTemplate from "@/components/layout/PageTemplate";
 // ID rules for this wizard:
 // - Use employees.id (employee_row_id) in all API calls.
 // - Use companies.id as company_id on the server side.
-// - Any UI ├óÔé¼┼ôemployee id├óÔé¼┬Ø shown on cards is just display, not a foreign key.
+// - Any UI "employee id" shown on cards is display, not a foreign key.
 
-const CARD =
-  "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
-const ACTION_BTN =
-  "rounded-full bg-blue-700 px-5 py-2 text-sm font-medium text-white";
+const CARD = "rounded-2xl bg-white/90 ring-1 ring-neutral-300 shadow-sm p-6";
 
 type EmployeeResult = {
   id: string;
@@ -58,362 +55,306 @@ export default function MaternityWizardPage() {
     }
 
     let cancelled = false;
-    setIsSearching(true);
 
-    const handle = setTimeout(async () => {
+    async function run() {
       try {
-        const res = await fetch(
-          `/api/employees/search?q=${encodeURIComponent(q)}`
-        );
+        setIsSearching(true);
 
+        const res = await fetch(`/api/employees/search?q=${encodeURIComponent(q)}`);
         if (!res.ok) {
-          throw new Error(`Search failed with status ${res.status}`);
+          setSearchResults([]);
+          setSearchError("Search failed. Try again.");
+          return;
         }
 
-        const json = await res.json();
-
-        if (cancelled) return;
-
-        const rawEmployees = Array.isArray(json?.employees)
-          ? json.employees
-          : Array.isArray(json?.data)
-          ? json.data
+        const data = await res.json();
+        const employees: EmployeeResult[] = Array.isArray(data?.employees)
+          ? data.employees
           : [];
 
-        const list: EmployeeResult[] = rawEmployees
-          .map((row: any) => {
-            const id =
-              row?.id ??
-              row?.employee_id ??
-              row?.employeeId ??
-              row?.employee_row_id ??
-              null;
-
-            const employeeNumber =
-              row?.employeeNumber ?? row?.employee_number ?? null;
-
-            const companyId = row?.companyId ?? row?.company_id ?? null;
-
-            const name =
-              row?.name ??
-              row?.full_name ??
-              [row?.first_name, row?.last_name].filter(Boolean).join(" ");
-
-            if (!id || !name) return null;
-
-            return {
-              id: String(id),
-              companyId: companyId ? String(companyId) : undefined,
-              name: String(name),
-              employeeNumber: employeeNumber
-                ? String(employeeNumber)
-                : undefined,
-            };
-          })
-          .filter(Boolean);
-
-        setSearchResults(list);
-      } catch (err: any) {
-        if (cancelled) return;
-        console.error("employee search error", err);
-        setSearchError("Unable to search employees right now.");
-        setSearchResults([]);
-      } finally {
+        if (!cancelled) setSearchResults(employees);
+      } catch (err) {
+        console.error("Maternity wizard employee search error", err);
         if (!cancelled) {
-          setIsSearching(false);
+          setSearchResults([]);
+          setSearchError("Search failed. Check your connection.");
         }
+      } finally {
+        if (!cancelled) setIsSearching(false);
       }
-    }, 350);
+    }
 
+    const t = setTimeout(run, 250);
     return () => {
       cancelled = true;
-      clearTimeout(handle);
+      clearTimeout(t);
     };
   }, [trimmedSearch]);
 
+  function selectEmployee(emp: EmployeeResult) {
+    setSelectedEmployee(emp);
+    setSearchTerm(
+      emp.employeeNumber ? `${emp.name} (${emp.employeeNumber})` : emp.name
+    );
+    setSearchResults([]);
+    setSearchError(null);
+  }
+
+  function validate(): string | null {
+    if (!selectedEmployee) return "Select an employee.";
+    if (!startDate) return "Start date is required.";
+    if (!endDate) return "End date is required.";
+    if (startDate && endDate && startDate > endDate)
+      return "End date cannot be before start date.";
+    if (!ewcDate) return "Expected week of childbirth (EWC) date is required.";
+    return null;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    if (submitting) return;
+
     setSubmitError(null);
     setSubmitSuccess(false);
 
+    const err = validate();
+    if (err) {
+      setSubmitError(err);
+      return;
+    }
+
     if (!selectedEmployee) {
-      setSubmitError("Please choose an employee.");
+      setSubmitError("Select an employee.");
       return;
     }
-
-    if (!startDate || !endDate) {
-      setSubmitError("Start date and end date are required.");
-      return;
-    }
-
-    if (endDate < startDate) {
-      setSubmitError("End date must be on or after start date.");
-      return;
-    }
-
-    setSubmitting(true);
 
     try {
+      setSubmitting(true);
+
+      const payload = {
+        employee_id: selectedEmployee.id,
+        start_date: startDate,
+        end_date: endDate,
+        ewc_date: ewcDate,
+        notes: notes || null,
+      };
+
       const res = await fetch("/api/absence/maternity", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          employeeId: selectedEmployee.id,
-          startDate,
-          endDate,
-          ewcDate: ewcDate || null,
-          notes: notes || null,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
 
-      const json = await res.json().catch(() => null);
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
 
-      if (!res.ok || !json?.ok) {
-        console.error("maternity wizard submit error", json);
-        setSubmitError(
-          json?.message ||
-            json?.error ||
-            "Failed to save maternity absence. Please try again."
-        );
-        setSubmitSuccess(false);
+      if (!res.ok || !data || data.ok === false) {
+        const msg =
+          data?.message ||
+          "Could not create maternity absence. Please check the details and try again.";
+        setSubmitError(msg);
+        setSubmitting(false);
         return;
       }
 
       setSubmitSuccess(true);
-
-      // Keep selected employee so user can see who was processed
-      setStartDate("");
-      setEndDate("");
-      setEwcDate("");
-      setNotes("");
-    } catch (err: any) {
-      console.error("maternity wizard submit unexpected error", err);
-      setSubmitError(
-        err?.message || "Unexpected error while saving maternity absence."
-      );
-      setSubmitSuccess(false);
-    } finally {
+      router.push("/dashboard/absence");
+    } catch (error) {
+      console.error("Maternity wizard submit error", error);
+      setSubmitError("Unexpected error while saving this maternity absence.");
       setSubmitting(false);
     }
   }
 
-  function renderSelectedEmployeeSummary() {
-    if (!selectedEmployee) return null;
-
-    const labelParts = [
-      selectedEmployee.name || "",
-      selectedEmployee.employeeNumber
-        ? `(${selectedEmployee.employeeNumber})`
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    return (
-      <div className="mt-3 rounded-lg bg-white px-3 py-2 text-sm">
-        <div className="font-medium">{labelParts}</div>
-        <div className="text-xs text-neutral-600">
-          Internal employee ID: {selectedEmployee.id}
-        </div>
-        <div className="mt-2">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedEmployee(null);
-              setSearchResults([]);
-              setSearchError(null);
-              // leave searchTerm as-is so user can continue searching immediately
-            }}
-            className="rounded-full border border-neutral-300 bg-white px-3 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
-          >
-            Change employee
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  function renderSearchResults() {
-    if (trimmedSearch.length < 2) return null;
-
-    if (isSearching) {
-      return <div className="mt-2 text-xs text-neutral-700">Searching├óÔé¼┬ª</div>;
-    }
-
-    if (searchError) {
-      return <div className="mt-2 text-xs text-red-700">{searchError}</div>;
-    }
-
-    if (!searchResults.length) {
-      // Key fix: don't mislead the user if they've already selected someone
-      if (selectedEmployee) return null;
-
-      return (
-        <div className="mt-2 text-xs text-neutral-600">
-          No employees found matching that search.
-        </div>
-      );
-    }
-
-    return (
-      <div className="mt-2 max-h-48 overflow-y-auto rounded-lg bg-white text-sm ring-1 ring-neutral-200">
-        {searchResults.map((emp) => {
-          const labelParts = [
-            emp.name || "",
-            emp.employeeNumber ? `(${emp.employeeNumber})` : "",
-          ]
-            .filter(Boolean)
-            .join(" ");
-
-          return (
-            <button
-              key={emp.id}
-              type="button"
-              onClick={() => {
-                setSelectedEmployee(emp);
-                setSearchResults([]);
-                setSearchError(null);
-                // Make the input reflect the selection so the UI feels coherent
-                setSearchTerm(emp.name || labelParts);
-              }}
-              className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-neutral-100"
-              title="Click to select this employee"
-            >
-              <span className="truncate">{labelParts}</span>
-            </button>
-          );
-        })}
-      </div>
-    );
+  function handleCancel() {
+    router.push("/dashboard/absence/new");
   }
 
   return (
-    <PageTemplate title="Absence" currentSection="absence">
-      <div className="space-y-4">
-        {/* Lightweight header card to match your wizard pattern */}
-        <div className="rounded-2xl bg-white/80 px-4 py-4">
-          <h1 className="text-xl sm:text-2xl font-bold text-[#0f3c85]">
-            Maternity / SMP wizard
-          </h1>
-          <p className="mt-1 text-sm text-neutral-800">
-            Create a maternity absence that will be used to drive SMP pay in
-            payroll runs.
-          </p>
+    <PageTemplate
+      title="Maternity absence"
+      currentSection="absence"
+      headerMode="wizard"
+      backHref="/dashboard/absence/new"
+      backLabel="Back"
+    >
+      <div className={CARD}>
+        <div className="text-sm text-neutral-700">
+          Record maternity leave. This wizard saves a maternity absence record and
+          stores the SMP schedule details on the record.
         </div>
 
+        {submitSuccess && (
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            Saved. Redirecting to Absence.
+          </div>
+        )}
+
         {submitError && (
-          <div className="rounded-lg bg-red-100 px-4 py-3 text-sm text-red-800">
+          <div className="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
             {submitError}
           </div>
         )}
 
-        {submitSuccess && (
-          <div className="rounded-lg bg-green-100 px-4 py-3 text-sm text-green-800">
-            Maternity absence saved successfully. SMP will be created for this
-            employee when you run the absence sync for the relevant payroll run.
+        {searchError && (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {searchError}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* Employee card */}
-            <div className={CARD}>
-              <h2 className="mb-2 text-lg font-semibold">1. Choose employee</h2>
-              <label className="mb-1 block text-sm font-medium">Employee</label>
-              <input
-                type="text"
-                className="w-full rounded-md border border-neutral-400 px-3 py-2 text-sm"
-                placeholder="Type at least 2 characters"
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  // If user starts typing again, we don't auto-clear selection,
-                  // but the "Change employee" button is there for clarity.
-                }}
-              />
-              <p className="mt-1 text-xs text-neutral-700">
-                Min 2 characters. Results will appear below. Click a result to
-                select.
-              </p>
+        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-6">
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-semibold text-neutral-900">
+              Employee details
+            </h2>
 
-              {renderSearchResults()}
-              {renderSelectedEmployeeSummary()}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-neutral-700">
+                Employee
+              </label>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setSelectedEmployee(null);
+                  }}
+                  className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
+                  placeholder="Start typing the employee name"
+                />
+
+                {isSearching && (
+                  <p className="mt-2 text-xs text-neutral-500">Searching…</p>
+                )}
+
+                {searchResults.length > 0 && (
+                  <div className="absolute z-20 mt-1 w-full max-h-52 overflow-auto rounded-xl border border-neutral-200 bg-white shadow-lg">
+                    {searchResults.map((emp) => (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onMouseDown={(ev) => {
+                          ev.preventDefault();
+                          selectEmployee(emp);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-neutral-100"
+                      >
+                        <div className="font-medium">{emp.name}</div>
+                        <div className="text-[11px] text-neutral-600">
+                          {emp.employeeNumber
+                            ? `Employee no: ${emp.employeeNumber}`
+                            : "No employee number set"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {selectedEmployee && (
+                <p className="mt-2 text-xs text-neutral-600">
+                  Selected: {selectedEmployee.name}
+                  {selectedEmployee.employeeNumber
+                    ? ` (${selectedEmployee.employeeNumber})`
+                    : ""}
+                </p>
+              )}
             </div>
+          </section>
 
-            {/* Maternity dates card */}
-            <div className={CARD}>
-              <h2 className="mb-2 text-lg font-semibold">2. Maternity dates</h2>
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-semibold text-neutral-900">
+              Leave dates
+            </h2>
 
-              <div className="mb-3">
-                <label className="mb-1 block text-sm font-medium">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
                   Start date
                 </label>
                 <input
                   type="date"
-                  className="w-full rounded-md border border-neutral-400 px-3 py-2 text-sm"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
                 />
               </div>
 
-              <div className="mb-3">
-                <label className="mb-1 block text-sm font-medium">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
                   End date
                 </label>
                 <input
                   type="date"
-                  className="w-full rounded-md border border-neutral-400 px-3 py-2 text-sm"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
                 />
               </div>
 
-              <div className="mb-3">
-                <label className="mb-1 block text-sm font-medium">
-                  Expected week of childbirth (optional)
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
+                  EWC date
                 </label>
                 <input
                   type="date"
-                  className="w-full rounded-md border border-neutral-400 px-3 py-2 text-sm"
                   value={ewcDate}
                   onChange={(e) => setEwcDate(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
                 />
-                <p className="mt-1 text-xs text-neutral-700">
-                  You can leave this blank for now. It will still create the
-                  maternity absence.
+                <p className="mt-1 text-[11px] text-neutral-600">
+                  Expected week of childbirth. Used for eligibility and SMP schedule.
                 </p>
               </div>
+            </div>
+          </section>
 
-              <div className="mb-4">
-                <label className="mb-1 block text-sm font-medium">
-                  Notes (optional)
-                </label>
-                <textarea
-                  className="h-24 w-full rounded-md border border-neutral-400 px-3 py-2 text-sm"
-                  placeholder="Any extra info you want to store for this maternity absence."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                />
-              </div>
+          <section className="flex flex-col gap-2">
+            <h2 className="text-base font-semibold text-neutral-900">
+              Notes and context
+            </h2>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => router.push("/dashboard/absence")}
-                  className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className={ACTION_BTN}
-                  disabled={submitting}
-                >
-                  {submitting ? "Saving..." : "Save maternity absence"}
-                </button>
-              </div>
+            <label className="text-sm font-medium text-neutral-700">
+              Notes (optional)
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              className="w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600"
+              placeholder="Any notes to help reconcile with payroll and HR records."
+            />
+          </section>
+
+          <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-[11px] text-neutral-600">
+              This wizard records maternity leave dates. SMP amounts and schedule are
+              computed server-side and saved on the absence record.
+            </p>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {submitting ? "Saving…" : "Save maternity absence"}
+              </button>
             </div>
           </div>
         </form>
