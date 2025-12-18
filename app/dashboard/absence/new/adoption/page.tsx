@@ -4,10 +4,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Inter } from "next/font/google";
 import PageTemplate from "@/components/layout/PageTemplate";
-
-const inter = Inter({ subsets: ["latin"] });
 
 type FormState = {
   employeeId: string;
@@ -28,6 +25,8 @@ type SearchEmployee = {
   name: string;
   employeeNumber: string | null;
 };
+
+const CARD = "rounded-2xl bg-white/90 ring-1 ring-neutral-300 shadow-sm p-6";
 
 const initialState: FormState = {
   employeeId: "",
@@ -202,29 +201,34 @@ export default function AdoptionLeaveWizardPage() {
   }
 
   return (
-    <PageTemplate title="Absence" currentSection="absence">
+    <PageTemplate
+      title="Absence"
+      currentSection="absence"
+      headerMode="wizard"
+      backHref="/dashboard/absence/new"
+      backLabel="Back"
+    >
       <div className="flex flex-col gap-4 flex-1 min-h-0">
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           <h1 className="text-xl sm:text-2xl font-bold text-[#0f3c85]">
             Adoption leave wizard
           </h1>
           <p className="mt-1 text-sm text-neutral-800">
-            Record adoption leave dates for an employee. This creates a draft
-            absence record that will later power statutory adoption pay and
-            reporting when that phase is switched on.
+            Record adoption leave dates for an employee. This creates an absence
+            record that can later drive SAP calculations and reporting.
           </p>
         </div>
 
-        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 px-4 py-6">
+        <div className={CARD}>
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <section className="flex flex-col gap-4">
               <h2 className="text-base font-semibold text-neutral-900">
                 Employee details
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-neutral-700">
                     Employee name
                   </label>
 
@@ -235,7 +239,7 @@ export default function AdoptionLeaveWizardPage() {
                       onChange={(e) =>
                         handleEmployeeSearchChange(e.target.value)
                       }
-                      className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                      className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
                       placeholder="Start typing the employee name"
                     />
 
@@ -246,25 +250,23 @@ export default function AdoptionLeaveWizardPage() {
                     )}
 
                     {searchError && (
-                      <p className="mt-1 text-xs text-red-600">
-                        {searchError}
-                      </p>
+                      <p className="mt-1 text-xs text-red-600">{searchError}</p>
                     )}
 
                     {searching && !searchError && (
                       <p className="mt-1 text-xs text-neutral-600">
-                        Searching├óÔé¼┬ª
+                        Searching…
                       </p>
                     )}
 
                     {searchResults.length > 0 && (
-                      <div className="absolute z-20 mt-1 w-full rounded-xl border border-neutral-300 bg-white shadow-lg max-h-48 overflow-y-auto">
+                      <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-neutral-300 bg-white shadow-lg">
                         {searchResults.map((emp) => (
                           <button
                             key={emp.id}
                             type="button"
                             onClick={() => handleSelectEmployee(emp)}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-100"
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-neutral-100"
                           >
                             <div className="font-medium">{emp.name}</div>
                             <div className="text-[11px] text-neutral-600">
@@ -280,7 +282,7 @@ export default function AdoptionLeaveWizardPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-neutral-700">
                     Employee number (optional)
                   </label>
                   <input
@@ -289,7 +291,7 @@ export default function AdoptionLeaveWizardPage() {
                     onChange={(e) =>
                       updateField("employeeNumber", e.target.value)
                     }
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
                     placeholder="Payroll number if known"
                   />
                 </div>
@@ -301,9 +303,9 @@ export default function AdoptionLeaveWizardPage() {
                 Adoption dates
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-neutral-700">
                     Placement date
                   </label>
                   <input
@@ -312,7 +314,7 @@ export default function AdoptionLeaveWizardPage() {
                     onChange={(e) =>
                       updateField("placementDate", e.target.value)
                     }
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                   {errors.placementDate && (
                     <p className="mt-1 text-xs text-red-600">
@@ -322,14 +324,14 @@ export default function AdoptionLeaveWizardPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-neutral-700">
                     Leave start date
                   </label>
                   <input
                     type="date"
                     value={form.startDate}
                     onChange={(e) => updateField("startDate", e.target.value)}
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                   {errors.startDate && (
                     <p className="mt-1 text-xs text-red-600">
@@ -339,14 +341,14 @@ export default function AdoptionLeaveWizardPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 mb-1">
+                  <label className="mb-1 block text-sm font-medium text-neutral-700">
                     Expected end date
                   </label>
                   <input
                     type="date"
                     value={form.endDate}
                     onChange={(e) => updateField("endDate", e.target.value)}
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                   {errors.endDate && (
                     <p className="mt-1 text-xs text-red-600">
@@ -357,9 +359,8 @@ export default function AdoptionLeaveWizardPage() {
               </div>
 
               <p className="text-[11px] text-neutral-600">
-                This v1 wizard records the absence dates. Statutory Adoption Pay
-                calculations can be layered on once the core absence flows are
-                stable.
+                This v1 wizard records the absence dates. SAP calculations can
+                be layered on once the core absence flows are stable.
               </p>
             </section>
 
@@ -369,30 +370,30 @@ export default function AdoptionLeaveWizardPage() {
               </h2>
 
               <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-1">
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
                   Notes (optional)
                 </label>
                 <textarea
                   value={form.notes}
                   onChange={(e) => updateField("notes", e.target.value)}
                   rows={4}
-                  className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                  className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   placeholder="Any context that helps you reconcile this leave with policy, HR notes, or payroll."
                 />
               </div>
             </section>
 
-            <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between mt-2">
+            <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <p className="text-[11px] text-neutral-600">
-                This creates a draft adoption leave record in Absences. You├óÔé¼Ôäóll
+                This creates a draft adoption leave record in Absences. You will
                 add SAP schedule logic later without rebuilding the UI.
               </p>
 
-              <div className="flex gap-3 justify-end">
+              <div className="flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => router.push("/dashboard/absence")}
-                  className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
+                  className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
                 >
                   Cancel
                 </button>
@@ -401,7 +402,7 @@ export default function AdoptionLeaveWizardPage() {
                   disabled={submitting}
                   className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {submitting ? "Saving├óÔé¼┬ª" : "Save adoption leave"}
+                  {submitting ? "Saving…" : "Save adoption leave"}
                 </button>
               </div>
             </div>
