@@ -1,4 +1,4 @@
-import PageTemplate from "@/components/layout/PageTemplate";
+﻿import PageTemplate from "@/components/layout/PageTemplate";
 import ActionButton from "@/components/ui/ActionButton";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
@@ -78,9 +78,9 @@ const empNo =
 (typeof emp.payroll_number === "string" && emp.payroll_number.trim()) ||
 "";
 
-if (name && empNo) return `${name} (${empNo})`;
+if (name && empNo) return name + " (" + empNo + ")";
 if (name) return name;
-if (empNo) return `Employee ${empNo}`;
+if (empNo) return "Employee " + empNo;
 return fallbackId;
 }
 
@@ -88,61 +88,37 @@ export default async function AbsencePage() {
 const cookieStore = cookies();
 
 const activeCompanyId = cookieStore.get("active_company_id")?.value ?? "";
-const activeCompanyName =
-cookieStore.get("active_company_name")?.value ?? "No company selected";
 
 const supabase = getAdminClientOrNull();
 
 if (!activeCompanyId) {
 return (
 <PageTemplate title="Absence" currentSection="absence">
-<div className="mb-4 rounded-xl bg-white px-6 py-3 flex items-baseline gap-2">
-<span className="text-xs tracking-[0.25em] text-slate-500 uppercase">
-Company
-</span>
-<span className="text-base font-semibold text-[#0f3c85] leading-none">
-{activeCompanyName}
-</span>
+<div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
+<div className="text-sm font-semibold text-neutral-900">
+No active company selected
 </div>
-
-    <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
-      <div className="text-sm font-semibold text-neutral-900">
-        No active company selected
-      </div>
-      <div className="mt-1 text-sm text-neutral-700">
-        Select a company on the Dashboard, then come back here.
-      </div>
-    </div>
-  </PageTemplate>
+<div className="mt-1 text-sm text-neutral-700">
+Select a company on the Dashboard, then come back here.
+</div>
+</div>
+</PageTemplate>
 );
-
-
 }
 
 if (!supabase) {
 return (
 <PageTemplate title="Absence" currentSection="absence">
-<div className="mb-4 rounded-xl bg-white px-6 py-3 flex items-baseline gap-2">
-<span className="text-xs tracking-[0.25em] text-slate-500 uppercase">
-Company
-</span>
-<span className="text-base font-semibold text-[#0f3c85] leading-none">
-{activeCompanyName}
-</span>
+<div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
+<div className="text-sm font-semibold text-neutral-900">
+Server config missing
 </div>
-
-    <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
-      <div className="text-sm font-semibold text-neutral-900">
-        Server config missing
-      </div>
-      <div className="mt-1 text-sm text-neutral-700">
-        SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set on the server.
-      </div>
-    </div>
-  </PageTemplate>
+<div className="mt-1 text-sm text-neutral-700">
+SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set on the server.
+</div>
+</div>
+</PageTemplate>
 );
-
-
 }
 
 let absenceRows: AbsenceRow[] = [];
@@ -230,35 +206,27 @@ return {
 
 return (
 <PageTemplate title="Absence" currentSection="absence">
-<div className="mb-4 rounded-xl bg-white px-6 py-3 flex items-baseline gap-2">
-<span className="text-xs tracking-[0.25em] text-slate-500 uppercase">
-Company
-</span>
-<span className="text-base font-semibold text-[#0f3c85] leading-none">
-{activeCompanyName}
-</span>
+<div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+<div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50 flex items-start justify-between gap-4">
+<div>
+<div className="text-sm font-semibold text-neutral-900">
+Absence records
+</div>
+<div className="text-xs text-neutral-700">
+Absences are created via the Absence wizards. Dates show in UK
+format dd-mm-yyyy.
+</div>
+{loadError && (
+<div className="mt-1 text-xs text-red-700">
+Load error: {loadError}
+</div>
+)}
 </div>
 
-  <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
-    <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50 flex items-start justify-between gap-4">
-      <div>
-        <div className="text-sm font-semibold text-neutral-900">
-          Absence records
-        </div>
-        <div className="text-xs text-neutral-700">
-          Created via the Absence wizards. Dates show in UK format dd-mm-yyyy.
-        </div>
-        {loadError && (
-          <div className="mt-1 text-xs text-red-700">
-            Load error: {loadError}
-          </div>
-        )}
-      </div>
-
       <div className="shrink-0">
-        <ActionButton href="/dashboard/absence/new" variant="primary">
-          Record new absence
-        </ActionButton>
+        <div className="text-xs text-neutral-600">
+          Use New Absence wizard to add records.
+        </div>
       </div>
     </div>
 
@@ -285,12 +253,16 @@ Company
         <tbody>
           {absences.length === 0 ? (
             <tr className="border-b-2 border-neutral-300">
-              <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
+              <td
+                className="px-4 py-6 sticky left-0 bg-white"
+                colSpan={4}
+              >
                 <div className="text-neutral-800">
                   No absences found for this company.
                 </div>
                 <div className="text-neutral-700 text-xs">
-                  If you know records exist, they were likely saved under a different company_id.
+                  If you know records exist, they were likely saved under a
+                  different company_id.
                 </div>
               </td>
               <td className="px-4 py-6 text-right bg-white" />
