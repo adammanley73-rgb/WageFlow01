@@ -4,7 +4,6 @@
 /* @ts-nocheck */
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import ActionButton from "@/components/ui/ActionButton";
 import { formatUkDate } from "@/lib/formatUkDate";
 
@@ -71,11 +70,8 @@ function formatCurrency(amount: number | null | undefined): string {
 function sortKey(isoLike: string | null | undefined): string {
   const s = String(isoLike ?? "").trim();
   if (!s) return "";
-  // ISO date-only sorts correctly as a string.
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // ISO timestamps also sort correctly as a string most of the time.
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s;
-  // Fallback: try parsing.
   const dt = new Date(s);
   if (Number.isNaN(dt.getTime())) return s;
   return dt.toISOString();
@@ -164,22 +160,13 @@ export default function PayrollRunsTable() {
           })}
         </div>
 
-        <div className="mt-3">
-          <Link
-            href="/dashboard/payroll/new"
-            className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
-          >
-            Create new payroll run
-          </Link>
-        </div>
-
         {taxYearStart && taxYearEnd && (
           <p className="mt-2 text-xs text-neutral-700">
             Tax year: {formatDate(taxYearStart)} to {formatDate(taxYearEnd)}.
           </p>
         )}
 
-        {loading && <p className="mt-1 text-xs text-neutral-600">Loading…</p>}
+        {loading && <p className="mt-1 text-xs text-neutral-600">Loading...</p>}
         {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
       </div>
 
@@ -205,11 +192,11 @@ export default function PayrollRunsTable() {
               <tr className="border-b-2 border-neutral-300">
                 <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
                   <div className="text-neutral-800">
-                    No payroll runs yet for this selection.
+                    No payroll runs found for this frequency.
                   </div>
-                  <div className="text-neutral-700 text-xs">
-                    Use "Create new payroll run" above to start your first
-                    payroll.
+                  <div className="text-neutral-700 text-xs mt-1">
+                    Create a run from the Dashboard. Use the Payroll Run Wizard
+                    tile.
                   </div>
                 </td>
                 <td className="px-4 py-6 text-right bg-white" colSpan={5} />

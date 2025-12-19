@@ -1,125 +1,112 @@
-/* @ts-nocheck /
-/ C:\Users\adamm\Projects\wageflow01\app\api\counts\route.ts */
-
+﻿// C:\Users\adamm\Projects\wageflow01\app\api\counts\route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 
-type Counts = {
-employeeCount: number;
-payrollRunCount: number;
-absenceRecordCount: number;
+export const dynamic = "force-dynamic";
+
+type CountsResult = {
+  employeeCount: number;
+  payrollRunCount: number;
+  absenceRecordCount: number;
 };
 
-function adminClient() {
-const url = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+function createAdminClient() {
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!url || !key) {
-throw new Error("counts api: missing Supabase env");
+  if (!url || !serviceKey) {
+    console.error("counts api: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    throw new Error("Missing Supabase admin env");
+  }
+
+  return createClient(url, serviceKey, {
+    auth: {
+      persistSession: false,
+    },
+  });
 }
 
-return createClient(url, key, {
-auth: { persistSession: false },
-});
-}
+async function getCountsForCompany(companyId: string): Promise<CountsResult> {
+  const supabase = createAdminClient();
 
-function getActiveCompanyId(): string | null {
-const jar = cookies();
-return (
-jar.get("active_company_id")?.value ??
-jar.get("company_id")?.value ??
-null
-);
-}
+  const [employeesRes, payrollRunsRes, absencesRes] = await Promise.all([
+    supabase
+      .from("employees")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId),
+    supabase
+      .from("payroll_runs")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId),
+    supabase
+      .from("absences")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId),
+  ]);
 
-async function safeCountByCompany(
-tableName: string,
-companyId: string
-): Promise<number | null> {
-try {
-const supabase = adminClient();
+  if (employeesRes.error) {
+    console.error("counts api: employee count error", employeesRes.error);
+  }
+  if (payrollRunsRes.error) {
+    console.error("counts api: payroll run count error", payrollRunsRes.error);
+  }
+  if (absencesRes.error) {
+    console.error("counts api: absence count error", absencesRes.error);
+  }
 
-const { count, error } = await supabase
-  .from(tableName)
-  .select("id", { count: "exact", head: true })
-  .eq("company_id", companyId);
-
-if (error) return null;
-if (typeof count !== "number") return 0;
-return count;
-
-
-} catch {
-return null;
-}
-}
-
-async function countWithFallback(
-tables: string[],
-companyId: string
-): Promise<number> {
-for (const t of tables) {
-const c = await safeCountByCompany(t, companyId);
-if (c !== null) return c;
-}
-return 0;
+  return {
+    employeeCount: employeesRes.count ?? 0,
+    payrollRunCount: payrollRunsRes.count ?? 0,
+    absenceRecordCount: absencesRes.count ?? 0,
+  };
 }
 
 export async function GET() {
-try {
-const activeCompanyId = getActiveCompanyId();
+  try {
+    const jar = cookies();
 
-if (!activeCompanyId) {
-  return NextResponse.json(
-    {
-      ok: true,
-      activeCompanyId: null,
-      counts: {
-        employeeCount: 0,
-        payrollRunCount: 0,
-        absenceRecordCount: 0,
+    const activeCompanyId =
+      jar.get("active_company_id")?.value ??
+      jar.get("company_id")?.value ??
+      null;
+
+    if (!activeCompanyId) {
+      // No company chosen yet; return zeroes but make it explicit
+      return NextResponse.json(
+        {
+          ok: true,
+          activeCompanyId: null,
+          reason: "NO_ACTIVE_COMPANY",
+          counts: {
+            employeeCount: 0,
+            payrollRunCount: 0,
+            absenceRecordCount: 0,
+          },
+        },
+        { status: 200 }
+      );
+    }
+
+    const counts = await getCountsForCompany(activeCompanyId);
+
+    return NextResponse.json(
+      {
+        ok: true,
+        activeCompanyId,
+        counts,
       },
-    },
-    { headers: { "Cache-Control": "no-store" } }
-  );
-}
+      { status: 200 }
+    );
+  } catch (err: any) {
+    console.error("counts api: unhandled error", err);
 
-const [employeeCount, payrollRunCount, absenceRecordCount] =
-  await Promise.all([
-    countWithFallback(["employees"], activeCompanyId),
-    countWithFallback(
-      ["payroll_runs", "pay_runs", "payroll_run"],
-      activeCompanyId
-    ),
-    countWithFallback(["absences", "absence_records"], activeCompanyId),
-  ]);
-
-const counts: Counts = {
-  employeeCount,
-  payrollRunCount,
-  absenceRecordCount,
-};
-
-return NextResponse.json(
-  { ok: true, activeCompanyId, counts },
-  { headers: { "Cache-Control": "no-store" } }
-);
-
-
-} catch (err: any) {
-return NextResponse.json(
-{
-ok: false,
-error: "counts api failed",
-detail: err?.message ?? String(err),
-counts: {
-employeeCount: 0,
-payrollRunCount: 0,
-absenceRecordCount: 0,
-},
-},
-{ status: 500, headers: { "Cache-Control": "no-store" } }
-);
-}
+    return NextResponse.json(
+      {
+        ok: false,
+        error: err?.message ?? "Unknown error",
+      },
+      { status: 500 }
+    );
+  }
 }

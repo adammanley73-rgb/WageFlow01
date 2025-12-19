@@ -4,12 +4,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import PageTemplate from "@/components/layout/PageTemplate";
 
-const ACTION_BTN =
-  "rounded-full bg-blue-700 px-5 py-2 text-sm font-medium text-white";
 const CARD =
-  "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
+  "rounded-2xl bg-white/90 ring-1 ring-neutral-300 shadow-sm p-6";
 
 type FormState = {
   employeeId: string;
@@ -145,7 +143,7 @@ export default function AnnualLeaveWizardPage() {
     return Object.keys(nextErrors).length === 0;
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: any) {
     e.preventDefault();
     if (!validate()) return;
 
@@ -172,7 +170,7 @@ export default function AnnualLeaveWizardPage() {
       try {
         data = await res.json();
       } catch {
-        // ignore JSON parse errors; rely on res.ok
+        // ignore
       }
 
       if (!res.ok || data?.ok === false) {
@@ -183,7 +181,7 @@ export default function AnnualLeaveWizardPage() {
         alert(
           "Something went wrong saving the form.\n\n" +
             message +
-            "\n\nCheck the console or Supabase logs for more detail."
+            "\n\nCheck the server logs for more detail."
         );
         return;
       }
@@ -195,244 +193,203 @@ export default function AnnualLeaveWizardPage() {
       router.push("/dashboard/absence");
     } catch (err) {
       console.error("Annual leave wizard unexpected error", err);
-      alert("Something went wrong saving the form. Check the console.");
+      alert("Something went wrong saving the form.");
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-300 via-teal-400 to-blue-600 font-[var(--font-manrope,inherit)]">
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        {/* Header banner, matching P45 / Emergency style */}
-        <div className="mb-6 flex flex-col gap-4 rounded-xl bg-white px-6 py-6 ring-1 ring-neutral-200 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <Image
-              src="/WageFlowLogo.png"
-              alt="WageFlow"
-              width={64}
-              height={64}
-              priority
-            />
-            <div>
-              <h1 className="text-4xl font-bold tracking-tight text-blue-800">
-                Annual leave
-              </h1>
-              <p className="mt-1 text-sm text-neutral-700">
-                Record a block of paid annual leave. These days will feed into
-                holiday pay calculations for the relevant pay period.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() =>
-                history.length > 1
-                  ? router.back()
-                  : router.push("/dashboard/absence")
-              }
-              className={ACTION_BTN}
-              aria-label="Back"
-            >
-              Back
-            </button>
-          </div>
+    <PageTemplate
+      title="Annual leave"
+      currentSection="absence"
+      headerMode="wizard"
+      backHref="/dashboard/absence/new"
+      backLabel="Back"
+    >
+      <div className={CARD}>
+        <div className="mb-4 text-sm text-neutral-700">
+          Record a block of paid annual leave. These days will feed into holiday
+          pay calculations for the relevant pay period.
         </div>
 
-        {/* Form card, matching wizard CARD style */}
-        <div className={CARD}>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            {/* Employee details */}
-            <section className="flex flex-col gap-4">
-              <h2 className="text-base font-semibold text-neutral-900">
-                Employee details
-              </h2>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          <section className="flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-neutral-900">
+              Employee details
+            </h2>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-neutral-700">
-                    Employee name
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={form.employeeName}
-                      onChange={(e) =>
-                        handleEmployeeSearchChange(e.target.value)
-                      }
-                      className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      placeholder="Start typing the employee name"
-                    />
-                    {errors.employeeName && (
-                      <p className="mt-1 text-xs text-red-600">
-                        {errors.employeeName}
-                      </p>
-                    )}
-
-                    {searchError && (
-                      <p className="mt-1 text-xs text-red-600">
-                        {searchError}
-                      </p>
-                    )}
-                    {searching && !searchError && (
-                      <p className="mt-1 text-xs text-neutral-600">
-                        Searching…
-                      </p>
-                    )}
-
-                    {searchResults.length > 0 && (
-                      <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-neutral-300 bg-white shadow-lg">
-                        {searchResults.map((emp) => (
-                          <button
-                            key={emp.id}
-                            type="button"
-                            onClick={() => handleSelectEmployee(emp)}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-neutral-100"
-                          >
-                            <div className="font-medium">{emp.name}</div>
-                            <div className="text-[11px] text-neutral-600">
-                              {emp.employeeNumber
-                                ? `Employee no: ${emp.employeeNumber}`
-                                : "No employee number set"}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-neutral-700">
-                    Employee number (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={form.employeeNumber}
-                    onChange={(e) =>
-                      updateField("employeeNumber", e.target.value)
-                    }
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    placeholder="Payroll number if known"
-                  />
-                </div>
-              </div>
-            </section>
-
-            {/* Leave dates */}
-            <section className="flex flex-col gap-4">
-              <h2 className="text-base font-semibold text-neutral-900">
-                Leave dates
-              </h2>
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-neutral-700">
-                    Start date
-                  </label>
-                  <input
-                    type="date"
-                    value={form.startDate}
-                    onChange={(e) => updateField("startDate", e.target.value)}
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                  {errors.startDate && (
-                    <p className="mt-1 text-xs text-red-600">
-                      {errors.startDate}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-neutral-700">
-                    End date
-                  </label>
-                  <input
-                    type="date"
-                    value={form.endDate}
-                    onChange={(e) => updateField("endDate", e.target.value)}
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  />
-                  {errors.endDate && (
-                    <p className="mt-1 text-xs text-red-600">
-                      {errors.endDate}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-neutral-700">
-                    Total days of leave
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={form.totalDays}
-                    onChange={(e) => updateField("totalDays", e.target.value)}
-                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-right text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                    placeholder="e.g. 5"
-                  />
-                  {errors.totalDays && (
-                    <p className="mt-1 text-xs text-red-600">
-                      {errors.totalDays}
-                    </p>
-                  )}
-                  <p className="mt-1 text-[11px] text-neutral-600">
-                    Use half days where needed. For example 1.5 for one and a
-                    half days.
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            {/* Notes */}
-            <section className="flex flex-col gap-3">
-              <h2 className="text-base font-semibold text-neutral-900">
-                Notes and context
-              </h2>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-neutral-700">
-                  Notes (optional)
+                  Employee name
                 </label>
-                <textarea
-                  value={form.notes}
-                  onChange={(e) => updateField("notes", e.target.value)}
-                  rows={4}
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={form.employeeName}
+                    onChange={(e) => handleEmployeeSearchChange(e.target.value)}
+                    className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    placeholder="Start typing the employee name"
+                  />
+
+                  {errors.employeeName && (
+                    <p className="mt-1 text-xs text-red-600">
+                      {errors.employeeName}
+                    </p>
+                  )}
+
+                  {searchError && (
+                    <p className="mt-1 text-xs text-red-600">{searchError}</p>
+                  )}
+
+                  {searching && !searchError && (
+                    <p className="mt-1 text-xs text-neutral-600">Searching…</p>
+                  )}
+
+                  {searchResults.length > 0 && (
+                    <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-neutral-300 bg-white shadow-lg">
+                      {searchResults.map((emp) => (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          onClick={() => handleSelectEmployee(emp)}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-neutral-100"
+                        >
+                          <div className="font-medium">{emp.name}</div>
+                          <div className="text-[11px] text-neutral-600">
+                            {emp.employeeNumber
+                              ? `Employee no: ${emp.employeeNumber}`
+                              : "No employee number set"}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
+                  Employee number (optional)
+                </label>
+                <input
+                  type="text"
+                  value={form.employeeNumber}
+                  onChange={(e) => updateField("employeeNumber", e.target.value)}
                   className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  placeholder="Any comments that help you reconcile this leave with the rota or payroll."
+                  placeholder="Payroll number if known"
                 />
               </div>
-            </section>
+            </div>
+          </section>
 
-            {/* Footer actions */}
-            <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <p className="text-[11px] text-neutral-600">
-                This wizard is step one. Once holiday pay is wired into the
-                payroll engine, the days recorded here will drive the
-                HOLIDAY_PAY element for the relevant pay period.
-              </p>
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => router.push("/dashboard/absence")}
-                  className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                >
-                  {submitting ? "Saving…" : "Save annual leave"}
-                </button>
+          <section className="flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-neutral-900">
+              Leave dates
+            </h2>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
+                  Start date
+                </label>
+                <input
+                  type="date"
+                  value={form.startDate}
+                  onChange={(e) => updateField("startDate", e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+                {errors.startDate && (
+                  <p className="mt-1 text-xs text-red-600">{errors.startDate}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
+                  End date
+                </label>
+                <input
+                  type="date"
+                  value={form.endDate}
+                  onChange={(e) => updateField("endDate", e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+                {errors.endDate && (
+                  <p className="mt-1 text-xs text-red-600">{errors.endDate}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">
+                  Total days of leave
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={form.totalDays}
+                  onChange={(e) => updateField("totalDays", e.target.value)}
+                  className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-right text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  placeholder="e.g. 5"
+                />
+                {errors.totalDays && (
+                  <p className="mt-1 text-xs text-red-600">
+                    {errors.totalDays}
+                  </p>
+                )}
+                <p className="mt-1 text-[11px] text-neutral-600">
+                  Use half days where needed. For example 1.5 for one and a half
+                  days.
+                </p>
               </div>
             </div>
-          </form>
-        </div>
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-semibold text-neutral-900">
+              Notes and context
+            </h2>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-neutral-700">
+                Notes (optional)
+              </label>
+              <textarea
+                value={form.notes}
+                onChange={(e) => updateField("notes", e.target.value)}
+                rows={4}
+                className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                placeholder="Any comments that help you reconcile this leave with the rota or payroll."
+              />
+            </div>
+          </section>
+
+          <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-[11px] text-neutral-600">
+              Once holiday pay is wired into the payroll engine, the days
+              recorded here will drive the HOLIDAY_PAY element for the relevant
+              pay period.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => router.push("/dashboard/absence/new")}
+                className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {submitting ? "Saving…" : "Save annual leave"}
+              </button>
+            </div>
+          </div>
+        </form>
       </div>
-    </div>
+    </PageTemplate>
   );
 }

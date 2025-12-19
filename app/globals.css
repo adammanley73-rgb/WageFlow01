@@ -1,29 +1,49 @@
-/* app/globals.css */
+﻿/* C:\Users\adamm\Projects\wageflow01\app\globals.css */
 /* WageFlow Global Stylesheet */
-/* Defines typography, layout base, and vertical brand gradient background */
+/* Brand tokens + consistent gradient + sane defaults */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Brand tokens */
+:root {
+  /* Locked brand colours */
+  --wf-blue: #0f3c85;
+  --wf-blue-hover: #0c2f68;
+
+  /* Your current brand green from this file */
+  --wf-green: #00b386;
+  --wf-green-hover: #009a73;
+
+  /* One true gradient */
+  --wf-gradient: linear-gradient(to bottom, var(--wf-green), var(--wf-blue));
+}
+
 /* Base document styling */
 html,
 body {
-  @apply h-full w-full antialiased text-gray-800;
+  @apply h-full w-full antialiased text-neutral-800;
   background-color: #ffffff;
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
 }
 
-/* Vertical WageFlow brand gradient:
-   Top → green (#00b386), Bottom → blue (#1d4ed8) */
+/* One gradient utility you can reuse anywhere */
+.wf-gradient {
+  background: var(--wf-gradient);
+}
+
+/* Legacy class kept so you do not have to refactor every page today */
 .bg-gradient {
-  background: linear-gradient(to bottom, #00b386, #1d4ed8);
+  background: var(--wf-gradient);
 }
 
 /* Utility wrappers */
 .page-container {
-  @apply min-h-screen bg-gradient;
+  min-height: 100vh;
+  background: var(--wf-gradient);
 }
 
 /* Typography */
@@ -33,11 +53,11 @@ h3,
 h4,
 h5,
 h6 {
-  @apply font-semibold text-gray-900;
+  @apply font-semibold text-neutral-900;
 }
 
 p {
-  @apply text-gray-700 leading-relaxed;
+  @apply text-neutral-700 leading-relaxed;
 }
 
 /* Buttons */
@@ -46,19 +66,30 @@ button,
   @apply rounded-md font-medium transition-colors duration-150;
 }
 
+/* Legacy button classes, now locked to WageFlow brand */
 .btn-primary {
-  @apply bg-blue-600 text-white hover:bg-blue-700;
+  background-color: var(--wf-blue);
+  color: #ffffff;
+}
+.btn-primary:hover {
+  background-color: var(--wf-blue-hover);
 }
 
 .btn-secondary {
-  @apply bg-green-600 text-white hover:bg-green-700;
+  background-color: var(--wf-green);
+  color: #ffffff;
+}
+.btn-secondary:hover {
+  background-color: var(--wf-green-hover);
 }
 
 /* Inputs */
 input,
 select,
 textarea {
-  @apply border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500;
+  @apply border border-neutral-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2;
+  /* Tailwind ring uses current color, so we force it to brand blue */
+  --tw-ring-color: var(--wf-blue);
 }
 
 /* Tables */
@@ -67,16 +98,16 @@ table {
 }
 
 th {
-  @apply border-b border-gray-300 bg-gray-100 px-4 py-2 text-left font-medium text-gray-700;
+  @apply border-b border-neutral-300 bg-neutral-100 px-4 py-2 text-left font-medium text-neutral-700;
 }
 
 td {
-  @apply border-b border-gray-200 px-4 py-2;
+  @apply border-b border-neutral-200 px-4 py-2;
 }
 
 /* Header banner background */
 .header-banner {
-  background: linear-gradient(to bottom, #00b386, #1d4ed8);
+  background: var(--wf-gradient);
   @apply text-white;
 }
 

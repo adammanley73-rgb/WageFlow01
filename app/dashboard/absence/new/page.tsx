@@ -1,119 +1,136 @@
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\page.tsx
 /* @ts-nocheck */
-// app/dashboard/absence/new/page.tsx
+
 import Link from "next/link";
+import PageTemplate from "@/components/layout/PageTemplate";
 
-export default function NewAbsenceHub() {
-  // Do NOT render HeaderBanner here. The layout already did.
-  return (
-    <div className="rounded-2xl overflow-hidden bg-white/90 ring-1 ring-neutral-200 shadow-sm">
-      {/* Title-only header (centered, slightly smaller than page title) */}
-      <div className="px-6 py-6 border-b border-neutral-200">
-        <h1 className="text-center text-3xl font-semibold text-blue-900">
-          Record New Absence
-        </h1>
-      </div>
+type HubCardProps = {
+  title: string;
+  description: string;
+  href?: string;
+  disabled?: boolean;
+  disabledNote?: string;
+};
 
-      {/* Content */}
-      <section className="bg-white">
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Sickness */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Sickness</h2>
-              <p className="mb-4">
-                Uses SSP rules with PIWs, linking, waiting days, and the 28-week cap.
-              </p>
-              <Link href="/dashboard/absence/new/sickness" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
+function HubCard({
+  title,
+  description,
+  href,
+  disabled,
+  disabledNote,
+}: HubCardProps) {
+  const base =
+    "rounded-2xl bg-white/95 shadow-sm ring-1 ring-neutral-300 p-5 flex flex-col text-left";
+  const titleCls = "text-base font-bold text-neutral-900";
+  const descCls = "mt-2 text-sm text-neutral-700";
+  const footerCls = "mt-4";
 
-            {/* Maternity */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Maternity</h2>
-              <p className="mb-4">
-                Computes SMP AWE and weekly schedule. Saves totals in the record.
-              </p>
-              <Link href="/dashboard/absence/new/maternity" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Adoption */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Adoption</h2>
-              <p className="mb-4">
-                Computes SAP weekly schedule when available. Placement date optional.
-              </p>
-              <Link href="/dashboard/absence/new/adoption" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Paternity */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Paternity</h2>
-              <p className="mb-4">
-                Computes SPP schedule. Two-week entitlement where eligible.
-              </p>
-              <Link href="/dashboard/absence/new/paternity" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Shared Parental */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Shared Parental</h2>
-              <p className="mb-4">
-                Computes ShPP schedule. Requires eligible partner leave details.
-              </p>
-              <Link href="/dashboard/absence/new/shared-parental" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Parental Bereavement */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Parental Bereavement</h2>
-              <p className="mb-4">
-                Computes SPBP schedule. One or two weeks depending on circumstance.
-              </p>
-              <Link href="/dashboard/absence/new/parental-bereavement" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Annual Leave */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Annual Leave</h2>
-              <p className="mb-4">
-                Logs and manages paid annual leave, automatically reducing entitlement.
-              </p>
-              <Link href="/dashboard/absence/new/annual-leave" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-
-            {/* Unpaid Leave */}
-            <div className="bg-white rounded-lg shadow p-6 ring-1 ring-neutral-200">
-              <h2 className="text-lg font-semibold mb-2">Unpaid Leave</h2>
-              <p className="mb-4">
-                Records unpaid absence periods and adjusts payroll accordingly.
-              </p>
-              <Link href="/dashboard/absence/new/unpaid-leave" className="inline-block bg-blue-900 text-white px-4 py-2 rounded hover:bg-blue-800">
-                Open
-              </Link>
-            </div>
-          </div>
-
-          {/* View saved absences */}
-          <div className="mt-10 text-center">
-            <Link href="/dashboard/absence/list" className="inline-block bg-blue-900 text-white px-5 py-2 rounded hover:bg-blue-800">
-              View saved absences
-            </Link>
-          </div>
+  if (disabled) {
+    return (
+      <div className={base + " opacity-80"}>
+        <div className={titleCls}>{title}</div>
+        <div className={descCls}>{description}</div>
+        <div className={footerCls}>
+          <span className="inline-flex items-center rounded-full bg-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-700 ring-1 ring-neutral-300">
+            {disabledNote ?? "Not available"}
+          </span>
         </div>
-      </section>
-    </div>
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={href ?? "#"}
+      className={
+        base +
+        " transition-transform hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2"
+      }
+      aria-label={"Open " + title}
+    >
+      <div className={titleCls}>{title}</div>
+      <div className={descCls}>{description}</div>
+      <div className={footerCls}>
+        <span
+          className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white"
+          style={{ backgroundColor: "var(--wf-blue)" }}
+        >
+          Open
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+export default function NewAbsenceHubPage() {
+  return (
+    <PageTemplate title="New absence" currentSection="absence">
+      <div className="rounded-2xl bg-white/90 ring-1 ring-neutral-300 shadow-sm p-6">
+        <div className="text-sm text-neutral-700">
+          Pick the absence type you want to record.
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <HubCard
+            title="Sickness"
+            description="SSP wizard with PIWs, linking, waiting days, and the 28-week cap."
+            href="/dashboard/absence/new/sickness"
+          />
+
+          <HubCard
+            title="Annual leave"
+            description="Record paid annual leave. This feeds holiday pay calculations for the relevant pay period."
+            href="/dashboard/absence/new/annual"
+          />
+
+          <HubCard
+            title="Maternity"
+            description="SMP wizard with AWE calculator and weekly schedule."
+            href="/dashboard/absence/new/maternity"
+          />
+
+          <HubCard
+            title="Adoption"
+            description="SAP wizard with weekly schedule."
+            href="/dashboard/absence/new/adoption"
+          />
+
+          <HubCard
+            title="Paternity"
+            description="SPP wizard with eligibility and schedule."
+            href="/dashboard/absence/new/paternity"
+          />
+
+          <HubCard
+            title="Shared parental"
+            description="ShPP wizard with shared leave details and schedule."
+            href="/dashboard/absence/new/shared-parental"
+          />
+
+          <HubCard
+            title="Parental bereavement"
+            description="SPBP wizard placeholder. Still needs full restore."
+            href="/dashboard/absence/new/parental-bereavement"
+          />
+
+          <HubCard
+            title="Unpaid leave"
+            description="Route not implemented yet."
+            disabled
+            disabledNote="Not built yet"
+          />
+        </div>
+
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <Link
+            href="/dashboard/absence/list"
+            className="inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-semibold text-white"
+            style={{ backgroundColor: "var(--wf-blue)" }}
+          >
+            View saved absences
+          </Link>
+        </div>
+      </div>
+    </PageTemplate>
   );
 }
