@@ -16,21 +16,9 @@ const inter = Inter({ subsets: ["latin"], display: "swap" });
 type Frequency = "weekly" | "fortnightly" | "four_weekly" | "monthly";
 type Status = "draft" | "processing" | "approved" | "rti_submitted" | "completed";
 
-type Run = {
-  id: string;
-  runNumber: string;
-  periodStart: string;
-  periodEnd: string;
-  payDate: string | null;
-  frequency: Frequency;
-  status: Status;
-  createdAt: string;
-  updatedAt: string;
-};
-
 type Row = {
-  id: string; // pay_run_employees.id
-  employeeId: string; // employees.id
+  id: string;
+  employeeId: string;
   employeeName: string;
   employeeNumber: string;
   email: string;
@@ -40,14 +28,12 @@ type Row = {
 };
 
 type ApiResponse = {
-  run: Run;
-  employees: Row[];
-  totals: {
-    total_gross: number;
-    total_deductions: number;
-    total_net: number;
-    employee_count: number;
-  };
+  ok?: boolean;
+  debugSource?: string;
+
+  run: any;
+  employees: any[];
+  totals: any;
 };
 
 function gbp(n: number) {
@@ -65,6 +51,36 @@ function statusLabel(s: string) {
     .trim()
     .replaceAll("_", " ")
     .toUpperCase();
+}
+
+function pickFirst(...vals: any[]) {
+  for (const v of vals) {
+    if (v === null || v === undefined) continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    return v;
+  }
+  return null;
+}
+
+function mapEmployees(raw: any[]): Row[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((r: any) => {
+    const gross = toNumberSafe(pickFirst(r.gross, r.total_gross, r.gross_pay, 0) as any);
+    const deductions = toNumberSafe(pickFirst(r.deductions, r.total_deductions, r.deduction_total, 0) as any);
+    const net = toNumberSafe(pickFirst(r.net, r.total_net, r.net_pay, gross - deductions) as any);
+
+    return {
+      id: String(pickFirst(r.id, r.pay_run_employee_id, "") || ""),
+      employeeId: String(pickFirst(r.employeeId, r.employee_id, r.employeeId, "") || ""),
+      employeeName: String(pickFirst(r.employeeName, r.employee_name, r.full_name, "—") || "—"),
+      employeeNumber: String(pickFirst(r.employeeNumber, r.employee_number, r.payroll_number, "—") || "—"),
+      email: String(pickFirst(r.email, r.employee_email, "—") || "—"),
+      gross: Number.isFinite(gross) ? Number(gross.toFixed(2)) : 0,
+      deductions: Number.isFinite(deductions) ? Number(deductions.toFixed(2)) : 0,
+      net: Number.isFinite(net) ? Number(net.toFixed(2)) : 0,
+    };
+  });
 }
 
 export default function PayrollRunDetailPage() {
@@ -94,7 +110,10 @@ export default function PayrollRunDetailPage() {
 
       const j: ApiResponse = await res.json();
       setData(j);
-      setRows(Array.isArray(j?.employees) ? j.employees : []);
+
+      const mapped = mapEmployees(j?.employees);
+      setRows(mapped);
+
       setDirty(false);
       setValidation({});
     } catch (e: any) {
@@ -110,16 +129,56 @@ export default function PayrollRunDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
 
-  const totals = useMemo(() => {
+  const rowTotals = useMemo(() => {
     const tg = rows.reduce((a, r) => a + (Number.isFinite(r.gross) ? r.gross : 0), 0);
     const td = rows.reduce((a, r) => a + (Number.isFinite(r.deductions) ? r.deductions : 0), 0);
     const tn = rows.reduce((a, r) => a + (Number.isFinite(r.net) ? r.net : 0), 0);
     return {
-      tg: Number(tg.toFixed(2)),
-      td: Number(td.toFixed(2)),
-      tn: Number(tn.toFixed(2)),
+      gross: Number(tg.toFixed(2)),
+      deductions: Number(td.toFixed(2)),
+      net: Number(tn.toFixed(2)),
     };
   }, [rows]);
+
+  const apiTotals = useMemo(() => {
+    const runObj: any = (data as any)?.run || {};
+    const totalsObj: any = (data as any)?.totals || {};
+
+    const gross = toNumberSafe(
+      pickFirst(
+        totalsObj.gross,
+        totalsObj.total_gross,
+        runObj.total_gross_pay,
+        runObj.totalGrossPay,
+        0
+      ) as any
+    );
+
+    const tax = toNumberSafe(pickFirst(totalsObj.tax, runObj.total_tax, runObj.totalTax, 0) as any);
+    const ni = toNumberSafe(pickFirst(totalsObj.ni, runObj.total_ni, runObj.totalNi, 0) as any);
+
+    const net = toNumberSafe(
+      pickFirst(
+        totalsObj.net,
+        totalsObj.total_net,
+        runObj.total_net_pay,
+        runObj.totalNetPay,
+        0
+      ) as any
+    );
+
+    const deductions = Number((gross - net).toFixed(2));
+
+    return {
+      gross: Number(gross.toFixed(2)),
+      deductions: Number(deductions.toFixed(2)),
+      net: Number(net.toFixed(2)),
+      tax: Number(tax.toFixed(2)),
+      ni: Number(ni.toFixed(2)),
+    };
+  }, [data]);
+
+  const displayTotals = rows.length > 0 ? rowTotals : apiTotals;
 
   const onChangeCell = (id: string, field: "gross" | "deductions" | "net", value: string) => {
     setRows((prev) =>
@@ -187,7 +246,10 @@ export default function PayrollRunDetailPage() {
 
       const j: ApiResponse = await res.json();
       setData(j);
-      setRows(Array.isArray(j?.employees) ? j.employees : []);
+
+      const mapped = mapEmployees(j?.employees);
+      setRows(mapped);
+
       setDirty(false);
     } catch (e: any) {
       setErr(e?.message || "Save failed");
@@ -214,7 +276,10 @@ export default function PayrollRunDetailPage() {
 
       const j: ApiResponse = await res.json();
       setData(j);
-      setRows(Array.isArray(j?.employees) ? j.employees : []);
+
+      const mapped = mapEmployees(j?.employees);
+      setRows(mapped);
+
       setDirty(false);
       setApprovedMsg("Run approved. FPS queued in RTI logs.");
     } catch (e: any) {
@@ -228,31 +293,41 @@ export default function PayrollRunDetailPage() {
     window.location.href = `/api/payroll/${runId}/export`;
   };
 
+  const runObj: any = (data as any)?.run || {};
+
+  const runNumber = String(pickFirst(runObj.runNumber, runObj.run_number, "—") || "—");
+
+  const periodStart = pickFirst(runObj.periodStart, runObj.period_start, null) as any;
+  const periodEnd = pickFirst(runObj.periodEnd, runObj.period_end, null) as any;
+
+  const payDate = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
+
+  const statusRaw = pickFirst(runObj.status, runObj.run_status, null) as any;
+  const statusText = statusRaw ? statusLabel(statusRaw) : "—";
+
+  const periodText =
+    periodStart && periodEnd ? `${formatUkDate(String(periodStart))} to ${formatUkDate(String(periodEnd))}` : "—";
+
+  const payDateText = payDate ? formatUkDate(String(payDate)) : "—";
+
   const canApprove =
-    !!data &&
-    (data.run.status === "draft" || data.run.status === "processing") &&
+    (String(statusRaw || "") === "draft" || String(statusRaw || "") === "processing") &&
     rows.length > 0 &&
     !dirty &&
-    !hasErrors;
+    !hasErrors &&
+    !saving;
 
-  const runNumber = data?.run?.runNumber || "—";
-  const periodText =
-    data?.run?.periodStart && data?.run?.periodEnd
-      ? `${formatUkDate(data.run.periodStart)} to ${formatUkDate(data.run.periodEnd)}`
-      : "—";
-  const payDateText = data?.run?.payDate ? formatUkDate(data.run.payDate) : "—";
-  const statusText = data?.run?.status ? statusLabel(data.run.status) : "—";
+  const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.gross) > 0;
 
   return (
-    <PageTemplate title="Payroll Run" currentSection="payroll">
+    <PageTemplate title="Payroll" currentSection="payroll">
       <div className="flex flex-col gap-4">
         <div className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-lg font-extrabold" style={{ color: "#0f172a" }}>
-                  Run {runNumber}
-                </div>
+                <div className="text-lg font-extrabold text-slate-900">Run {runNumber}</div>
+
                 <span
                   className="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold"
                   style={{
@@ -303,7 +378,11 @@ export default function PayrollRunDetailPage() {
           {approvedMsg ? (
             <div
               className="mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold"
-              style={{ borderColor: "#10b981", backgroundColor: "rgba(16,185,129,0.12)", color: "#065f46" }}
+              style={{
+                borderColor: "#10b981",
+                backgroundColor: "rgba(16,185,129,0.12)",
+                color: "#065f46",
+              }}
             >
               {approvedMsg}
             </div>
@@ -314,23 +393,26 @@ export default function PayrollRunDetailPage() {
               {err}
             </div>
           ) : null}
+
+          {showDataMismatchNote ? (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+              This run has totals but no employee rows were returned by the API. The run details still show correctly.
+              Approve stays disabled until employees load.
+            </div>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatTile title="Employees" value={loading ? "…" : String(rows.length || data?.totals?.employee_count || 0)} />
-          <StatTile title="Total Gross" value={gbp(totals.tg)} />
-          <StatTile title="Total Deductions" value={gbp(totals.td)} />
-          <StatTile title="Total Net" value={gbp(totals.tn)} />
+          <StatTile title="Employees" value={loading ? "..." : String(rows.length)} />
+          <StatTile title="Total Gross" value={gbp(displayTotals.gross)} />
+          <StatTile title="Total Deductions" value={gbp(displayTotals.deductions)} />
+          <StatTile title="Total Net" value={gbp(displayTotals.net)} />
         </div>
 
         <div className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
           <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-base font-extrabold" style={{ color: "#0f172a" }}>
-              Employees in this run
-            </h2>
-            <div className="text-sm text-slate-700">
-              Edit amounts, save, export CSV, or open a payslip.
-            </div>
+            <h2 className="text-base font-extrabold text-slate-900">Employees in this run</h2>
+            <div className="text-sm text-slate-700">Edit amounts, save, export CSV, or open a payslip.</div>
           </div>
 
           <div className="w-full overflow-x-auto">
@@ -365,7 +447,7 @@ export default function PayrollRunDetailPage() {
                 {loading ? (
                   <tr>
                     <td className="px-4 py-4 text-sm text-slate-700 border-b border-neutral-200" colSpan={7}>
-                      Loading…
+                      Loading...
                     </td>
                   </tr>
                 ) : null}
@@ -454,30 +536,31 @@ export default function PayrollRunDetailPage() {
           <button
             type="button"
             onClick={saveChanges}
-            disabled={!dirty || hasErrors || saving}
+            disabled={!dirty || hasErrors || saving || rows.length === 0}
             className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
             style={{
-              backgroundColor: !dirty || hasErrors || saving ? "var(--wf-blue)" : "#059669",
-              opacity: !dirty || hasErrors || saving ? 0.6 : 1,
-              cursor: !dirty || hasErrors || saving ? "not-allowed" : "pointer",
+              backgroundColor: !dirty || hasErrors || saving || rows.length === 0 ? "var(--wf-blue)" : "#059669",
+              opacity: !dirty || hasErrors || saving || rows.length === 0 ? 0.6 : 1,
+              cursor: !dirty || hasErrors || saving || rows.length === 0 ? "not-allowed" : "pointer",
             }}
+            title={rows.length === 0 ? "No employee rows loaded for this run" : "Save employee row changes"}
           >
-            {saving ? "Saving…" : "Save Changes"}
+            {saving ? "Saving..." : "Save Changes"}
           </button>
 
           <button
             type="button"
             onClick={approveRun}
-            disabled={!canApprove || saving}
+            disabled={!canApprove}
             title="Approve and queue FPS"
             className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
             style={{
               backgroundColor: "#059669",
-              opacity: !canApprove || saving ? 0.6 : 1,
-              cursor: !canApprove || saving ? "not-allowed" : "pointer",
+              opacity: !canApprove ? 0.6 : 1,
+              cursor: !canApprove ? "not-allowed" : "pointer",
             }}
           >
-            {saving ? "Working…" : "Approve run"}
+            {saving ? "Working..." : "Approve run"}
           </button>
         </div>
       </div>
