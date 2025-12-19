@@ -1,11 +1,19 @@
+// C:\Users\adamm\Projects\wageflow01\app\login\LoginForm.tsx
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const returnTo = useMemo(() => {
+    const raw = searchParams?.get("returnTo") || "/dashboard";
+    if (raw.startsWith("/")) return raw;
+    return "/dashboard";
+  }, [searchParams]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,8 +26,9 @@ export default function LoginForm() {
     setError(null);
 
     try {
-      const response = await fetch("/api/v1/auth/token", {
+      const response = await fetch("/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
@@ -30,11 +39,7 @@ export default function LoginForm() {
         throw new Error(msg);
       }
 
-      if (data?.token) {
-        localStorage.setItem("authToken", data.token);
-      }
-
-      router.replace("/dashboard");
+      router.replace(returnTo);
     } catch (err: any) {
       setError(err?.message || "Login failed");
     } finally {
@@ -105,7 +110,7 @@ export default function LoginForm() {
               disabled={loading}
               className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 text-white py-2.5 font-medium transition-colors disabled:opacity-60"
             >
-              {loading ? "Signing in…" : "Sign in"}
+              {loading ? "Signing in..." : "Sign in"}
             </button>
           </form>
         </div>
