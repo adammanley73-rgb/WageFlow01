@@ -7,8 +7,15 @@ import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+function getSupabaseUrl(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+}
+
 function createAdminClient() {
-  const url = process.env.SUPABASE_URL;
+  const url = getSupabaseUrl();
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
@@ -28,14 +35,19 @@ type EmployeesPageProps = {
   };
 };
 
+function isUuid(s: string) {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
+    s
+  );
+}
+
 export default async function EmployeesPage({ searchParams }: EmployeesPageProps) {
   const jar = cookies();
 
   const activeCompanyId =
     jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
 
-  // No active company -> hard redirect to companies
-  if (!activeCompanyId) {
+  if (!activeCompanyId || !isUuid(String(activeCompanyId))) {
     redirect("/dashboard/companies");
   }
 
@@ -44,11 +56,9 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const showLeaversParam = searchParams?.showLeavers;
 
   const sortKey: "name" | "number" = sortParam === "number" ? "number" : "name";
-
   const sortDirection: "asc" | "desc" =
     directionParam === "desc" ? "desc" : "asc";
 
-  // When showLeavers is "1" we include leavers, otherwise we hide them
   const showLeavers = showLeaversParam === "1";
 
   const supabase = createAdminClient();
@@ -86,11 +96,8 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
     !companyError && company ? company.name ?? null : null;
 
   const employees = Array.isArray(employeesData) ? employeesData : [];
-  const loadError = employeesError
-    ? "There was a problem loading employees."
-    : null;
+  const loadError = employeesError ? "There was a problem loading employees." : null;
 
-  // Hide leavers by default unless showLeavers=1
   const visibleEmployees = showLeavers
     ? employees
     : employees.filter((emp) => (emp.status ?? "active") !== "leaver");
@@ -100,21 +107,20 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const isNameSorted = sortKey === "name";
   const isNumberSorted = sortKey === "number";
 
-  const nextNameDirection =
-    isNameSorted && sortDirection === "asc" ? "desc" : "asc";
+  const nextNameDirection = isNameSorted && sortDirection === "asc" ? "desc" : "asc";
   const nextNumberDirection =
     isNumberSorted && sortDirection === "asc" ? "desc" : "asc";
 
   const nameSortLabel = isNameSorted
     ? sortDirection === "asc"
-      ? "Sort Ôåæ"
-      : "Sort Ôåô"
+      ? "Sort ↑"
+      : "Sort ↓"
     : "Sort";
 
   const numberSortLabel = isNumberSorted
     ? sortDirection === "asc"
-      ? "Sort Ôåæ"
-      : "Sort Ôåô"
+      ? "Sort ↑"
+      : "Sort ↓"
     : "Sort";
 
   const currentSortParam = sortKey === "number" ? "number" : "name";
@@ -132,9 +138,8 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   }`;
 
   return (
-    <PageTemplate title="Employees" currentSection="Employees">
+    <PageTemplate title="Employees" currentSection="employees">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
-        {/* Active company banner */}
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           {activeCompanyName ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -164,20 +169,18 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
           )}
         </div>
 
-        {/* Employees card */}
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-semibold text-neutral-900">
-                  Employees
-                </div>
+                <div className="text-sm font-semibold text-neutral-900">Employees</div>
                 <div className="text-xs text-neutral-700">
                   {showLeavers
                     ? "All employees for the active company, including leavers."
                     : "Active employees for the active company. Leavers are hidden by default."}
                 </div>
               </div>
+
               <div className="flex items-center">
                 <Link
                   href={toggleShowLeaversHref}
@@ -214,6 +217,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                       </Link>
                     </div>
                   </th>
+
                   <th className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span>Name</span>
@@ -225,6 +229,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                       </Link>
                     </div>
                   </th>
+
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">NI</th>
                   <th className="px-4 py-3">Pay frequency</th>
@@ -232,25 +237,21 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
+
               <tbody className="bg-neutral-100 divide-y divide-neutral-300">
                 {visibleEmployees.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={7}
-                      className="px-4 py-4 text-sm text-neutral-700"
-                    >
+                    <td colSpan={7} className="px-4 py-4 text-sm text-neutral-700">
                       {!hasAnyEmployees
                         ? "No employees yet. Use the New Employee Wizard on the Dashboard to create your first record."
                         : showLeavers
                         ? "No employees found for this filter."
-                        : "No active employees to show. You may only have leavers. Use ÔÇ£Show leaversÔÇØ to view them."}
+                        : 'No active employees to show. You may only have leavers. Use "Show leavers" to view them.'}
                     </td>
                   </tr>
                 ) : (
                   visibleEmployees.map((employee) => {
-                    const name = `${employee.first_name ?? ""} ${
-                      employee.last_name ?? ""
-                    }`.trim();
+                    const name = `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim();
 
                     const rawStatus = employee.status ?? "active";
                     const isLeaver = rawStatus === "leaver";
@@ -263,19 +264,19 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                     return (
                       <tr key={employee.employee_id}>
                         <td className="px-4 py-3 text-neutral-900">
-                          {employee.employee_number ?? "ÔÇö"}
+                          {employee.employee_number ?? "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-neutral-900">
                           {name || "Unnamed employee"}
                         </td>
                         <td className="px-4 py-3 text-neutral-800">
-                          {employee.email ?? "ÔÇö"}
+                          {employee.email ?? "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-neutral-800">
-                          {employee.ni_number ?? "ÔÇö"}
+                          {employee.ni_number ?? "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-neutral-800">
-                          {employee.pay_frequency ?? "ÔÇö"}
+                          {employee.pay_frequency ?? "\u2014"}
                         </td>
                         <td className="px-4 py-3 text-neutral-800">
                           <span
@@ -285,10 +286,9 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {/* IMPORTANT: now links to details page, not /edit */}
                           <Link
                             href={`/dashboard/employees/${employee.employee_id}`}
-                            className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85] min-w-[88px] justify-end"
+                            className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85] min-w-[88px]"
                           >
                             View / edit
                           </Link>
