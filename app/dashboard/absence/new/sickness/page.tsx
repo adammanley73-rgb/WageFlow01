@@ -1,11 +1,11 @@
-﻿/* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\sickness\page.tsx
+﻿// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\sickness\page.tsx
 
 "use client";
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageTemplate from "@/components/layout/PageTemplate";
+import { formatUkDate } from "@/lib/formatUkDate";
 
 const CARD = "rounded-2xl bg-white/90 ring-1 ring-neutral-300 shadow-sm p-6";
 
@@ -38,7 +38,6 @@ type LocalValidationError = string | null;
 export default function NewSicknessAbsencePage() {
   const router = useRouter();
 
-  // Form state
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
   const [selectedEmployee, setSelectedEmployee] =
@@ -49,7 +48,6 @@ export default function NewSicknessAbsencePage() {
   const [lastDayActual, setLastDayActual] = useState("");
   const [referenceNotes, setReferenceNotes] = useState("");
 
-  // UI state
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
@@ -59,7 +57,6 @@ export default function NewSicknessAbsencePage() {
   const [localValidationError, setLocalValidationError] =
     useState<LocalValidationError>(null);
 
-  // Overlap warning (preview only)
   const [overlapPreview, setOverlapPreview] = useState<string | null>(null);
 
   async function fetchEmployees(query: string) {
@@ -128,18 +125,26 @@ export default function NewSicknessAbsencePage() {
 
   // Overlap preview runs when employee + firstDay are set
   useEffect(() => {
+    const employeeId = selectedEmployee?.id;
+
+    if (!employeeId || !firstDay) {
+      setOverlapPreview(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
     async function runOverlapCheck() {
-      if (!selectedEmployee || !firstDay) {
-        setOverlapPreview(null);
-        return;
-      }
-
       try {
-        const url = `/api/absence/check-overlap?employee_id=${encodeURIComponent(
-          selectedEmployee.id
-        )}&first_day=${encodeURIComponent(firstDay)}`;
-
-        const res = await fetch(url, { method: "GET" });
+        const res = await fetch("/api/absence/check-overlap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employee_id: employeeId,
+            first_day: firstDay,
+          }),
+          signal: controller.signal,
+        });
 
         if (!res.ok) {
           console.error("Overlap check HTTP error:", res.status);
@@ -152,8 +157,17 @@ export default function NewSicknessAbsencePage() {
         if (data && data.code === "ABSENCE_DATE_OVERLAP" && data.conflicts) {
           const firstConflict = data.conflicts[0];
           if (firstConflict) {
+            const startUk = formatUkDate(
+              firstConflict.startDate,
+              firstConflict.startDate
+            );
+            const endUk = formatUkDate(
+              firstConflict.endDate,
+              firstConflict.endDate
+            );
+
             setOverlapPreview(
-              `This sickness would overlap another absence from ${firstConflict.startDate} to ${firstConflict.endDate}.`
+              `This sickness would overlap another absence from ${startUk} to ${endUk}.`
             );
           } else {
             setOverlapPreview(
@@ -163,14 +177,19 @@ export default function NewSicknessAbsencePage() {
         } else {
           setOverlapPreview(null);
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
         console.error("Overlap preview error:", err);
         setOverlapPreview(null);
       }
     }
 
     runOverlapCheck();
-  }, [selectedEmployee, firstDay]);
+
+    return () => {
+      controller.abort();
+    };
+  }, [selectedEmployee?.id, firstDay]);
 
   function validateForm(): boolean {
     if (!selectedEmployee) {

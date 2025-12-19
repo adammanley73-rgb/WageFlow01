@@ -11,7 +11,7 @@ type Counts = {
   notices?: number;
 };
 
-const CARD_BG = "#c8c8c8"; // unified tile background (your ÔÇ£neutral-325ÔÇØ)
+const CARD_BG = "#c8c8c8"; // unified tile background (your "neutral-325")
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
@@ -128,3 +128,4 @@ export default function DashboardClient({ counts }: { counts: Counts }) {
     </div>
   );
 }
+
