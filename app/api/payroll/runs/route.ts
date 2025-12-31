@@ -273,8 +273,12 @@ export async function POST(req: Request) {
     const period_end =
       typeof body?.period_end === "string" ? body.period_end.trim() : "";
 
-    const pay_date_raw =
+    // Accept either pay_date (preferred) or payment_date (legacy UI naming)
+    const pay_date_raw_1 =
       typeof body?.pay_date === "string" ? body.pay_date.trim() : "";
+    const pay_date_raw_2 =
+      typeof body?.payment_date === "string" ? body.payment_date.trim() : "";
+    const pay_date_raw = pay_date_raw_1 || pay_date_raw_2;
     const pay_date = pay_date_raw ? pay_date_raw : null;
 
     const run_name_raw =
@@ -330,9 +334,7 @@ export async function POST(req: Request) {
 
     const insertRow: any = {
       company_id: companyId,
-
       run_name: run_name,
-
       frequency,
       period_start,
       period_end,
@@ -363,7 +365,18 @@ export async function POST(req: Request) {
     }
 
     const res = NextResponse.json(
-      { ok: true, run: data, debugSource: "payroll_runs_create_debug_v1" },
+      {
+        ok: true,
+
+        // New stable fields (use these everywhere going forward)
+        id: data?.id ?? null,
+        run_id: data?.id ?? null,
+
+        // Backwards compatible payload
+        run: data,
+
+        debugSource: "payroll_runs_create_debug_v1",
+      },
       { status: 201 }
     );
 
