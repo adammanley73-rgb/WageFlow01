@@ -16,7 +16,7 @@ type StarterRow = {
 
 const CARD = "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
 
-export default function StarterPage() {
+export default function StarterDeclarationPage() {
   const params = useParams<{ id: string }>();
   const id = useMemo(() => String(params?.id || ""), [params]);
   const router = useRouter();
@@ -27,9 +27,7 @@ export default function StarterPage() {
 
   const [p45, setP45] = useState(false);
   const [starter, setStarter] = useState<"A" | "B" | "C" | "">("A");
-  const [loan, setLoan] = useState<"none" | "plan1" | "plan2" | "plan4" | "plan5">(
-    "none"
-  );
+  const [loan, setLoan] = useState<"none" | "plan1" | "plan2" | "plan4" | "plan5">("none");
   const [pgLoan, setPgLoan] = useState(false);
 
   useEffect(() => {
@@ -40,9 +38,7 @@ export default function StarterPage() {
         setLoading(true);
         setErr(null);
 
-        const r = await fetch(`/api/employees/${id}/starter`, {
-          cache: "no-store",
-        });
+        const r = await fetch(`/api/employees/${id}/starter`, { cache: "no-store" });
 
         if (r.status === 404 || r.status === 204) {
           // Defaults are fine.
@@ -116,7 +112,7 @@ export default function StarterPage() {
 
   return (
     <PageTemplate
-      title="Starter Details"
+      title="Starter declaration"
       currentSection="employees"
       headerMode="wizard"
       backHref={`/dashboard/employees/${id}/edit`}
@@ -144,15 +140,11 @@ export default function StarterPage() {
               </label>
 
               <div className="space-y-2">
-                <div className="text-sm font-medium text-neutral-900">
-                  Starter Declaration
-                </div>
+                <div className="text-sm font-medium text-neutral-900">Starter Declaration</div>
                 <select
                   className="w-full rounded-md border border-neutral-400 bg-white p-2"
                   value={starter}
-                  onChange={(e) =>
-                    setStarter(e.target.value as "A" | "B" | "C" | "")
-                  }
+                  onChange={(e) => setStarter(e.target.value as "A" | "B" | "C" | "")}
                   disabled={p45}
                 >
                   <option value="">Select…</option>
@@ -163,21 +155,12 @@ export default function StarterPage() {
               </div>
 
               <div className="space-y-2">
-                <div className="text-sm font-medium text-neutral-900">
-                  Student loan plan
-                </div>
+                <div className="text-sm font-medium text-neutral-900">Student loan plan</div>
                 <select
                   className="w-full rounded-md border border-neutral-400 bg-white p-2"
                   value={loan}
                   onChange={(e) =>
-                    setLoan(
-                      e.target.value as
-                        | "none"
-                        | "plan1"
-                        | "plan2"
-                        | "plan4"
-                        | "plan5"
-                    )
+                    setLoan(e.target.value as "none" | "plan1" | "plan2" | "plan4" | "plan5")
                   }
                 >
                   <option value="none">None</option>
@@ -194,9 +177,7 @@ export default function StarterPage() {
                   checked={pgLoan}
                   onChange={(e) => setPgLoan(e.target.checked)}
                 />
-                <span className="text-sm text-neutral-900">
-                  Postgraduate loan
-                </span>
+                <span className="text-sm text-neutral-900">Postgraduate loan</span>
               </label>
             </div>
 
