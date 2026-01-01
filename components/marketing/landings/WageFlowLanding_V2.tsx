@@ -13,12 +13,9 @@ import {
   ChevronRight,
   CreditCard,
   Scale,
-  FileText,
   Lock,
   Users,
   Calculator,
-  BadgeCheck,
-  Link as LinkIcon,
   Mail,
   Phone,
   ArrowRight,
@@ -82,6 +79,36 @@ function buildMailto(to: string, subject: string, body: string) {
 }
 
 type ToastState = { open: boolean; message: string };
+
+function YouTubeShort({
+  videoId,
+  title,
+}: {
+  videoId: string;
+  title: string;
+}) {
+  // No autoplay, no mute. People click play.
+  // Uses youtube-nocookie but still clearly YouTube if someone inspects the page/network.
+  const src = `https://www.youtube-nocookie.com/embed/${videoId}?controls=1&rel=0&modestbranding=1&playsinline=1`;
+
+  return (
+    <div className="w-full max-w-[320px] mx-auto">
+      <div className="rounded-2xl overflow-hidden border border-gray-200 bg-white shadow-sm">
+        <div className="relative w-full" style={{ paddingTop: "177.7778%" }}>
+          <iframe
+            title={title}
+            src={src}
+            className="absolute inset-0 h-full w-full"
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function WageFlowLandingV2() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -409,6 +436,22 @@ export default function WageFlowLandingV2() {
       <main id="main" className="pt-24" role="main">
         <section id="top" className="pt-10 pb-14 px-4">
           <div className="max-w-7xl mx-auto">
+            {/* Top videos (reduced size by ~50%) */}
+            <div className="mb-10">
+              <p className="text-sm text-[#0f3c85] bg-blue-50 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-blue-100">
+                <Lock className="w-4 h-4" aria-hidden="true" />
+                Video previews
+              </p>
+              <p className="text-gray-700 mt-2">
+                Press play. No autoplay.
+              </p>
+
+              <div className="mt-5 grid md:grid-cols-2 gap-6 justify-items-center">
+                <YouTubeShort videoId="c1qYUYKstp8" title="WageFlow preview video 1" />
+                <YouTubeShort videoId="DglfS7FoNRQ" title="WageFlow preview video 2" />
+              </div>
+            </div>
+
             <div className="grid lg:grid-cols-2 gap-10 items-center">
               <div>
                 <p className="inline-flex items-center gap-2 text-sm text-[#0f3c85] bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
@@ -591,6 +634,15 @@ export default function WageFlowLandingV2() {
                 </button>
               </div>
 
+              {/* Mid-page video (reduced size by ~50%), placed above the pricing calculator tool */}
+              <div className="w-full">
+                <div className="text-center mb-3">
+                  <p className="font-semibold text-gray-900">Quick walkthrough</p>
+                  <p className="text-sm text-gray-700 mt-1">Press play. No autoplay.</p>
+                </div>
+                <YouTubeShort videoId="XmUeFtDwf5U" title="WageFlow walkthrough video" />
+              </div>
+
               <div className="w-full max-w-3xl bg-gray-50 border border-gray-200 rounded-2xl p-6">
                 <div className="flex items-start gap-3">
                   <Calculator className="w-5 h-5 text-[#0f3c85] mt-0.5" aria-hidden="true" />
@@ -758,6 +810,7 @@ export default function WageFlowLandingV2() {
                 </div>
               </div>
             </div>
+
           </div>
         </section>
 
