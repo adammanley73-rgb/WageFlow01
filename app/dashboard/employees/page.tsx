@@ -56,8 +56,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const showLeaversParam = searchParams?.showLeavers;
 
   const sortKey: "name" | "number" = sortParam === "number" ? "number" : "name";
-  const sortDirection: "asc" | "desc" =
-    directionParam === "desc" ? "desc" : "asc";
+  const sortDirection: "asc" | "desc" = directionParam === "desc" ? "desc" : "asc";
 
   const showLeavers = showLeaversParam === "1";
 
@@ -69,10 +68,13 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
     .eq("id", activeCompanyId)
     .maybeSingle();
 
+  // IMPORTANT:
+  // Use employees.id (uuid) for routing. employee_id is your legacy text PK.
+  // The employee detail page expects the uuid id, so the list must link with it.
   let employeesQuery = supabase
     .from("employees")
     .select(
-      "employee_id, employee_number, first_name, last_name, email, ni_number, pay_frequency, status, leaving_date"
+      "id, employee_id, employee_number, first_name, last_name, email, ni_number, pay_frequency, status, leaving_date"
     )
     .eq("company_id", activeCompanyId);
 
@@ -92,8 +94,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
     { data: employeesData, error: employeesError },
   ] = await Promise.all([companyPromise, employeesQuery]);
 
-  const activeCompanyName =
-    !companyError && company ? company.name ?? null : null;
+  const activeCompanyName = !companyError && company ? company.name ?? null : null;
 
   const employees = Array.isArray(employeesData) ? employeesData : [];
   const loadError = employeesError ? "There was a problem loading employees." : null;
@@ -108,8 +109,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const isNumberSorted = sortKey === "number";
 
   const nextNameDirection = isNameSorted && sortDirection === "asc" ? "desc" : "asc";
-  const nextNumberDirection =
-    isNumberSorted && sortDirection === "asc" ? "desc" : "asc";
+  const nextNumberDirection = isNumberSorted && sortDirection === "asc" ? "desc" : "asc";
 
   const nameSortLabel = isNameSorted
     ? sortDirection === "asc"
@@ -261,8 +261,10 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                       ? "border-red-300 bg-red-100 text-red-800"
                       : "border-emerald-300 bg-emerald-100 text-emerald-800";
 
+                    const routeId = employee.id || employee.employee_id;
+
                     return (
-                      <tr key={employee.employee_id}>
+                      <tr key={employee.id || employee.employee_id}>
                         <td className="px-4 py-3 text-neutral-900">
                           {employee.employee_number ?? "\u2014"}
                         </td>
@@ -287,7 +289,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                         </td>
                         <td className="px-4 py-3 text-right">
                           <Link
-                            href={`/dashboard/employees/${employee.employee_id}`}
+                            href={`/dashboard/employees/${routeId}`}
                             className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85] min-w-[88px]"
                           >
                             View / edit

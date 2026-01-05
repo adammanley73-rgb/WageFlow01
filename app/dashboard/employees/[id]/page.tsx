@@ -1,502 +1,406 @@
-/* @ts-nocheck */
-'use client';
+/* C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\page.tsx */
 
-import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+import PageTemplate from "@/components/layout/PageTemplate";
 
-type Employee = {
-  id: string;
-  employeeNumber: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone?: string;
-  dateOfBirth: string;
-  nationalInsurance?: string;
-  annualSalary: number;
-  hireDate: string;
-  status: string;
-  employmentType: string;
-  payScheduleId: string;
-  jobTitle?: string;
-  department?: string;
-  address?: {
-    line1?: string;
-    line2?: string;
-    city?: string;
-    county?: string;
-    postcode?: string;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+function getSupabaseUrl(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+}
+
+function createAdminClient() {
+  const url = getSupabaseUrl();
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceKey) {
+    throw new Error("employee details: missing Supabase env");
+  }
+
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false },
+  });
+}
+
+function isUuid(s: string) {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
+    String(s || "")
+  );
+}
+
+function safeStr(v: any) {
+  const s = String(v ?? "").trim();
+  return s ? s : "—";
+}
+
+function fmtDate(d: any) {
+  const s = String(d || "").trim();
+  if (!s) return "—";
+  const dt = new Date(s);
+  if (!Number.isFinite(dt.getTime())) return s;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(dt);
+}
+
+function fmtMoney(n: any) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return "—";
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+  }).format(num);
+}
+
+function calcAge(dobISO: any) {
+  const s = String(dobISO || "").trim();
+  if (!s) return null;
+  const dob = new Date(s);
+  if (!Number.isFinite(dob.getTime())) return null;
+
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const m = today.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+  return age;
+}
+
+function aeStatus(dobISO: any, annualSalary: any) {
+  const age = calcAge(dobISO);
+  const sal = Number(annualSalary);
+
+  if (age === null || !Number.isFinite(sal)) {
+    return {
+      label: "Auto-enrolment: unknown",
+      sub: "Needs date of birth and annual salary",
+      className: "border-neutral-300 bg-neutral-100 text-neutral-800",
+    };
+  }
+
+  if (age >= 22 && age < 75 && sal >= 10000) {
+    return {
+      label: "Eligible for auto-enrolment",
+      sub: `Age ${age}, salary ${fmtMoney(sal)}`,
+      className: "border-emerald-300 bg-emerald-100 text-emerald-800",
+    };
+  }
+
+  if (age >= 16 && age < 75 && sal >= 6240) {
+    return {
+      label: "Entitled to opt-in",
+      sub: `Age ${age}, salary ${fmtMoney(sal)}`,
+      className: "border-amber-300 bg-amber-100 text-amber-900",
+    };
+  }
+
+  return {
+    label: "Not eligible",
+    sub: `Age ${age}, salary ${fmtMoney(sal)}`,
+    className: "border-neutral-300 bg-neutral-100 text-neutral-800",
   };
-  createdAt: string;
-  updatedAt: string;
+}
+
+type EmployeeRow = {
+  employee_id: string;
+  id: string | null;
+  company_id: string;
+
+  employee_number: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+
+  ni_number: string | null;
+  pay_frequency: string | null;
+
+  status: string | null;
+  leaving_date: string | null;
+
+  job_title: string | null;
+  employment_type: string | null;
+
+  start_date: string | null;
+  date_of_birth: string | null;
+
+  annual_salary: number | null;
+  hourly_rate: number | null;
+  hours_per_week: number | null;
+
+  address: any | null;
+
+  created_at: string | null;
+  updated_at: string | null;
 };
 
-export default function EmployeeDetailsPage() {
-  const params = useParams();
-  const employeeId = (params as { id?: string })?.id as string;
-  const [employee, setEmployee] = useState<Employee | null>(null);
-  const [loading, setLoading] = useState(true);
+function normalizeAddress(address: any) {
+  const a = address || {};
+  const line1 = a.line1 ?? a.address_line1 ?? a.line_1 ?? null;
+  const line2 = a.line2 ?? a.address_line2 ?? a.line_2 ?? null;
+  const townCity = a.town_city ?? a.city ?? a.town ?? a.locality ?? null;
+  const county = a.county ?? a.region ?? null;
+  const postcode = a.postcode ?? a.post_code ?? a.zip ?? null;
+  const country = a.country ?? null;
 
-  // âœ… Load employee from real API
-  useEffect(() => {
-    const loadEmployee = async () => {
-      try {
-        console.log('ðŸ” Loading employee with ID:', employeeId);
-        setLoading(true);
+  const parts = [line1, line2, townCity, county, postcode, country]
+    .map((x) => String(x ?? "").trim())
+    .filter((x) => x);
 
-        const response = await fetch('/api/employees');
-        console.log('ðŸ“¡ API Response status:', response.status);
-
-        if (response.ok) {
-          const allEmployees = await response.json();
-          console.log('ðŸ“Š All employees from API:', allEmployees);
-
-          const foundEmployee = allEmployees.find((emp: any) => emp.id === employeeId);
-          console.log('ðŸŽ¯ Found specific employee:', foundEmployee);
-
-          setEmployee(foundEmployee || null);
-        } else {
-          console.error('âŒ Failed to fetch employees:', response.status);
-        }
-      } catch (error) {
-        console.error('âŒ Error loading employee:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (employeeId) {
-      loadEmployee();
-    }
-  }, [employeeId]);
-
-  // Helper functions
-  const formatCurrency = (amount: number) => `Â£${amount?.toFixed(2) || '0.00'}`;
-
-  const formatDate = (dateStr: string) => {
-    try {
-      return new Date(dateStr).toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-      });
-    } catch {
-      return dateStr;
-    }
+  return {
+    line1: line1 ? String(line1).trim() : null,
+    line2: line2 ? String(line2).trim() : null,
+    townCity: townCity ? String(townCity).trim() : null,
+    county: county ? String(county).trim() : null,
+    postcode: postcode ? String(postcode).trim() : null,
+    country: country ? String(country).trim() : null,
+    singleLine: parts.length ? parts.join(", ") : null,
   };
+}
 
-  const calculateAge = (dateOfBirth: string) => {
-    const today = new Date();
-    const birthDate = new Date(dateOfBirth);
-    const age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
+function pillClass(base: string) {
+  return `inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${base}`;
+}
 
-    return monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())
-      ? age - 1
-      : age;
-  };
-
-  const calculateAutoEnrollmentStatus = (dateOfBirth: string, annualSalary: number) => {
-    const age = calculateAge(dateOfBirth);
-
-    if (age >= 22 && age < 75 && annualSalary >= 10000) {
-      return { status: 'Eligible for Auto-Enrollment', color: '#166534', bg: '#dcfce7', border: '#22c55e' };
-    } else if (age >= 16 && age < 75 && annualSalary >= 6240) {
-      return { status: 'Entitled to Opt-In', color: '#92400e', bg: '#fef3c7', border: '#fbbf24' };
-    } else {
-      return { status: 'Not Eligible', color: '#374151', bg: '#f3f4f6', border: '#d1d5db' };
-    }
-  };
-
-  const getPayScheduleDisplay = (payScheduleId: string) => {
-    const schedules: { [key: string]: string } = {
-      'monthly-25th': 'Monthly on 25th',
-      'monthly-last': 'Monthly Last Working Day',
-      'weekly-fri': 'Weekly on Friday',
-    };
-    return schedules[payScheduleId] || payScheduleId;
-  };
-
-  const styles = {
-    container: {
-      fontFamily:
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-      background: 'linear-gradient(180deg, #10b981 0%, #059669 35%, #1e40af 65%, #3b82f6 100%)',
-      minHeight: '100vh',
-      padding: '40px 20px',
-    },
-    maxWidth: {
-      maxWidth: '1000px',
-      margin: '0 auto',
-    },
-    headerCard: {
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      backdropFilter: 'blur(20px)',
-      padding: '24px 32px',
-      borderRadius: '12px',
-      boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)',
-      marginBottom: '24px',
-      border: '1px solid rgba(255, 255, 255, 0.2)',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    title: {
-      fontSize: '28px',
-      fontWeight: 'bold',
-      color: '#1f2937',
-      margin: '0',
-    },
-    subtitle: {
-      fontSize: '16px',
-      color: '#6b7280',
-      margin: '4px 0 0 0',
-    },
-    nav: {
-      display: 'flex',
-      gap: '16px',
-    },
-    navLink: {
-      color: '#000000',
-      textDecoration: 'none',
-      fontWeight: 'bold',
-      padding: '8px 16px',
-      borderRadius: '6px',
-      backgroundColor: '#10b981',
-      border: '1px solid #059669',
-      fontSize: '14px',
-    },
-    card: {
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      backdropFilter: 'blur(20px)',
-      borderRadius: '12px',
-      boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15), 0 8px 20px rgba(0, 0, 0, 0.1)',
-      border: '1px solid rgba(255, 255, 255, 0.2)',
-      padding: '32px',
-      marginBottom: '24px',
-    },
-    sectionTitle: {
-      fontSize: '20px',
-      fontWeight: 'bold',
-      color: '#1f2937',
-      margin: '0 0 20px 0',
-      borderBottom: '2px solid #e5e7eb',
-      paddingBottom: '8px',
-    },
-    grid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-      gap: '20px',
-      marginBottom: '24px',
-    },
-    gridItem: {
-      backgroundColor: '#f9fafb',
-      border: '1px solid #e5e7eb',
-      borderRadius: '8px',
-      padding: '16px',
-    },
-    label: {
-      fontSize: '12px',
-      fontWeight: '600',
-      color: '#6b7280',
-      textTransform: 'uppercase' as const,
-      marginBottom: '4px',
-      display: 'block',
-    },
-    value: {
-      fontSize: '16px',
-      color: '#1f2937',
-      fontWeight: '500',
-      margin: '0',
-    },
-    badge: {
-      display: 'inline-block',
-      padding: '6px 12px',
-      borderRadius: '20px',
-      fontSize: '12px',
-      fontWeight: '600',
-      border: '1px solid',
-    } as React.CSSProperties,
-    loading: {
-      textAlign: 'center' as const,
-      padding: '80px 20px',
-      fontSize: '18px',
-      color: '#6b7280',
-    },
-    notFound: {
-      textAlign: 'center' as const,
-      padding: '80px 20px',
-    },
-    notFoundTitle: {
-      fontSize: '24px',
-      fontWeight: 'bold',
-      color: '#1f2937',
-      margin: '0 0 12px 0',
-    },
-    notFoundText: {
-      fontSize: '16px',
-      color: '#6b7280',
-      margin: '0 0 24px 0',
-    },
-    actionButtons: {
-      display: 'flex',
-      gap: '16px',
-      justifyContent: 'flex-end',
-      marginTop: '24px',
-    },
-    editButton: {
-      padding: '12px 24px',
-      backgroundColor: '#10b981',
-      color: '#000000',
-      textDecoration: 'none',
-      borderRadius: '8px',
-      fontSize: '14px',
-      fontWeight: '600',
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '8px',
-    },
-    secondaryButton: {
-      padding: '12px 24px',
-      backgroundColor: '#f3f4f6',
-      color: '#374151',
-      textDecoration: 'none',
-      borderRadius: '8px',
-      fontSize: '14px',
-      fontWeight: '500',
-      border: '1px solid #d1d5db',
-    },
-  };
-
-  if (loading) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.maxWidth}>
-          <div style={styles.card}>
-            <div style={styles.loading}>
-              ðŸ”„ Loading employee details...
-              <div style={{ marginTop: 8, fontSize: 14, color: '#9ca3af' }}>Employee ID: {employeeId}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!employee) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.maxWidth}>
-          <div style={styles.card}>
-            <div style={styles.notFound}>
-              <h1 style={styles.notFoundTitle}>ðŸ‘¤ Employee Not Found</h1>
-              <p style={styles.notFoundText}>
-                The employee with ID "{employeeId}" could not be found in the system.
-              </p>
-              <a href="/dashboard/employees" style={styles.navLink}>
-                â† Back to Employee List
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const autoEnrollment = calculateAutoEnrollmentStatus(employee.dateOfBirth, employee.annualSalary);
-  const statusBadgeColors =
-    (employee.status || '').toLowerCase() === 'active'
-      ? { bg: '#dcfce7', color: '#166534', border: '#22c55e' }
-      : { bg: '#fef2f2', color: '#dc2626', border: '#ef4444' };
-
+function cardBox(title: string, children: any) {
   return (
-    <div style={styles.container}>
-      <div style={styles.maxWidth}>
-        {/* Header */}
-        <div style={styles.headerCard}>
-          <div>
-            <h1 style={styles.title}>
-              ðŸ’¼ <span style={{ color: '#3b82f6' }}>WageFlow</span> Employee Details
-            </h1>
-            <p style={styles.subtitle}>
-              {employee.firstName} {employee.lastName} â€¢ {employee.employeeNumber}
-            </p>
-          </div>
-          <nav style={styles.nav}>
-            <a href="/dashboard" style={styles.navLink}>
-              Dashboard
-            </a>
-            <a href="/dashboard/employees" style={styles.navLink}>
-              â† Employees
-            </a>
-          </nav>
-        </div>
-
-        {/* Basic Information */}
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>ðŸ“‹ Basic Information</h2>
-          <div style={styles.grid}>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Full Name</label>
-              <p style={styles.value}>
-                {employee.firstName} {employee.lastName}
-              </p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Employee Number</label>
-              <p style={styles.value}>{employee.employeeNumber}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Email Address</label>
-              <p style={styles.value}>{employee.email}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Phone Number</label>
-              <p style={styles.value}>{employee.phone || 'Not provided'}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Date of Birth</label>
-              <p style={styles.value}>
-                {formatDate(employee.dateOfBirth)} (Age: {calculateAge(employee.dateOfBirth)})
-              </p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>National Insurance</label>
-              <p style={styles.value}>{employee.nationalInsurance || 'Not provided'}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Employment Information */}
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>ðŸ’¼ Employment Information</h2>
-          <div style={styles.grid}>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Job Title</label>
-              <p style={styles.value}>{employee.jobTitle || 'Not specified'}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Department</label>
-              <p style={styles.value}>{employee.department || 'Not specified'}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Employment Type</label>
-              <p style={styles.value}>
-                {employee.employmentType?.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()) ||
-                  'Full Time'}
-              </p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Hire Date</label>
-              <p style={styles.value}>{formatDate(employee.hireDate)}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Status</label>
-              <span
-                style={{
-                  ...styles.badge,
-                  backgroundColor: statusBadgeColors.bg,
-                  color: statusBadgeColors.color,
-                  borderColor: statusBadgeColors.border,
-                }}
-              >
-                {employee.status?.toUpperCase() || 'ACTIVE'}
-              </span>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Pay Schedule</label>
-              <p style={styles.value}>{getPayScheduleDisplay(employee.payScheduleId)}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Financial Information */}
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>ðŸ’° Financial Information</h2>
-          <div style={styles.grid}>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Annual Salary</label>
-              <p style={styles.value}>{formatCurrency(employee.annualSalary)}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Monthly Gross</label>
-              <p style={styles.value}>{formatCurrency(employee.annualSalary / 12)}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Auto-Enrollment Status</label>
-              <span
-                style={{
-                  ...styles.badge,
-                  backgroundColor: autoEnrollment.bg,
-                  color: autoEnrollment.color,
-                  borderColor: autoEnrollment.border,
-                }}
-              >
-                {autoEnrollment.status}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Address Information */}
-        {employee.address && (
-          <div style={styles.card}>
-            <h2 style={styles.sectionTitle}>ðŸ  Address Information</h2>
-            <div style={styles.grid}>
-              <div style={styles.gridItem}>
-                <label style={styles.label}>Address Line 1</label>
-                <p style={styles.value}>{employee.address.line1 || 'Not provided'}</p>
-              </div>
-              <div style={styles.gridItem}>
-                <label style={styles.label}>Address Line 2</label>
-                <p style={styles.value}>{employee.address.line2 || 'Not provided'}</p>
-              </div>
-              <div style={styles.gridItem}>
-                <label style={styles.label}>City</label>
-                <p style={styles.value}>{employee.address.city || 'Not provided'}</p>
-              </div>
-              <div style={styles.gridItem}>
-                <label style={styles.label}>County</label>
-                <p style={styles.value}>{employee.address.county || 'Not provided'}</p>
-              </div>
-              <div style={styles.gridItem}>
-                <label style={styles.label}>Postcode</label>
-                <p style={styles.value}>{employee.address.postcode || 'Not provided'}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* System Information */}
-        <div style={styles.card}>
-          <h2 style={styles.sectionTitle}>â„¹ï¸ System Information</h2>
-          <div style={styles.grid}>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Employee ID</label>
-              <p style={styles.value}>{employee.id}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Created</label>
-              <p style={styles.value}>{formatDate(employee.createdAt)}</p>
-            </div>
-            <div style={styles.gridItem}>
-              <label style={styles.label}>Last Updated</label>
-              <p style={styles.value}>{formatDate(employee.updatedAt)}</p>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div style={styles.actionButtons}>
-            <a href={`/dashboard/employees/${employee.id}/payroll`} style={styles.secondaryButton}>
-              ðŸ“Š View Payroll History
-            </a>
-            <a href={`/dashboard/employees/${employee.id}/edit`} style={styles.editButton}>
-              âœï¸ Edit Employee
-            </a>
-          </div>
-        </div>
+    <div className="rounded-lg border border-neutral-300 bg-white p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-600">
+        {title}
       </div>
+      <div className="mt-1 text-sm text-neutral-900">{children}</div>
     </div>
   );
 }
 
+export default async function EmployeeDetailsPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const jar = cookies();
+
+  const activeCompanyId =
+    jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+
+  if (!activeCompanyId || !isUuid(String(activeCompanyId))) {
+    redirect("/dashboard/companies");
+  }
+
+  const routeId = String(params?.id || "").trim();
+  if (!routeId) redirect("/dashboard/employees");
+
+  const supabase = createAdminClient();
+
+  const selectCols =
+    "employee_id,id,company_id,employee_number,first_name,last_name,email,ni_number,pay_frequency,status,leaving_date,job_title,employment_type,start_date,date_of_birth,annual_salary,hourly_rate,hours_per_week,address,created_at,updated_at";
+
+  let { data: employee, error } = await supabase
+    .from("employees")
+    .select(selectCols)
+    .eq("company_id", activeCompanyId)
+    .eq("employee_id", routeId)
+    .maybeSingle<EmployeeRow>();
+
+  if (!employee && isUuid(routeId)) {
+    const r2 = await supabase
+      .from("employees")
+      .select(selectCols)
+      .eq("company_id", activeCompanyId)
+      .eq("id", routeId)
+      .maybeSingle<EmployeeRow>();
+
+    employee = r2.data as any;
+    error = r2.error as any;
+  }
+
+  if (!employee) {
+    return (
+      <PageTemplate title="Employee" currentSection="employees">
+        <div className="flex flex-col gap-3 flex-1 min-h-0">
+          <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+            <div className="px-6 py-10 text-center bg-white">
+              <div className="text-2xl font-semibold text-neutral-900">
+                Employee Not Found
+              </div>
+              <div className="mt-2 text-sm text-neutral-700">
+                The employee with ID "{routeId}" could not be found for the active company.
+              </div>
+              {error ? (
+                <div className="mt-3 text-xs text-red-700">
+                  {String(error?.message || "Lookup error")}
+                </div>
+              ) : null}
+              <div className="mt-6">
+                <Link
+                  href="/dashboard/employees"
+                  className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+                >
+                  Back to Employees
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </PageTemplate>
+    );
+  }
+
+  const fullName =
+    `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim() ||
+    "Unnamed employee";
+
+  const empKey = employee.employee_id;
+
+  const status = (employee.status ?? "active").toLowerCase();
+  const isLeaver = status === "leaver";
+
+  const statusPill = isLeaver
+    ? pillClass("border-red-300 bg-red-100 text-red-800")
+    : pillClass("border-emerald-300 bg-emerald-100 text-emerald-800");
+
+  const ae = aeStatus(employee.date_of_birth, employee.annual_salary);
+  const addr = normalizeAddress(employee.address);
+
+  return (
+    <PageTemplate title="Employee" currentSection="employees">
+      <div className="flex flex-col gap-3 flex-1 min-h-0">
+        <div className="rounded-2xl bg-white/80 px-4 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="text-lg sm:text-xl text-[#0f3c85] truncate">
+                <span className="font-bold">{fullName}</span>
+                {employee.employee_number ? (
+                  <span className="text-neutral-700"> · Emp {employee.employee_number}</span>
+                ) : null}
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-neutral-700">
+                <span className={statusPill}>{isLeaver ? "Leaver" : "Active"}</span>
+                <span className={pillClass(ae.className)}>{ae.label}</span>
+                <span className="text-xs text-neutral-600">{ae.sub}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/dashboard/employees"
+                className="inline-flex items-center justify-center rounded-full border border-neutral-400 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 shadow-sm hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-neutral-400"
+              >
+                Back
+              </Link>
+
+              <Link
+                href={`/dashboard/employees/${empKey}/edit`}
+                className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600"
+              >
+                Edit employee
+              </Link>
+
+              <Link
+                href={`/dashboard/employees/${empKey}/wizard/starter`}
+                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+              >
+                Wizard
+              </Link>
+
+              <Link
+                href={`/dashboard/employees/${empKey}/payroll`}
+                className="inline-flex items-center justify-center rounded-full bg-neutral-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-neutral-700"
+              >
+                Payroll history
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
+            <div className="text-sm font-semibold text-neutral-900">Basic information</div>
+            <div className="text-xs text-neutral-700">Core identity fields and HMRC basics.</div>
+          </div>
+
+          <div className="p-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {cardBox("Employee number", safeStr(employee.employee_number))}
+              {cardBox("Email", safeStr(employee.email))}
+              {cardBox("NI number", safeStr(employee.ni_number))}
+              {cardBox("Date of birth", fmtDate(employee.date_of_birth))}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
+            <div className="text-sm font-semibold text-neutral-900">Employment</div>
+            <div className="text-xs text-neutral-700">Role, dates, and pay frequency.</div>
+          </div>
+
+          <div className="p-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {cardBox("Job title", safeStr(employee.job_title))}
+              {cardBox("Employment type", safeStr(employee.employment_type))}
+              {cardBox("Start date", fmtDate(employee.start_date))}
+              {cardBox("Pay frequency", safeStr(employee.pay_frequency))}
+              {cardBox("Leaving date", fmtDate(employee.leaving_date))}
+              {cardBox("Status", isLeaver ? "Leaver" : "Active")}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
+            <div className="text-sm font-semibold text-neutral-900">Pay</div>
+            <div className="text-xs text-neutral-700">Salary, hourly, and hours per week.</div>
+          </div>
+
+          <div className="p-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {cardBox("Annual salary", fmtMoney(employee.annual_salary))}
+              {cardBox("Hourly rate", fmtMoney(employee.hourly_rate))}
+              {cardBox(
+                "Hours per week",
+                employee.hours_per_week !== null && employee.hours_per_week !== undefined
+                  ? String(employee.hours_per_week)
+                  : "—"
+              )}
+            </div>
+
+            <div className="mt-4 rounded-lg border border-neutral-300 bg-white p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-600">
+                Auto-enrolment
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className={pillClass(ae.className)}>{ae.label}</span>
+                <span className="text-sm text-neutral-800">{ae.sub}</span>
+              </div>
+              <div className="mt-2 text-xs text-neutral-600">
+                This is a simple indicator. Final AE decisions should be validated during payroll processing.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
+            <div className="text-sm font-semibold text-neutral-900">Address</div>
+            <div className="text-xs text-neutral-700">Stored employee address (if provided).</div>
+          </div>
+
+          <div className="p-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {cardBox("Address", addr.singleLine || "—")}
+              {cardBox("Postcode", addr.postcode || "—")}
+              {cardBox("Town / city", addr.townCity || "—")}
+              {cardBox("County", addr.county || "—")}
+            </div>
+          </div>
+        </div>
+      </div>
+    </PageTemplate>
+  );
+}
