@@ -3,7 +3,7 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Inter } from "next/font/google";
@@ -12,9 +12,6 @@ import PageTemplate, { StatTile } from "@/components/ui/PageTemplate";
 import { formatUkDate } from "@/lib/formatUkDate";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
-
-type Frequency = "weekly" | "fortnightly" | "four_weekly" | "monthly";
-type Status = "draft" | "processing" | "approved" | "rti_submitted" | "completed";
 
 type Row = {
   id: string;
@@ -25,15 +22,22 @@ type Row = {
   gross: number;
   deductions: number;
   net: number;
+  calcMode: string;
 };
 
 type ApiResponse = {
   ok?: boolean;
   debugSource?: string;
-
   run: any;
   employees: any[];
   totals: any;
+  seededMode?: boolean;
+  exceptions?: {
+    items?: any[];
+    blockingCount?: number;
+    warningCount?: number;
+    total?: number;
+  };
 };
 
 function gbp(n: number) {
@@ -63,24 +67,88 @@ function pickFirst(...vals: any[]) {
   return null;
 }
 
+function cleanEmail(v: any) {
+  const raw = pickFirst(v, null);
+  if (raw === null || raw === undefined) return "—";
+
+  let s = String(raw).trim();
+  if (!s) return "—";
+
+  const lower = s.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "n/a") return "—";
+
+  // Mojibake variants seen in your data
+  if (s.includes("â") || s.includes("â€”") || s.includes("â€“") || s.includes("\uFFFD")) return "—";
+
+  if (s === "-" || s === "—" || s === "–") return "—";
+
+  return s;
+}
+
 function mapEmployees(raw: any[]): Row[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((r: any) => {
     const gross = toNumberSafe(pickFirst(r.gross, r.total_gross, r.gross_pay, 0) as any);
     const deductions = toNumberSafe(pickFirst(r.deductions, r.total_deductions, r.deduction_total, 0) as any);
     const net = toNumberSafe(pickFirst(r.net, r.total_net, r.net_pay, gross - deductions) as any);
+    const calcMode = String(pickFirst(r.calc_mode, r.calcMode, "uncomputed") || "uncomputed");
 
     return {
       id: String(pickFirst(r.id, r.pay_run_employee_id, "") || ""),
-      employeeId: String(pickFirst(r.employeeId, r.employee_id, r.employeeId, "") || ""),
+      employeeId: String(pickFirst(r.employeeId, r.employee_id, "") || ""),
       employeeName: String(pickFirst(r.employeeName, r.employee_name, r.full_name, "—") || "—"),
       employeeNumber: String(pickFirst(r.employeeNumber, r.employee_number, r.payroll_number, "—") || "—"),
-      email: String(pickFirst(r.email, r.employee_email, "—") || "—"),
+      email: cleanEmail(pickFirst(r.email, r.employee_email, "—")),
       gross: Number.isFinite(gross) ? Number(gross.toFixed(2)) : 0,
       deductions: Number.isFinite(deductions) ? Number(deductions.toFixed(2)) : 0,
       net: Number.isFinite(net) ? Number(net.toFixed(2)) : 0,
+      calcMode,
     };
   });
+}
+
+function calcBadgeStyles(mode: string) {
+  const m = String(mode || "").toLowerCase();
+  if (m === "full") {
+    return { borderColor: "#10b981", backgroundColor: "rgba(16,185,129,0.12)", color: "#065f46" };
+  }
+  if (m === "gross_only") {
+    return { borderColor: "#f59e0b", backgroundColor: "rgba(245,158,11,0.12)", color: "#92400e" };
+  }
+  return { borderColor: "#94a3b8", backgroundColor: "rgba(148,163,184,0.14)", color: "#334155" };
+}
+
+function severityChip(sev: string) {
+  const s = String(sev || "").toLowerCase();
+  if (s === "block") {
+    return {
+      label: "BLOCK",
+      style: { borderColor: "#fecaca", backgroundColor: "rgba(239,68,68,0.10)", color: "#991b1b" },
+    };
+  }
+  return {
+    label: "WARN",
+    style: { borderColor: "#fde68a", backgroundColor: "rgba(245,158,11,0.12)", color: "#92400e" },
+  };
+}
+
+function isBlock(x: any) {
+  return String(x?.severity || "").toLowerCase() === "block";
+}
+
+function extractCodes(x: any): string[] {
+  const out: string[] = [];
+
+  if (Array.isArray(x?.codes)) out.push(...x.codes.map((c: any) => String(c)));
+  if (x?.code) out.push(String(x.code));
+  if (x?.warning_code) out.push(String(x.warning_code));
+  if (x?.blocking_code) out.push(String(x.blocking_code));
+
+  const clean = out
+    .map((c) => String(c || "").trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(clean));
 }
 
 export default function PayrollRunDetailPage() {
@@ -91,10 +159,15 @@ export default function PayrollRunDetailPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState<boolean>(false);
+
+  const [actionBusy, setActionBusy] = useState<null | "save" | "approve" | "recalc">(null);
+
   const [dirty, setDirty] = useState<boolean>(false);
   const [validation, setValidation] = useState<Record<string, string>>({});
   const [approvedMsg, setApprovedMsg] = useState<string | null>(null);
+
+  const [exceptionsExpanded, setExceptionsExpanded] = useState<boolean>(false);
+  const exceptionsAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
     setApprovedMsg(null);
@@ -145,26 +218,14 @@ export default function PayrollRunDetailPage() {
     const totalsObj: any = (data as any)?.totals || {};
 
     const gross = toNumberSafe(
-      pickFirst(
-        totalsObj.gross,
-        totalsObj.total_gross,
-        runObj.total_gross_pay,
-        runObj.totalGrossPay,
-        0
-      ) as any
+      pickFirst(totalsObj.gross, totalsObj.total_gross, runObj.total_gross_pay, runObj.totalGrossPay, 0) as any
     );
 
     const tax = toNumberSafe(pickFirst(totalsObj.tax, runObj.total_tax, runObj.totalTax, 0) as any);
     const ni = toNumberSafe(pickFirst(totalsObj.ni, runObj.total_ni, runObj.totalNi, 0) as any);
 
     const net = toNumberSafe(
-      pickFirst(
-        totalsObj.net,
-        totalsObj.total_net,
-        runObj.total_net_pay,
-        runObj.totalNetPay,
-        0
-      ) as any
+      pickFirst(totalsObj.net, totalsObj.total_net, runObj.total_net_pay, runObj.totalNetPay, 0) as any
     );
 
     const deductions = Number((gross - net).toFixed(2));
@@ -179,6 +240,91 @@ export default function PayrollRunDetailPage() {
   }, [data]);
 
   const displayTotals = rows.length > 0 ? rowTotals : apiTotals;
+
+  const runObj: any = (data as any)?.run || {};
+  const employeesRaw: any[] = Array.isArray((data as any)?.employees) ? (data as any).employees : [];
+
+  const exceptionsObj: any = (data as any)?.exceptions;
+  const exceptionItems = useMemo(() => {
+    const items = exceptionsObj?.items;
+    return Array.isArray(items) ? items : [];
+  }, [exceptionsObj]);
+
+  const seededModeFromApi = typeof (data as any)?.seededMode === "boolean" ? Boolean((data as any)?.seededMode) : null;
+
+  const seededModeDerivedFromCalcMode = useMemo(() => {
+    if (!data) return true;
+    if (!Array.isArray(employeesRaw) || employeesRaw.length === 0) return true;
+
+    return employeesRaw.some((e: any) => {
+      const m = String(pickFirst(e.calc_mode, e.calcMode, "uncomputed") || "uncomputed").toLowerCase();
+      return m !== "full";
+    });
+  }, [data, employeesRaw]);
+
+  const seededMode = seededModeFromApi !== null ? seededModeFromApi : seededModeDerivedFromCalcMode;
+
+  const blockingCount =
+    Number.isFinite(Number(exceptionsObj?.blockingCount)) ? Number(exceptionsObj?.blockingCount) : exceptionItems.filter(isBlock).length;
+
+  const warningCount =
+    Number.isFinite(Number(exceptionsObj?.warningCount)) ? Number(exceptionsObj?.warningCount) : exceptionItems.filter((x: any) => !isBlock(x)).length;
+
+  const exceptionTotal =
+    Number.isFinite(Number(exceptionsObj?.total)) ? Number(exceptionsObj?.total) : exceptionItems.length;
+
+  const hasBlockingExceptions = blockingCount > 0;
+  const hasAnyExceptions = exceptionTotal > 0 || blockingCount > 0 || warningCount > 0;
+
+  const apiSeededKnown = seededModeFromApi !== null;
+  const apiExceptionsKnown = data ? Object.prototype.hasOwnProperty.call(data, "exceptions") : false;
+
+  const groupedExceptions = useMemo(() => {
+    const groups = new Map<string, any>();
+
+    for (let i = 0; i < exceptionItems.length; i++) {
+      const x = exceptionItems[i];
+      const sev = isBlock(x) ? "block" : "warn";
+      const empId = String(pickFirst(x?.employee_id, x?.employeeId, "") || "");
+      const name = String(pickFirst(x?.employee_name, x?.employeeName, "—") || "—");
+      const gross = toNumberSafe(pickFirst(x?.gross, x?.gross_pay, 0) as any);
+
+      const keyBase = empId || name || `idx_${i}`;
+      const key = `${sev}::${keyBase}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          severity: sev,
+          employeeId: empId,
+          name,
+          gross,
+          codes: new Set<string>(),
+        });
+      }
+
+      const g = groups.get(key);
+      const codes = extractCodes(x);
+      for (const c of codes) g.codes.add(c);
+
+      if (!Number.isFinite(g.gross) || g.gross === 0) {
+        if (Number.isFinite(gross) && gross !== 0) g.gross = gross;
+      }
+    }
+
+    const blocks: any[] = [];
+    const warns: any[] = [];
+
+    for (const v of groups.values()) {
+      const out = { ...v, codes: Array.from(v.codes) };
+      if (v.severity === "block") blocks.push(out);
+      else warns.push(out);
+    }
+
+    blocks.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    warns.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+    return { blocks, warns };
+  }, [exceptionItems]);
 
   const onChangeCell = (id: string, field: "gross" | "deductions" | "net", value: string) => {
     setRows((prev) =>
@@ -218,10 +364,11 @@ export default function PayrollRunDetailPage() {
   }, [rows]);
 
   const hasErrors = Object.keys(validation).length > 0;
+  const saving = actionBusy !== null;
 
   const saveChanges = async () => {
     try {
-      setSaving(true);
+      setActionBusy("save");
       setErr(null);
 
       const payload = {
@@ -254,13 +401,45 @@ export default function PayrollRunDetailPage() {
     } catch (e: any) {
       setErr(e?.message || "Save failed");
     } finally {
-      setSaving(false);
+      setActionBusy(null);
+    }
+  };
+
+  const recalculateRun = async () => {
+    try {
+      setActionBusy("recalc");
+      setErr(null);
+      setApprovedMsg(null);
+
+      const res = await fetch(`/api/payroll/${runId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "recalculate" }),
+      });
+
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "Failed to run calculation");
+      }
+
+      const j: ApiResponse = await res.json();
+      setData(j);
+
+      const mapped = mapEmployees(j?.employees);
+      setRows(mapped);
+
+      setDirty(false);
+      setValidation({});
+    } catch (e: any) {
+      setErr(e?.message || "Calculation failed");
+    } finally {
+      setActionBusy(null);
     }
   };
 
   const approveRun = async () => {
     try {
-      setSaving(true);
+      setActionBusy("approve");
       setErr(null);
 
       const res = await fetch(`/api/payroll/${runId}`, {
@@ -285,15 +464,13 @@ export default function PayrollRunDetailPage() {
     } catch (e: any) {
       setErr(e?.message || "Approval failed");
     } finally {
-      setSaving(false);
+      setActionBusy(null);
     }
   };
 
   const exportCsv = () => {
     window.location.href = `/api/payroll/${runId}/export`;
   };
-
-  const runObj: any = (data as any)?.run || {};
 
   const runNumber = String(pickFirst(runObj.runNumber, runObj.run_number, "—") || "—");
 
@@ -310,14 +487,41 @@ export default function PayrollRunDetailPage() {
 
   const payDateText = payDate ? formatUkDate(String(payDate)) : "—";
 
-  const canApprove =
+  const canApproveBase =
     (String(statusRaw || "") === "draft" || String(statusRaw || "") === "processing") &&
     rows.length > 0 &&
     !dirty &&
     !hasErrors &&
     !saving;
 
+  // Step 1: Approval gate uses API truth only (seededMode + exceptions), not totals heuristics.
+  // If seededMode or exceptions are not returned by the API, approval stays disabled.
+  const apiGateReady = apiSeededKnown && apiExceptionsKnown;
+
+  const canApprove = canApproveBase && apiGateReady && !seededMode && !hasBlockingExceptions;
+
+  const approveDisabledReason = !apiGateReady
+    ? "Approve disabled. Run state is incomplete because seededMode or exceptions were not returned by the API. Reload or run calculation."
+    : seededMode
+    ? "Approve disabled. This run is not fully calculated (seeded mode is on). Run calculations until seededMode is false."
+    : hasBlockingExceptions
+    ? `Approve disabled. Fix blocking exceptions first (${blockingCount}).`
+    : !canApproveBase
+    ? "Approve disabled. Ensure employees are loaded, there are no validation errors, and you have no unsaved edits."
+    : "";
+
   const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.gross) > 0;
+
+  const openExceptionsPanel = () => {
+    setExceptionsExpanded(true);
+    setTimeout(() => {
+      try {
+        exceptionsAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch {
+        // ignore
+      }
+    }, 0);
+  };
 
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
@@ -337,6 +541,34 @@ export default function PayrollRunDetailPage() {
                 >
                   {statusText}
                 </span>
+
+                {!loading && hasAnyExceptions ? (
+                  <span
+                    className="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold"
+                    style={{
+                      backgroundColor: hasBlockingExceptions ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.12)",
+                      color: hasBlockingExceptions ? "#991b1b" : "#92400e",
+                      border: `1px solid ${hasBlockingExceptions ? "#fecaca" : "#fde68a"}`,
+                    }}
+                    title="Exceptions are checks you must review before approval"
+                  >
+                    Exceptions: {blockingCount} block, {warningCount} warn
+                  </span>
+                ) : null}
+
+                {!loading && seededMode ? (
+                  <span
+                    className="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold"
+                    style={{
+                      backgroundColor: "rgba(245,158,11,0.12)",
+                      color: "#92400e",
+                      border: "1px solid #fde68a",
+                    }}
+                    title="Seeded mode means calculations are incomplete"
+                  >
+                    Seeded mode
+                  </span>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-1 text-sm text-slate-700">
@@ -372,6 +604,36 @@ export default function PayrollRunDetailPage() {
               >
                 Export CSV
               </button>
+
+              <button
+                type="button"
+                onClick={openExceptionsPanel}
+                disabled={loading || !hasAnyExceptions}
+                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                style={{
+                  backgroundColor: hasBlockingExceptions ? "#991b1b" : "#92400e",
+                  opacity: loading || !hasAnyExceptions ? 0.6 : 1,
+                  cursor: loading || !hasAnyExceptions ? "not-allowed" : "pointer",
+                }}
+                title={!hasAnyExceptions ? "No exceptions returned for this run" : "Jump to exceptions panel"}
+              >
+                Exceptions
+              </button>
+
+              <button
+                type="button"
+                onClick={recalculateRun}
+                disabled={saving || loading || !runId}
+                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                style={{
+                  backgroundColor: "var(--wf-blue)",
+                  opacity: saving || loading || !runId ? 0.6 : 1,
+                  cursor: saving || loading || !runId ? "not-allowed" : "pointer",
+                }}
+                title="Run calculation pipeline for this run"
+              >
+                {actionBusy === "recalc" ? "Calculating..." : "Run calculation"}
+              </button>
             </div>
           </div>
 
@@ -394,10 +656,190 @@ export default function PayrollRunDetailPage() {
             </div>
           ) : null}
 
+          {seededMode ? (
+            <div
+              className="mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold"
+              style={{
+                borderColor: "#f59e0b",
+                backgroundColor: "rgba(245,158,11,0.12)",
+                color: "#92400e",
+              }}
+            >
+              Seeded mode. This run is not fully calculated yet. Approval is disabled until seededMode is false and there
+              are no blocking exceptions.
+            </div>
+          ) : null}
+
+          {hasBlockingExceptions ? (
+            <div
+              className="mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold"
+              style={{
+                borderColor: "#fecaca",
+                backgroundColor: "rgba(239,68,68,0.10)",
+                color: "#991b1b",
+              }}
+            >
+              Approval blocked. Blocking exceptions found: {blockingCount}. Review the Exceptions panel to fix them.
+            </div>
+          ) : null}
+
           {showDataMismatchNote ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
               This run has totals but no employee rows were returned by the API. The run details still show correctly.
               Approve stays disabled until employees load.
+            </div>
+          ) : null}
+        </div>
+
+        {/* Step 1: Exceptions panel on-page, driven by API exceptions (counts + items). */}
+        <div ref={exceptionsAnchorRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
+          <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col">
+              <div className="text-base font-extrabold text-slate-900">Exceptions</div>
+              <div className="text-sm text-slate-700">
+                {loading ? "Loading..." : `${blockingCount} blocking, ${warningCount} warnings`}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setExceptionsExpanded((v) => !v)}
+              disabled={loading}
+              className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+              style={{
+                backgroundColor: hasBlockingExceptions ? "#991b1b" : "var(--wf-blue)",
+                opacity: loading ? 0.6 : 1,
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
+              title="Expand or collapse exceptions"
+            >
+              {exceptionsExpanded ? "Hide" : "Show"}
+            </button>
+          </div>
+
+          {exceptionsExpanded ? (
+            <div className="border-t border-neutral-200 px-5 py-4 flex flex-col gap-4">
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                <div className="text-sm font-extrabold text-slate-900">How to use this</div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Blocking items must be fixed before approval. Warnings are allowed, but you should review them.
+                  Zero gross employees can be valid, for example tax rebates, so they stay as warnings.
+                </div>
+              </div>
+
+              {!apiExceptionsKnown ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                  Exceptions were not returned by the API. Approval will stay disabled. Run calculation or reload.
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-3">
+                <div className="text-sm font-extrabold text-slate-900">Blocking</div>
+
+                {groupedExceptions.blocks.length === 0 ? (
+                  <div className="text-sm text-slate-700">No blocking exceptions.</div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {groupedExceptions.blocks.map((g: any, idx: number) => {
+                      const chip = severityChip("block");
+                      const codes = Array.isArray(g.codes) ? g.codes : [];
+                      const gross = toNumberSafe(g.gross);
+
+                      return (
+                        <div key={`blk-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
+                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
+                              {chip.label}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 text-sm text-slate-700">
+                            Gross:{" "}
+                            <span className={`${inter.className} font-extrabold`} style={{ color: "var(--wf-blue)" }}>
+                              {gbp(gross)}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 text-xs font-semibold text-slate-700">
+                            {codes.length ? `Codes: ${codes.join(", ")}` : "Codes: BLOCK"}
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {g.employeeId ? (
+                              <Link
+                                href={`/dashboard/employees/${g.employeeId}/edit?focus=tax_ni`}
+                                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                                style={{ backgroundColor: "#059669" }}
+                              >
+                                Fix on employee file
+                              </Link>
+                            ) : (
+                              <span className="text-xs font-semibold text-slate-600">Missing employee_id in exception payload.</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div className="text-sm font-extrabold text-slate-900">Warnings</div>
+
+                {groupedExceptions.warns.length === 0 ? (
+                  <div className="text-sm text-slate-700">No warnings.</div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {groupedExceptions.warns.map((g: any, idx: number) => {
+                      const chip = severityChip("warn");
+                      const codes = Array.isArray(g.codes) ? g.codes : [];
+                      const gross = toNumberSafe(g.gross);
+
+                      return (
+                        <div key={`wrn-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
+                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
+                              {chip.label}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 text-sm text-slate-700">
+                            Gross:{" "}
+                            <span className={`${inter.className} font-extrabold`} style={{ color: "var(--wf-blue)" }}>
+                              {gbp(gross)}
+                            </span>
+                          </div>
+
+                          <div className="mt-1 text-xs font-semibold text-slate-700">
+                            {codes.length ? `Codes: ${codes.join(", ")}` : "Codes: WARN"}
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {g.employeeId ? (
+                              <Link
+                                href={`/dashboard/employees/${g.employeeId}/edit?focus=tax_ni`}
+                                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                                style={{ backgroundColor: "var(--wf-blue)" }}
+                              >
+                                Open employee file
+                              </Link>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {!apiSeededKnown ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                  seededMode was not returned by the API. Approval will stay disabled. Run calculation or reload.
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -416,7 +858,7 @@ export default function PayrollRunDetailPage() {
           </div>
 
           <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse">
+            <table className="w-full min-w-[1080px] border-collapse">
               <thead>
                 <tr className="bg-neutral-100">
                   <th className="sticky left-0 z-10 bg-neutral-100 px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
@@ -427,6 +869,9 @@ export default function PayrollRunDetailPage() {
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
                     Email
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                    Calc
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
                     Gross
@@ -446,7 +891,7 @@ export default function PayrollRunDetailPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td className="px-4 py-4 text-sm text-slate-700 border-b border-neutral-200" colSpan={7}>
+                    <td className="px-4 py-4 text-sm text-slate-700 border-b border-neutral-200" colSpan={8}>
                       Loading...
                     </td>
                   </tr>
@@ -454,7 +899,7 @@ export default function PayrollRunDetailPage() {
 
                 {!loading && rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-4 text-sm text-slate-700 border-b border-neutral-200" colSpan={7}>
+                    <td className="px-4 py-4 text-sm text-slate-700 border-b border-neutral-200" colSpan={8}>
                       No employees attached to this run.
                     </td>
                   </tr>
@@ -463,6 +908,8 @@ export default function PayrollRunDetailPage() {
                 {!loading &&
                   rows.map((r) => {
                     const rowError = validation?.[r.id];
+                    const badge = calcBadgeStyles(r.calcMode);
+
                     return (
                       <tr key={r.id} className="bg-white">
                         <td className="sticky left-0 z-0 bg-white px-4 py-3 text-sm text-slate-900 border-b border-neutral-200">
@@ -473,6 +920,16 @@ export default function PayrollRunDetailPage() {
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
                           {r.email || "—"}
+                        </td>
+
+                        <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                          <span
+                            className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
+                            style={badge}
+                            title="Calculation state for this employee in this run"
+                          >
+                            {String(r.calcMode || "uncomputed")}
+                          </span>
                         </td>
 
                         <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
@@ -528,7 +985,8 @@ export default function PayrollRunDetailPage() {
           </div>
 
           <div className="px-5 py-4 text-sm text-slate-700">
-            Live totals reflect your edits. Net defaults to Gross minus Deductions.
+            Live totals reflect your edits. Net defaults to Gross minus Deductions. Approval is blocked until seededMode is
+            false and there are no blocking exceptions.
           </div>
         </div>
 
@@ -545,14 +1003,14 @@ export default function PayrollRunDetailPage() {
             }}
             title={rows.length === 0 ? "No employee rows loaded for this run" : "Save employee row changes"}
           >
-            {saving ? "Saving..." : "Save Changes"}
+            {actionBusy === "save" ? "Saving..." : "Save Changes"}
           </button>
 
           <button
             type="button"
             onClick={approveRun}
             disabled={!canApprove}
-            title="Approve and queue FPS"
+            title={approveDisabledReason || "Approve and queue FPS"}
             className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
             style={{
               backgroundColor: "#059669",
@@ -560,7 +1018,7 @@ export default function PayrollRunDetailPage() {
               cursor: !canApprove ? "not-allowed" : "pointer",
             }}
           >
-            {saving ? "Working..." : "Approve run"}
+            {actionBusy === "approve" ? "Working..." : "Approve run"}
           </button>
         </div>
       </div>

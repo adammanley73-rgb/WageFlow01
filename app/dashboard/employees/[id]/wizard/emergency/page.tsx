@@ -2,7 +2,7 @@
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\wizard\emergency\page.tsx
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import PageTemplate from "@/components/ui/PageTemplate";
@@ -20,17 +20,76 @@ function canonPhone(raw: string) {
   return plus + digits;
 }
 
+function isJson(res: Response) {
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json");
+}
+
 export default function EmergencyContactPage() {
   const params = useParams<{ id: string }>();
   const id = useMemo(() => String(params?.id || ""), [params]);
   const router = useRouter();
 
+  const [loading, setLoading] = useState(true);
+
   const [contactName, setContactName] = useState("");
   const [relationship, setRelationship] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const aliveRef = useRef(true);
+
+  useEffect(() => {
+    aliveRef.current = true;
+
+    (async () => {
+      if (!id) return;
+
+      try {
+        setLoading(true);
+        setErr(null);
+
+        const res = await fetch(`/api/employees/${id}/emergency`, { cache: "no-store" });
+
+        if (res.status === 404 || res.status === 204) {
+          // No existing emergency record. That's fine.
+          return;
+        }
+
+        if (!res.ok) {
+          let msg = `Load failed (${res.status})`;
+          if (isJson(res)) {
+            const j = await res.json().catch(() => ({} as any));
+            msg = j?.error || msg;
+          }
+          throw new Error(msg);
+        }
+
+        if (isJson(res)) {
+          const j = await res.json().catch(() => ({} as any));
+          const d = (j?.data ?? j ?? null) as any;
+
+          if (aliveRef.current && d) {
+            setContactName(String(d.contact_name ?? ""));
+            setRelationship(String(d.relationship ?? ""));
+            setPhone(String(d.phone ?? ""));
+            setEmail(String(d.email ?? ""));
+          }
+        }
+      } catch (e: any) {
+        if (aliveRef.current) setErr(String(e?.message || e));
+      } finally {
+        if (aliveRef.current) setLoading(false);
+      }
+    })();
+
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [id]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -54,7 +113,6 @@ export default function EmergencyContactPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          employee_id: id,
           contact_name: name,
           relationship: rel || null,
           phone: tel || null,
@@ -63,13 +121,21 @@ export default function EmergencyContactPage() {
       });
 
       if (!res.ok) {
-        const j = await res.json().catch(() => ({} as any));
-        throw new Error(j?.error || "Failed to save emergency contact");
+        let msg = "Failed to save emergency contact";
+        if (isJson(res)) {
+          const j = await res.json().catch(() => ({} as any));
+          msg = j?.error || msg;
+          if (j?.extra?.details) msg = `${msg}: ${j.extra.details}`;
+        } else {
+          msg = `${msg} (${res.status})`;
+        }
+        throw new Error(msg);
       }
 
-      router.push(`/dashboard/employees/${id}/edit`);
-    } catch (err: any) {
-      setErr(err?.message || "Failed to save emergency contact");
+      // Finish goes back to Employees list (because /edit is currently a dead preview page)
+      router.push("/dashboard/employees");
+    } catch (e: any) {
+      setErr(String(e?.message || e));
       setBusy(false);
     }
   }
@@ -83,39 +149,37 @@ export default function EmergencyContactPage() {
       backLabel="Back"
     >
       <form onSubmit={onSubmit} className={CARD}>
-        <h2 className="text-lg font-semibold text-center mb-4">
-          Emergency Contact
-        </h2>
+        <h2 className="text-lg font-semibold text-center mb-4">Emergency Contact</h2>
+
+        {loading ? (
+          <div className="text-sm text-neutral-800">Loading...</div>
+        ) : null}
 
         {err ? (
-          <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">
-            {err}
-          </div>
+          <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">{err}</div>
         ) : null}
 
         <div className="space-y-5">
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Contact name
-            </label>
+            <label className="block text-sm font-medium mb-1">Contact name</label>
             <input
               className="w-full rounded-lg border border-neutral-300 px-3 py-2 bg-white"
               value={contactName}
               onChange={(e) => setContactName(e.target.value)}
               placeholder="e.g. Jane Bloggs"
               required
+              disabled={busy}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Relationship
-            </label>
+            <label className="block text-sm font-medium mb-1">Relationship</label>
             <input
               className="w-full rounded-lg border border-neutral-300 px-3 py-2 bg-white"
               value={relationship}
               onChange={(e) => setRelationship(e.target.value)}
               placeholder="e.g. Spouse, Parent, Friend"
+              disabled={busy}
             />
           </div>
 
@@ -128,8 +192,10 @@ export default function EmergencyContactPage() {
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+447700900123"
                 inputMode="tel"
+                disabled={busy}
               />
             </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">Email</label>
               <input
@@ -138,16 +204,18 @@ export default function EmergencyContactPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
+                disabled={busy}
               />
             </div>
           </div>
 
           <div className="pt-2 flex items-center justify-end gap-3">
-            <Link href={`/dashboard/employees/${id}/edit`} className={BTN_SECONDARY}>
+            <Link href="/dashboard/employees" className={BTN_SECONDARY}>
               Cancel
             </Link>
+
             <button type="submit" className={BTN_PRIMARY} disabled={busy}>
-              {busy ? "Saving…" : "Save and finish"}
+              {busy ? "Saving..." : "Save and finish"}
             </button>
           </div>
         </div>

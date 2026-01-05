@@ -26,6 +26,14 @@ function toNumberSafe(v: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function isUuid(v: any): boolean {
+  const s = String(v ?? "").trim();
+  if (!s) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    s
+  );
+}
+
 function getAdminClient() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -48,7 +56,10 @@ async function tryAttachments(supabase: any, runId: string) {
 
   for (const table of tables) {
     for (const col of cols) {
-      const { data, error } = await supabase.from(table).select("*").eq(col, runId);
+      const { data, error } = await supabase
+        .from(table)
+        .select("*")
+        .eq(col, runId);
 
       if (!error) {
         return {
@@ -72,14 +83,15 @@ async function tryAttachments(supabase: any, runId: string) {
       });
 
       const msg = String(error?.message || "").toLowerCase();
-      const isMissingTable = error?.code === "42P01" || msg.includes("does not exist");
+      const isMissingTable =
+        error?.code === "42P01" || msg.includes("does not exist");
       const isMissingColumn =
-        error?.code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
+        error?.code === "42703" ||
+        (msg.includes("column") && msg.includes("does not exist"));
 
       if (isMissingTable) break;
       if (isMissingColumn) continue;
 
-      // Any other error: move on.
       continue;
     }
   }
@@ -113,19 +125,29 @@ function buildEmployeeRow(att: any, emp: any) {
     ) || "—"
   );
 
-  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "—") || "—");
+  const email = String(
+    pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "—") || "—"
+  );
 
   const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
   const tax = toNumberSafe(pickFirst(att?.tax, 0));
-  const employeeNi = toNumberSafe(pickFirst(att?.employee_ni, att?.ni_employee, 0));
+
+  const employeeNi = toNumberSafe(
+    pickFirst(att?.ni_employee, att?.employee_ni, att?.employeeNi, 0)
+  );
+
   const pensionEmployee = toNumberSafe(pickFirst(att?.pension_employee, 0));
   const otherDeductions = toNumberSafe(pickFirst(att?.other_deductions, 0));
   const aoe = toNumberSafe(pickFirst(att?.attachment_of_earnings, 0));
 
-  const deductions = Number((tax + employeeNi + pensionEmployee + otherDeductions + aoe).toFixed(2));
+  const deductions = Number(
+    (tax + employeeNi + pensionEmployee + otherDeductions + aoe).toFixed(2)
+  );
+
   const net = toNumberSafe(pickFirst(att?.net_pay, att?.netPay, gross - deductions));
 
   const safeId = String(pickFirst(att?.id, "") || "");
+  const calcMode = String(pickFirst(att?.calc_mode, "uncomputed") || "uncomputed");
 
   return {
     id: safeId,
@@ -136,7 +158,86 @@ function buildEmployeeRow(att: any, emp: any) {
     gross: Number(gross.toFixed(2)),
     deductions,
     net: Number(net.toFixed(2)),
+    calc_mode: calcMode,
   };
+}
+
+function deriveSeededMode(run: any, attachments: any[]): boolean {
+  if (!Array.isArray(attachments) || attachments.length === 0) return true;
+
+  const hasCalcMode = attachments.some(
+    (r: any) => r && typeof r === "object" && "calc_mode" in r
+  );
+  if (hasCalcMode) {
+    return attachments.some(
+      (r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) !== "full"
+    );
+  }
+
+  const runTax = toNumberSafe(pickFirst(run?.total_tax, 0));
+  const runNi = toNumberSafe(pickFirst(run?.total_ni, 0));
+
+  const allGrossOnly = attachments.every((r: any) => {
+    const gross = toNumberSafe(pickFirst(r?.gross_pay, r?.grossPay, 0));
+    const net = toNumberSafe(pickFirst(r?.net_pay, r?.netPay, gross));
+    const tax = toNumberSafe(pickFirst(r?.tax, 0));
+    const niEmp = toNumberSafe(pickFirst(r?.ni_employee, r?.employee_ni, 0));
+    const niEr = toNumberSafe(pickFirst(r?.ni_employer, r?.employer_ni, 0));
+    const sameNet = Math.abs(Number((net - gross).toFixed(2))) <= 0.01;
+    return sameNet && tax === 0 && niEmp === 0 && niEr === 0;
+  });
+
+  return runTax === 0 && runNi === 0 && allGrossOnly;
+}
+
+function computeExceptions(attachments: any[], empById: Map<string, any>) {
+  const items: any[] = [];
+  let blockingCount = 0;
+  let warningCount = 0;
+
+  for (const att of attachments || []) {
+    const employeeId = String(pickFirst(att?.employee_id, "") || "").trim();
+    const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
+
+    const emp = employeeId ? empById.get(employeeId) : null;
+
+    const employeeName = String(
+      pickFirst(
+        emp?.full_name,
+        emp?.fullName,
+        emp?.name,
+        [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
+        [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
+        "—"
+      ) || "—"
+    );
+
+    const codes: string[] = [];
+
+    if (gross <= 0) codes.push("GROSS_ZERO");
+
+    const taxCode = pickFirst(emp?.tax_code, emp?.taxCode, emp?.taxcode, null);
+    if (!taxCode) codes.push("MISSING_TAX_CODE");
+
+    const niCat = pickFirst(emp?.ni_category, emp?.niCategory, emp?.ni_cat, null);
+    if (!niCat) codes.push("MISSING_NI_CATEGORY");
+
+    if (codes.length === 0) continue;
+
+    const blocking = codes.includes("MISSING_TAX_CODE") || codes.includes("MISSING_NI_CATEGORY");
+    if (blocking) blockingCount += 1;
+    else warningCount += 1;
+
+    items.push({
+      employee_id: employeeId,
+      employee_name: employeeName,
+      gross: Number(gross.toFixed(2)),
+      severity: blocking ? "block" : "warn",
+      codes,
+    });
+  }
+
+  return { items, blockingCount, warningCount, total: items.length };
 }
 
 async function getRunAndEmployees(supabase: any, runId: string, includeDebug: boolean) {
@@ -150,7 +251,12 @@ async function getRunAndEmployees(supabase: any, runId: string, includeDebug: bo
 
   if (runError) {
     debug.stage.runFetch = { ok: false, code: runError.code, message: runError.message };
-    return { ok: false, status: 404, error: "Payroll run not found", debug: includeDebug ? debug : undefined };
+    return {
+      ok: false,
+      status: 404,
+      error: "Payroll run not found",
+      debug: includeDebug ? debug : undefined,
+    };
   }
 
   debug.stage.runFetch = { ok: true };
@@ -176,65 +282,87 @@ async function getRunAndEmployees(supabase: any, runId: string, includeDebug: bo
     debug.stage.attachAttempts = (attachTry.attempts || []).slice(0, 20);
   }
 
-  const employeeIds = Array.from(
-    new Set(
-      attachments
-        .map((a: any) => String(pickFirst(a?.employee_id, "") || "").trim())
-        .filter(Boolean)
-    )
-  );
+  const rawEmployeeIds = attachments
+    .map((a: any) => String(pickFirst(a?.employee_id, "") || "").trim())
+    .filter(Boolean);
 
+  const employeeIds = Array.from(new Set(rawEmployeeIds));
   debug.stage.employeeIds = { count: employeeIds.length };
+
+  const invalidEmployeeIds = employeeIds.filter((x) => !isUuid(x));
+  if (invalidEmployeeIds.length > 0) {
+    debug.stage.employeeIdsInvalid = {
+      count: invalidEmployeeIds.length,
+      examples: invalidEmployeeIds.slice(0, 10),
+    };
+
+    return {
+      ok: false,
+      status: 500,
+      error:
+        "Legacy employee identifiers detected in payroll attachments. payroll_run_employees.employee_id must be a UUID referencing employees.id. Fix the data/schema. Do not fall back to employees.employee_id.",
+      debug: includeDebug ? debug : undefined,
+    };
+  }
 
   let employeesRaw: any[] = [];
   if (employeeIds.length > 0) {
-    // Preferred: attachments.employee_id -> employees.id
     const { data: empData, error: empError } = await supabase
       .from("employees")
       .select("*")
       .in("id", employeeIds);
 
-    if (!empError) {
-      employeesRaw = Array.isArray(empData) ? empData : [];
-      debug.stage.employeesFetch = { ok: true, via: "employees.id", count: employeesRaw.length };
+    if (empError) {
+      employeesRaw = [];
+      debug.stage.employeesFetch = {
+        ok: false,
+        via: "employees.id",
+        code: empError.code,
+        message: empError.message,
+      };
     } else {
-      // Fallback: attachments.employee_id -> employees.employee_id (older schema)
-      const { data: empData2, error: empError2 } = await supabase
-        .from("employees")
-        .select("*")
-        .in("employee_id", employeeIds);
-
-      if (!empError2) {
-        employeesRaw = Array.isArray(empData2) ? empData2 : [];
-        debug.stage.employeesFetch = { ok: true, via: "employees.employee_id", count: employeesRaw.length };
-      } else {
-        employeesRaw = [];
-        debug.stage.employeesFetch = {
-          ok: false,
-          message: empError2.message,
-          code: empError2.code,
-        };
-      }
+      employeesRaw = Array.isArray(empData) ? empData : [];
+      debug.stage.employeesFetch = {
+        ok: true,
+        via: "employees.id",
+        count: employeesRaw.length,
+      };
     }
   } else {
     debug.stage.employeesFetch = { ok: true, via: "none", count: 0 };
   }
 
-  const empByKey = new Map<string, any>();
+  const empById = new Map<string, any>();
   for (const e of employeesRaw) {
-    const k1 = String(pickFirst(e?.id, "") || "").trim();
-    const k2 = String(pickFirst(e?.employee_id, "") || "").trim();
-    if (k1) empByKey.set(k1, e);
-    if (k2) empByKey.set(k2, e);
+    const k = String(pickFirst(e?.id, "") || "").trim();
+    if (k) empById.set(k, e);
   }
 
   const employees = attachments.map((att: any) => {
     const key = String(pickFirst(att?.employee_id, "") || "").trim();
-    const emp = key ? empByKey.get(key) : null;
+    const emp = key ? empById.get(key) : null;
     return buildEmployeeRow(att, emp);
   });
 
-  return { ok: true, status: 200, run, totals, employees, debug: includeDebug ? debug : undefined };
+  const seededMode = deriveSeededMode(run, attachments);
+  debug.stage.seededMode = { detected: seededMode };
+
+  const exceptions = computeExceptions(attachments, empById);
+
+  return {
+    ok: true,
+    status: 200,
+    run,
+    totals,
+    employees,
+    seededMode,
+    exceptions,
+    attachmentsMeta: {
+      tableUsed: attachTry.tableUsed,
+      whereColumn: attachTry.whereColumn,
+    },
+    debug: includeDebug ? debug : undefined,
+  };
 }
 
 async function updateRunEmployeeRow(
@@ -245,8 +373,6 @@ async function updateRunEmployeeRow(
   deductions: number,
   net: number
 ) {
-  // Your real columns are gross_pay, net_pay, and other_deductions.
-  // We mark manual_override so it’s obvious this was edited.
   const patch = {
     gross_pay: gross,
     net_pay: net,
@@ -268,6 +394,112 @@ async function updateRunEmployeeRow(
   };
 }
 
+async function setGrossOnlyCalcForRun(supabase: any, runId: string) {
+  const attachTry = await tryAttachments(supabase, runId);
+  if (!attachTry.ok || !attachTry.tableUsed || !attachTry.whereColumn) {
+    return {
+      ok: false,
+      status: 500,
+      error: "Could not find a payroll run employees table to recalculate",
+      debug: { attachTry },
+    };
+  }
+
+  const table = attachTry.tableUsed;
+  const whereCol = attachTry.whereColumn;
+
+  const { data: rows, error: rowsErr } = await supabase
+    .from(table)
+    .select("*")
+    .eq(whereCol, runId);
+
+  if (rowsErr) {
+    return { ok: false, status: 500, error: rowsErr.message, debug: { table, whereCol } };
+  }
+
+  const rr = Array.isArray(rows) ? rows : [];
+
+  for (const r of rr) {
+    const rowId = String(pickFirst(r?.id, "") || "").trim();
+    if (!rowId) continue;
+
+    const gross = toNumberSafe(pickFirst(r?.gross_pay, r?.grossPay, 0));
+    const otherDeductions = toNumberSafe(pickFirst(r?.other_deductions, 0));
+    const pensionEmployee = toNumberSafe(pickFirst(r?.pension_employee, 0));
+    const aoe = toNumberSafe(pickFirst(r?.attachment_of_earnings, 0));
+
+    let net = 0;
+    if (gross > 0) {
+      net = gross - otherDeductions - pensionEmployee - aoe;
+      if (!Number.isFinite(net) || net < 0) net = 0;
+    }
+
+    const patch: any = {
+      calc_mode: "gross_only",
+      net_pay: Number(net.toFixed(2)),
+    };
+
+    if (r && typeof r === "object" && "tax" in r) patch.tax = 0;
+
+    if (r && typeof r === "object" && "ni_employee" in r) patch.ni_employee = 0;
+    if (r && typeof r === "object" && "employee_ni" in r) patch.employee_ni = 0;
+
+    if (r && typeof r === "object" && "ni_employer" in r) patch.ni_employer = 0;
+    if (r && typeof r === "object" && "employer_ni" in r) patch.employer_ni = 0;
+
+    const { error: upErr } = await supabase.from(table).update(patch).eq("id", rowId);
+    if (upErr) {
+      return {
+        ok: false,
+        status: 500,
+        error: `Failed to update gross-only calc for row ${rowId}: ${upErr.message}`,
+        debug: { table, whereCol, rowId, patch },
+      };
+    }
+  }
+
+  const { data: rows2, error: rowsErr2 } = await supabase
+    .from(table)
+    .select("*")
+    .eq(whereCol, runId);
+
+  if (rowsErr2) {
+    return { ok: false, status: 500, error: rowsErr2.message, debug: { table, whereCol } };
+  }
+
+  const rr2 = Array.isArray(rows2) ? rows2 : [];
+
+  const grossSum = rr2.reduce(
+    (a: number, x: any) => a + toNumberSafe(pickFirst(x?.gross_pay, x?.grossPay, 0)),
+    0
+  );
+  const netSum = rr2.reduce(
+    (a: number, x: any) => a + toNumberSafe(pickFirst(x?.net_pay, x?.netPay, 0)),
+    0
+  );
+  const taxSum = rr2.reduce((a: number, x: any) => a + toNumberSafe(pickFirst(x?.tax, 0)), 0);
+
+  const niSum = rr2.reduce((a: number, x: any) => {
+    return a + toNumberSafe(pickFirst(x?.ni_employee, x?.employee_ni, 0));
+  }, 0);
+
+  const { error: runUpErr } = await supabase
+    .from("payroll_runs")
+    .update({
+      total_gross_pay: Number(grossSum.toFixed(2)),
+      total_net_pay: Number(netSum.toFixed(2)),
+      total_tax: Number(taxSum.toFixed(2)),
+      total_ni: Number(niSum.toFixed(2)),
+    })
+    .eq("id", runId);
+
+  if (runUpErr) {
+    return { ok: false, status: 500, error: runUpErr.message };
+  }
+
+  return { ok: true, status: 200, tableUsed: table, whereColumn: whereCol };
+}
+
 export async function GET(req: Request, { params }: Ctx) {
   try {
     const id = params?.id;
@@ -284,7 +516,7 @@ export async function GET(req: Request, { params }: Ctx) {
       return NextResponse.json(
         {
           ok: false,
-          debugSource: "payroll_run_route_admin_v3",
+          debugSource: "payroll_run_route_admin_v5_calc_mode",
           error: result.error,
           ...(includeDebug ? { debug: result.debug } : {}),
         },
@@ -294,17 +526,19 @@ export async function GET(req: Request, { params }: Ctx) {
 
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_run_route_admin_v3",
+      debugSource: "payroll_run_route_admin_v5_calc_mode",
       run: result.run,
       employees: result.employees,
       totals: result.totals,
+      seededMode: result.seededMode,
+      exceptions: result.exceptions,
       ...(includeDebug ? { debug: result.debug } : {}),
     });
   } catch (err: any) {
     return NextResponse.json(
       {
         ok: false,
-        debugSource: "payroll_run_route_admin_v3",
+        debugSource: "payroll_run_route_admin_v5_calc_mode",
         error: err?.message ?? "Unexpected error",
       },
       { status: 500 }
@@ -324,13 +558,41 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     const supabase = getAdminClient();
 
-    if (action === "approve") {
-      const { error: upErr } = await supabase.from("payroll_runs").update({ status: "approved" }).eq("id", id);
+    if (action === "recalculate") {
+      const { data: run, error: runErr } = await supabase
+        .from("payroll_runs")
+        .select("id,status")
+        .eq("id", id)
+        .single();
 
-      if (upErr) {
+      if (runErr) {
         return NextResponse.json(
-          { ok: false, debugSource: "payroll_run_route_admin_v3", error: upErr.message },
+          { ok: false, debugSource: "payroll_run_route_admin_v5_calc_mode", error: runErr.message },
           { status: 500 }
+        );
+      }
+
+      if (String(run?.status || "").toLowerCase() !== "draft") {
+        return NextResponse.json(
+          {
+            ok: false,
+            debugSource: "payroll_run_route_admin_v5_calc_mode",
+            error: "Recalculate is only allowed for draft runs.",
+          },
+          { status: 409 }
+        );
+      }
+
+      const rec = await setGrossOnlyCalcForRun(supabase, id);
+      if (!rec.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            debugSource: "payroll_run_route_admin_v5_calc_mode",
+            error: rec.error,
+            ...(rec.debug ? { debug: rec.debug } : {}),
+          },
+          { status: rec.status || 500 }
         );
       }
 
@@ -338,28 +600,106 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
       return NextResponse.json({
         ok: true,
-        debugSource: "payroll_run_route_admin_v3",
+        debugSource: "payroll_run_route_admin_v5_calc_mode",
+        action: "recalculate",
+        attachments: { tableUsed: rec.tableUsed, whereColumn: rec.whereColumn },
         run: result.run,
         employees: result.employees,
         totals: result.totals,
+        seededMode: result.seededMode,
+        exceptions: result.exceptions,
+      });
+    }
+
+    if (action === "approve") {
+      const pre = await getRunAndEmployees(supabase, id, true);
+
+      if (!pre.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            debugSource: "payroll_run_route_admin_v5_calc_mode",
+            error: pre.error,
+            debug: pre.debug,
+          },
+          { status: pre.status || 500 }
+        );
+      }
+
+      const seededMode = Boolean(pre?.seededMode);
+      const blockingCount = Number(pre?.exceptions?.blockingCount ?? 0);
+
+      if (seededMode) {
+        return NextResponse.json(
+          {
+            ok: false,
+            debugSource: "payroll_run_route_admin_v5_calc_mode",
+            error:
+              "Approval blocked. This run is not fully calculated (calc_mode is not 'full' for all employees). Run the calculation pipeline first.",
+            seededMode: true,
+            exceptions: pre.exceptions,
+            debug: pre.debug,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (blockingCount > 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            debugSource: "payroll_run_route_admin_v5_calc_mode",
+            error: "Approval blocked. Fix blocking exceptions first.",
+            seededMode: false,
+            exceptions: pre.exceptions,
+          },
+          { status: 409 }
+        );
+      }
+
+      const { error: upErr } = await supabase
+        .from("payroll_runs")
+        .update({ status: "approved" })
+        .eq("id", id);
+
+      if (upErr) {
+        return NextResponse.json(
+          { ok: false, debugSource: "payroll_run_route_admin_v5_calc_mode", error: upErr.message },
+          { status: 500 }
+        );
+      }
+
+      const post = await getRunAndEmployees(supabase, id, false);
+
+      return NextResponse.json({
+        ok: true,
+        debugSource: "payroll_run_route_admin_v5_calc_mode",
+        run: post.run,
+        employees: post.employees,
+        totals: post.totals,
+        seededMode: post.seededMode,
+        exceptions: post.exceptions,
       });
     }
 
     const items = Array.isArray(body?.items) ? body.items : [];
     if (items.length === 0) {
       return NextResponse.json(
-        { ok: false, error: "Nothing to update. Expected { items: [...] } or { action: 'approve' }" },
+        {
+          ok: false,
+          error:
+            "Nothing to update. Expected { items: [...] } or { action: 'approve'|'recalculate' }",
+        },
         { status: 400 }
       );
     }
 
-    // Find the working attachments table for this run.
     const attachTry = await tryAttachments(supabase, id);
-    if (!attachTry.ok || !attachTry.tableUsed) {
+    if (!attachTry.ok || !attachTry.tableUsed || !attachTry.whereColumn) {
       return NextResponse.json(
         {
           ok: false,
-          debugSource: "payroll_run_route_admin_v3",
+          debugSource: "payroll_run_route_admin_v5_calc_mode",
           error: "Could not find a payroll run employees table to update",
         },
         { status: 500 }
@@ -382,20 +722,38 @@ export async function PATCH(req: Request, { params }: Ctx) {
       results.push({ id: rowId, ok: r.ok, ...(r.ok ? {} : { error: r.error }) });
     }
 
-    // Refresh totals by summing the authoritative row columns.
-    const { data: rows } = await supabase
-      .from("payroll_run_employees")
-      .select("gross_pay, net_pay, tax, employee_ni, ni_employee")
-      .eq("run_id", id);
+    const { data: rows, error: rowsErr } = await supabase
+      .from(table)
+      .select("*")
+      .eq(attachTry.whereColumn, id);
+
+    if (rowsErr) {
+      return NextResponse.json(
+        {
+          ok: false,
+          debugSource: "payroll_run_route_admin_v5_calc_mode",
+          error: `Updated rows, but failed to refresh totals: ${rowsErr.message}`,
+          updateResults: results,
+        },
+        { status: 500 }
+      );
+    }
 
     const rr = Array.isArray(rows) ? rows : [];
-    const grossSum = rr.reduce((a: number, r: any) => a + toNumberSafe(r?.gross_pay), 0);
-    const netSum = rr.reduce((a: number, r: any) => a + toNumberSafe(r?.net_pay), 0);
-    const taxSum = rr.reduce((a: number, r: any) => a + toNumberSafe(r?.tax), 0);
-    const niSum = rr.reduce(
-      (a: number, r: any) => a + toNumberSafe(pickFirst(r?.employee_ni, r?.ni_employee, 0)),
+
+    const grossSum = rr.reduce(
+      (a: number, r: any) => a + toNumberSafe(pickFirst(r?.gross_pay, r?.grossPay, 0)),
       0
     );
+    const netSum = rr.reduce(
+      (a: number, r: any) => a + toNumberSafe(pickFirst(r?.net_pay, r?.netPay, 0)),
+      0
+    );
+    const taxSum = rr.reduce((a: number, r: any) => a + toNumberSafe(pickFirst(r?.tax, 0)), 0);
+
+    const niSum = rr.reduce((a: number, r: any) => {
+      return a + toNumberSafe(pickFirst(r?.ni_employee, r?.employee_ni, 0));
+    }, 0);
 
     await supabase
       .from("payroll_runs")
@@ -411,17 +769,19 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_run_route_admin_v3",
+      debugSource: "payroll_run_route_admin_v5_calc_mode",
       run: result.run,
       employees: result.employees,
       totals: result.totals,
+      seededMode: result.seededMode,
+      exceptions: result.exceptions,
       updateResults: results,
     });
   } catch (err: any) {
     return NextResponse.json(
       {
         ok: false,
-        debugSource: "payroll_run_route_admin_v3",
+        debugSource: "payroll_run_route_admin_v5_calc_mode",
         error: err?.message ?? "Unexpected error",
       },
       { status: 500 }

@@ -1,27 +1,14 @@
 ﻿// C:\Users\adamm\Projects\wageflow01\app\api\active-company\route.ts
 import { NextResponse } from "next/server";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
 type Company = {
   id: string;
-  name: string;
+  name: string | null;
   created_at?: string;
 };
-
-function getBaseUrl(): string {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host =
-    h.get("x-forwarded-host") ??
-    h.get("host") ??
-    process.env.VERCEL_URL ??
-    "localhost:3000";
-
-  const normalizedHost = host.startsWith("http") ? host : `${proto}://${host}`;
-  return normalizedHost.replace(/\/$/, "");
-}
 
 function buildCookieHeader(): string {
   const jar = cookies();
@@ -29,11 +16,9 @@ function buildCookieHeader(): string {
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
-async function loadCompanies(): Promise<Company[]> {
+async function loadCompanies(origin: string): Promise<Company[]> {
   try {
-    const baseUrl = getBaseUrl();
-
-    const res = await fetch(`${baseUrl}/api/companies`, {
+    const res = await fetch(`${origin}/api/companies`, {
       method: "GET",
       cache: "no-store",
       headers: {
@@ -43,9 +28,11 @@ async function loadCompanies(): Promise<Company[]> {
 
     if (!res.ok) return [];
 
-    const data = await res.json();
-    if (Array.isArray(data)) return data;
-    if (data && Array.isArray(data.companies)) return data.companies;
+    const data = await res.json().catch(() => (null as any));
+
+    if (Array.isArray(data)) return data as Company[];
+    if (data && Array.isArray(data.companies)) return data.companies as Company[];
+    if (data && Array.isArray(data?.data)) return data.data as Company[];
 
     return [];
   } catch {
@@ -55,8 +42,8 @@ async function loadCompanies(): Promise<Company[]> {
 
 // Response:
 // - 204 No Content if no active company cookie exists
-// - 200 { id, name } if cookie exists (name may be null if not found in list)
-export async function GET(_req: Request) {
+// - 200 { ok:true, id, name, company:{id,name} }
+export async function GET(req: Request) {
   const jar = cookies();
 
   const id =
@@ -64,15 +51,26 @@ export async function GET(_req: Request) {
     jar.get("company_id")?.value ??
     "";
 
-  if (!id) {
+  const companyId = String(id || "").trim();
+
+  if (!companyId) {
     return new NextResponse(null, { status: 204 });
   }
 
-  const companies = await loadCompanies();
-  const match = companies.find((c) => c.id === id);
+  const origin = new URL(req.url).origin;
+
+  const companies = await loadCompanies(origin);
+  const match = companies.find((c) => String(c.id) === companyId);
+
+  const name = match?.name ?? "(name unavailable)";
 
   return NextResponse.json(
-    { id, name: match?.name ?? null },
+    {
+      ok: true,
+      id: companyId,
+      name,
+      company: { id: companyId, name },
+    },
     { status: 200 }
   );
 }

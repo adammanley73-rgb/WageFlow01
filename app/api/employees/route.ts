@@ -40,7 +40,11 @@ function todayISO(): string {
 function canonNi(v: any): string | null {
   const s = strOrNull(v);
   if (!s) return null;
-  return s.toUpperCase().replace(/\s+/g, "");
+  return s.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
+}
+
+function isValidNi(ni: string) {
+  return /^[A-Z]{2}\d{6}[A-Z]$/.test(ni);
 }
 
 function splitName(full: string): { first_name: string; last_name: string } | null {
@@ -52,6 +56,12 @@ function splitName(full: string): { first_name: string; last_name: string } | nu
   const last_name = parts.slice(1).join(" ").trim();
   if (!first_name || !last_name) return null;
   return { first_name, last_name };
+}
+
+function isAllowedPayFrequency(v: any) {
+  const s = String(v ?? "").trim();
+  if (!s) return true; // allow null/empty
+  return ["weekly", "fortnightly", "four_weekly", "monthly"].includes(s);
 }
 
 // GET /api/employees
@@ -143,12 +153,42 @@ export async function POST(req: Request) {
       );
     }
 
+    const email = strOrNull(body?.email);
+    if (!email) {
+      return NextResponse.json(
+        { ok: false, error: "email is required" },
+        { status: 400 }
+      );
+    }
+
+    const start_date = strOrNull(body?.start_date);
+    if (!start_date) {
+      return NextResponse.json(
+        { ok: false, error: "start_date is required" },
+        { status: 400 }
+      );
+    }
+
     const hire_date =
       strOrNull(body?.hire_date) ??
-      strOrNull(body?.start_date) ??
+      start_date ??
       todayISO();
 
+    const pay_frequency = strOrNull(body?.pay_frequency);
+    if (!isAllowedPayFrequency(pay_frequency)) {
+      return NextResponse.json(
+        { ok: false, error: "pay_frequency must be weekly, fortnightly, four_weekly, or monthly" },
+        { status: 400 }
+      );
+    }
+
     const ni = canonNi(body?.ni_number ?? body?.national_insurance_number);
+    if (ni && !isValidNi(ni)) {
+      return NextResponse.json(
+        { ok: false, error: "NI number must be 2 letters, 6 numbers, then 1 letter. Example: AB123456C." },
+        { status: 400 }
+      );
+    }
 
     // Accept salary OR annual_salary
     const annual_salary = numOrNull(
@@ -158,22 +198,26 @@ export async function POST(req: Request) {
     // employees.employee_id is NOT NULL (text). Generate if missing.
     const employee_id = strOrNull(body?.employee_id) ?? randomUUID();
 
-    // Build insert row with safe defaults for NOT NULL columns
     const insertRow: Record<string, any> = {
       company_id: companyId,
       employee_id,
 
+      employee_number: strOrNull(body?.employee_number),
+
       first_name,
       last_name,
 
-      email: strOrNull(body?.email),
+      email,
       phone: strOrNull(body?.phone),
       job_title: strOrNull(body?.job_title),
 
       hire_date,
-      start_date: strOrNull(body?.start_date),
+      start_date,
 
-      employment_type: strOrNull(body?.employment_type),
+      date_of_birth: strOrNull(body?.date_of_birth),
+
+      employment_type: strOrNull(body?.employment_type) ?? "full_time",
+
       annual_salary,
       hourly_rate: numOrNull(body?.hourly_rate),
       hours_per_week: numOrNull(body?.hours_per_week),
@@ -182,15 +226,17 @@ export async function POST(req: Request) {
       ni_number: ni,
       national_insurance_number: ni,
 
-      pay_frequency: strOrNull(body?.pay_frequency),
+      pay_frequency,
 
-      // NOT NULL booleans in your schema (set explicit safe defaults)
+      address: body?.address ?? null,
+
+      // Safe defaults for NOT NULL booleans
       has_pgl: false,
       is_director: false,
       pay_after_leaving: false,
-      is_apprentice: false,
+      is_apprentice: !!body?.is_apprentice,
 
-      // NOT NULL YTD fields in your schema (safe defaults)
+      // Safe defaults for NOT NULL YTD fields
       ytd_gross: 0,
       ytd_tax: 0,
       ytd_ni_emp: 0,
@@ -199,7 +245,6 @@ export async function POST(req: Request) {
       ytd_pension_er: 0,
     };
 
-    // Remove undefined keys
     Object.keys(insertRow).forEach((k) => {
       if (insertRow[k] === undefined) delete insertRow[k];
     });
@@ -226,9 +271,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // Your UI expects json.id to exist, and your routes use employee_id
     return NextResponse.json(
-      { ok: true, id: eid, employee_id: eid, uuid },
+      { ok: true, id: eid, employee_id: eid, uuid, employee: { employee_id: eid, id: uuid } },
       { status: 201 }
     );
   } catch (err: any) {
