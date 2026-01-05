@@ -169,15 +169,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const hire_date =
-      strOrNull(body?.hire_date) ??
-      start_date ??
-      todayISO();
+    const hire_date = strOrNull(body?.hire_date) ?? start_date ?? todayISO();
 
     const pay_frequency = strOrNull(body?.pay_frequency);
     if (!isAllowedPayFrequency(pay_frequency)) {
       return NextResponse.json(
-        { ok: false, error: "pay_frequency must be weekly, fortnightly, four_weekly, or monthly" },
+        {
+          ok: false,
+          error: "pay_frequency must be weekly, fortnightly, four_weekly, or monthly",
+        },
         { status: 400 }
       );
     }
@@ -185,7 +185,11 @@ export async function POST(req: Request) {
     const ni = canonNi(body?.ni_number ?? body?.national_insurance_number);
     if (ni && !isValidNi(ni)) {
       return NextResponse.json(
-        { ok: false, error: "NI number must be 2 letters, 6 numbers, then 1 letter. Example: AB123456C." },
+        {
+          ok: false,
+          error:
+            "NI number must be 2 letters, 6 numbers, then 1 letter. Example: AB123456C.",
+        },
         { status: 400 }
       );
     }
@@ -198,6 +202,7 @@ export async function POST(req: Request) {
     // employees.employee_id is NOT NULL (text). Generate if missing.
     const employee_id = strOrNull(body?.employee_id) ?? randomUUID();
 
+    // Build insert row with safe defaults for NOT NULL columns
     const insertRow: Record<string, any> = {
       company_id: companyId,
       employee_id,
@@ -230,13 +235,13 @@ export async function POST(req: Request) {
 
       address: body?.address ?? null,
 
-      // Safe defaults for NOT NULL booleans
+      // NOT NULL booleans (safe defaults)
       has_pgl: false,
       is_director: false,
       pay_after_leaving: false,
       is_apprentice: !!body?.is_apprentice,
 
-      // Safe defaults for NOT NULL YTD fields
+      // NOT NULL YTD fields (safe defaults)
       ytd_gross: 0,
       ytd_tax: 0,
       ytd_ni_emp: 0,
@@ -245,6 +250,7 @@ export async function POST(req: Request) {
       ytd_pension_er: 0,
     };
 
+    // Remove undefined keys
     Object.keys(insertRow).forEach((k) => {
       if (insertRow[k] === undefined) delete insertRow[k];
     });
