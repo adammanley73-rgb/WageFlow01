@@ -4,13 +4,18 @@ import { NextResponse } from "next/server";
 /*
 Rules (Vercel-safe)
 - On Vercel (Preview or Production), never allow auth bypass.
-- If no Supabase session cookies exist, redirect /dashboard/* to /login with returnTo.
+- WageFlow subdomain: require auth for ALL routes except allowlisted public paths (login + static).
+- /dashboard/*: if no Supabase session cookies exist, redirect to /login with returnTo.
 - After auth is present, enforce company selection cookie for /dashboard/* except /dashboard/companies.
-- Additionally, serve the company landing page on the www subdomain.
+- www host root: rewrite "/" to /preview/tbc (company landing).
 */
 
 function isVercelRuntime() {
   return process.env.VERCEL === "1" || process.env.VERCEL === "true";
+}
+
+function normaliseHost(hostHeader: string) {
+  return String(hostHeader || "").split(":")[0].toLowerCase();
 }
 
 function hasSupabaseSession(req: any) {
@@ -35,36 +40,72 @@ function hasSupabaseSession(req: any) {
   return false;
 }
 
+function isStaticAllowlist(pathname: string) {
+  if (!pathname) return false;
+
+  // Next.js static assets and images
+  if (pathname.startsWith("/_next")) return true;
+
+  // Common public files
+  if (pathname === "/favicon.ico") return true;
+  if (pathname === "/robots.txt") return true;
+  if (pathname === "/sitemap.xml") return true;
+
+  // Public assets in /public
+  if (pathname.startsWith("/company-logo")) return true;
+
+  return false;
+}
+
+function isWageflowPublicPath(pathname: string) {
+  if (isStaticAllowlist(pathname)) return true;
+
+  // Allow login page itself
+  if (pathname === "/login" || pathname.startsWith("/login/")) return true;
+
+  // If you have any auth callback routes, don’t block them
+  if (pathname.startsWith("/auth")) return true;
+
+  // Allow lightweight health endpoints if you use them
+  if (pathname === "/api/healthcheck") return true;
+  if (pathname === "/api/ai-status") return true;
+
+  return false;
+}
+
 export function middleware(request: any) {
   const url = request?.nextUrl;
   const pathname = url?.pathname || "";
-  const hostHeader =
-    request?.headers?.get("host") ||
-    url?.hostname ||
-    "";
+  const hostHeader = request?.headers?.get("host") || url?.hostname || "";
+  const host = normaliseHost(hostHeader);
 
-  // Serve the bespoke landing page on the www subdomain root.
-  // When someone visits https://www.thebusinessconsortiumltd.co.uk/,
-  // rewrite the request to /preview/tbc so that the company landing page is shown.
-  if (
-    hostHeader === "www.thebusinessconsortiumltd.co.uk" &&
-    pathname === "/"
-  ) {
+  // Company landing on www root.
+  if (host === "www.thebusinessconsortiumltd.co.uk" && pathname === "/") {
     const rewriteUrl = url.clone();
     rewriteUrl.pathname = "/preview/tbc";
     return NextResponse.rewrite(rewriteUrl);
   }
 
-  // Only enforce auth on /dashboard/* paths. For any other paths,
-  // proceed normally.
+  // WageFlow subdomain: lock EVERYTHING down on Vercel unless authed.
+  // This ensures visitors cannot browse the app without demo credentials.
+  if (isVercelRuntime() && host === "wageflow.thebusinessconsortiumltd.co.uk") {
+    const authed = hasSupabaseSession(request);
+    if (!authed && !isWageflowPublicPath(pathname)) {
+      const loginUrl = new URL("/login", request.url);
+      const returnTo = pathname + (url?.search || "");
+      loginUrl.searchParams.set("returnTo", returnTo);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
+  // Only enforce dashboard rules on /dashboard/*.
   if (!pathname.startsWith("/dashboard")) {
     return NextResponse.next();
   }
 
-  // If running on Vercel, check for Supabase session cookies.
+  // Enforce auth on Vercel for /dashboard/*
   if (isVercelRuntime()) {
     const authed = hasSupabaseSession(request);
-
     if (!authed) {
       const loginUrl = new URL("/login", request.url);
       const returnTo = pathname + (url?.search || "");
@@ -79,12 +120,8 @@ export function middleware(request: any) {
   }
 
   // Enforce selection of an active company.
-  const hasActive = Boolean(
-    request?.cookies?.get?.("active_company_id")?.value
-  );
-  const hasLegacy = Boolean(
-    request?.cookies?.get?.("company_id")?.value
-  );
+  const hasActive = Boolean(request?.cookies?.get?.("active_company_id")?.value);
+  const hasLegacy = Boolean(request?.cookies?.get?.("company_id")?.value);
   const hasCompany = hasActive || hasLegacy;
 
   if (!hasCompany) {
@@ -96,9 +133,7 @@ export function middleware(request: any) {
   return NextResponse.next();
 }
 
-// Match both the root path and dashboard routes.
-// The root matcher allows us to intercept '/' on all hosts, and the
-// subsequent logic in the middleware ensures only the www subdomain is rewritten.
+// Run middleware on all routes so the wageflow subdomain can be fully gated.
 export const config = {
-  matcher: ["/", "/dashboard/:path*"],
+  matcher: ["/:path*"],
 };
