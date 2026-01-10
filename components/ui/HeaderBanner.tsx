@@ -4,6 +4,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { AiStatusBadge } from "@/components/ui/AiStatusBadge";
+import LogoutButton from "@/components/ui/LogoutButton";
 
 type HeaderMode = "default" | "wizard";
 
@@ -116,6 +117,7 @@ export default function HeaderBanner({
               {navItems.map((item) => (
                 <NavChip key={item.key} label={item.label} href={item.href} />
               ))}
+              <LogoutButton />
             </div>
 
             <div className="hidden sm:flex sm:flex-row sm:items-center sm:gap-3 sm:justify-end">
@@ -125,6 +127,7 @@ export default function HeaderBanner({
                   <NavChip key={item.key} label={item.label} href={item.href} />
                 ))}
               </div>
+              <LogoutButton />
             </div>
           </>
         )}
