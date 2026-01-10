@@ -43,15 +43,16 @@ export default function LogoutButton({ className = "" }: Props) {
       onClick={onLogout}
       disabled={busy}
       className={[
-        "inline-flex h-9 items-center justify-center rounded-full border px-4 text-sm font-medium transition",
-        "border-rose-600 text-rose-700 hover:bg-rose-600 hover:text-white",
+        "inline-flex h-9 items-center justify-center rounded-full px-4 text-sm font-semibold transition",
+        "bg-rose-600 text-white uppercase tracking-wide",
+        "hover:bg-rose-700",
         "focus:outline-none focus:ring-2 focus:ring-rose-300",
-        busy ? "opacity-60 cursor-not-allowed" : "",
+        busy ? "opacity-70 cursor-not-allowed" : "",
         className,
       ].join(" ")}
       aria-label="Log out"
     >
-      {busy ? "Signing out..." : "Log out"}
+      {busy ? "SIGNING OUT..." : "LOG OUT"}
     </button>
   );
 }
