@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 /*
 Rules (Vercel-safe)
 - On Vercel (Preview or Production), never allow auth bypass.
-- WageFlow subdomain: require auth for ALL routes except allowlisted public paths (login + static).
+- WageFlow subdomain: require auth for ALL routes except allowlisted public paths (login + auth API + static assets).
 - /dashboard/*: if no Supabase session cookies exist, redirect to /login with returnTo.
 - After auth is present, enforce company selection cookie for /dashboard/* except /dashboard/companies.
 - www host root: rewrite "/" to /preview/tbc (company landing).
@@ -43,7 +43,7 @@ function hasSupabaseSession(req: any) {
 function isStaticAllowlist(pathname: string) {
   if (!pathname) return false;
 
-  // Next.js static assets and images
+  // Next.js static assets and image optimiser
   if (pathname.startsWith("/_next")) return true;
 
   // Common public files
@@ -51,8 +51,19 @@ function isStaticAllowlist(pathname: string) {
   if (pathname === "/robots.txt") return true;
   if (pathname === "/sitemap.xml") return true;
 
-  // Public assets in /public
-  if (pathname.startsWith("/company-logo")) return true;
+  // Login/brand assets that must load without auth
+  if (pathname === "/wageflow-logo.png") return true;
+  if (pathname === "/company-logo.png") return true;
+  if (pathname === "/AIStatusBadge.png") return true;
+
+  // Safe-ish common static asset extensions at the site root
+  // (keeps login pages from breaking if you swap assets later)
+  const lower = pathname.toLowerCase();
+  if (lower.endsWith(".png")) return true;
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return true;
+  if (lower.endsWith(".webp")) return true;
+  if (lower.endsWith(".svg")) return true;
+  if (lower.endsWith(".ico")) return true;
 
   return false;
 }
@@ -63,8 +74,14 @@ function isWageflowPublicPath(pathname: string) {
   // Allow login page itself
   if (pathname === "/login" || pathname.startsWith("/login/")) return true;
 
-  // If you have any auth callback routes, don’t block them
+  // Allow any auth callback routes (if you have them)
   if (pathname.startsWith("/auth")) return true;
+
+  // CRITICAL: allow login API route, otherwise nobody can sign in on Vercel
+  if (pathname.startsWith("/api/auth")) return true;
+
+  // Allow diagnostics when signed out (useful for checking prod env)
+  if (pathname.startsWith("/api/diag")) return true;
 
   // Allow lightweight health endpoints if you use them
   if (pathname === "/api/healthcheck") return true;
@@ -87,7 +104,6 @@ export function middleware(request: any) {
   }
 
   // WageFlow subdomain: lock EVERYTHING down on Vercel unless authed.
-  // This ensures visitors cannot browse the app without demo credentials.
   if (isVercelRuntime() && host === "wageflow.thebusinessconsortiumltd.co.uk") {
     const authed = hasSupabaseSession(request);
     if (!authed && !isWageflowPublicPath(pathname)) {
@@ -98,7 +114,7 @@ export function middleware(request: any) {
     }
   }
 
-  // Only enforce dashboard rules on /dashboard/*.
+  // Only enforce dashboard rules on /dashboard/*
   if (!pathname.startsWith("/dashboard")) {
     return NextResponse.next();
   }
@@ -133,7 +149,6 @@ export function middleware(request: any) {
   return NextResponse.next();
 }
 
-// Run middleware on all routes so the wageflow subdomain can be fully gated.
 export const config = {
   matcher: ["/:path*"],
 };
