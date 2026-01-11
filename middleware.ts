@@ -68,7 +68,7 @@ function isStaticAllowlist(pathname: string) {
   return false;
 }
 
-function isWageflowPublicPath(pathname: string) {
+function isWageflowPublicPath(pathname: string, method: string) {
   if (isStaticAllowlist(pathname)) return true;
 
   // Allow login page itself
@@ -87,12 +87,21 @@ function isWageflowPublicPath(pathname: string) {
   if (pathname === "/api/healthcheck") return true;
   if (pathname === "/api/ai-status") return true;
 
+  // Allow AI health publicly (safe: status only)
+  if (pathname === "/api/ai/health" || pathname.startsWith("/api/ai/health/")) return true;
+
+  // Allow GET on copilot route publicly (safe: your route’s GET just returns help text)
+  // Keep POST protected so unauthenticated users can’t use your AI proxy.
+  if (pathname === "/api/ai/copilot" && method === "GET") return true;
+
   return false;
 }
 
 export function middleware(request: any) {
   const url = request?.nextUrl;
   const pathname = url?.pathname || "";
+  const method = String(request?.method || "GET").toUpperCase();
+
   const hostHeader = request?.headers?.get("host") || url?.hostname || "";
   const host = normaliseHost(hostHeader);
 
@@ -106,7 +115,7 @@ export function middleware(request: any) {
   // WageFlow subdomain: lock EVERYTHING down on Vercel unless authed.
   if (isVercelRuntime() && host === "wageflow.thebusinessconsortiumltd.co.uk") {
     const authed = hasSupabaseSession(request);
-    if (!authed && !isWageflowPublicPath(pathname)) {
+    if (!authed && !isWageflowPublicPath(pathname, method)) {
       const loginUrl = new URL("/login", request.url);
       const returnTo = pathname + (url?.search || "");
       loginUrl.searchParams.set("returnTo", returnTo);
