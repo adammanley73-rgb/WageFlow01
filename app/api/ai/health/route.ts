@@ -1,32 +1,18 @@
 // C:\Users\adamm\Projects\wageflow01\app\api\ai\health\route.ts
 import { NextResponse } from "next/server";
-import { checkAiHealth, getAiBaseUrl } from "@/lib/aiClient";
+import { checkAiHealth } from "@/lib/aiClient";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: Request) {
-  try {
-    const health = await checkAiHealth();
-    const aiBaseUrl = getAiBaseUrl();
+export async function GET() {
+  const health = await checkAiHealth();
 
-    return NextResponse.json({
-      ok: true,
-      endpoint: "health",
-      aiBaseUrl,
-      health,
-      ts: new Date().toISOString(),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json(
-      {
-        ok: false,
-        endpoint: "health",
-        aiBaseUrl: null,
-        error: message,
-        ts: new Date().toISOString(),
-      },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({
+    ok: health.ok,
+    status: health.status,
+    aiService: "wageflow-ai",
+    message: health.error || (health.ok ? "AI service online" : "AI service offline"),
+    aiBaseUrl: process.env.WAGEFLOW_AI_BASE_URL,
+    debug: health.raw,
+  });
 }

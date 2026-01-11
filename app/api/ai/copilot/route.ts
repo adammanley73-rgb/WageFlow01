@@ -1,6 +1,7 @@
 // C:\Users\adamm\Projects\wageflow01\app\api\ai\copilot\route.ts
 import { NextResponse } from "next/server";
 import { getAiBaseUrl } from "@/lib/aiClient";
+import { generateAiToken } from "@/lib/generateAiToken";
 
 export const dynamic = "force-dynamic";
 
@@ -114,12 +115,30 @@ export async function POST(req: Request) {
       return NextResponse.json(payload, { status: 400 });
     }
 
+    const companyId = process.env.COMPANY_ID || "default-company";
+    const userId = "system-user";
+
+    const token = await generateAiToken({
+      companyId,
+      userId,
+      scopes: ["copilot:ask"],
+    });
+
+    const internalKey = process.env.WAGEFLOW_AI_INTERNAL_KEY;
+    if (!internalKey) {
+      throw new Error("WAGEFLOW_AI_INTERNAL_KEY not configured");
+    }
+
     const aiBaseUrl = getAiBaseUrl().replace(/\/+$/, "");
     const targetUrl = `${aiBaseUrl}/api/copilot`;
 
     const upstreamResponse = await fetch(targetUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "x-wageflow-ai-key": internalKey,
+      },
       body: JSON.stringify(body),
     });
 
