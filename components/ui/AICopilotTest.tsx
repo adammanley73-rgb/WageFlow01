@@ -1,4 +1,5 @@
 // C:\Users\adamm\Projects\wageflow01\components\ui\AICopilotTest.tsx
+
 "use client";
 
 import { useState } from "react";
@@ -6,16 +7,16 @@ import { useState } from "react";
 type CopilotResponse = {
   ok: boolean;
   answer?: string | null;
+  message?: string;
+  error?: string;
+  errorCode?: string;
+  statusCode?: number;
   citations?: unknown[];
   debug?: unknown;
-  error?: string;
-  statusCode?: number;
 };
 
-export default function AICopilotTest() {
-  const [question, setQuestion] = useState<string>(
-    "Give me a short test response so I can confirm WageFlow AI is wired correctly."
-  );
+export default function AICopilot() {
+  const [question, setQuestion] = useState<string>("");
   const [answer, setAnswer] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
@@ -38,8 +39,10 @@ export default function AICopilotTest() {
         },
         body: JSON.stringify({
           question: question.trim(),
-          context:
-            "WageFlow UI test: basic connectivity check from AICopilotTest component.",
+          context: {
+            source: "wageflow-ui",
+            page: "/dashboard/ai",
+          },
         }),
       });
 
@@ -47,6 +50,7 @@ export default function AICopilotTest() {
 
       if (!res.ok || !data.ok) {
         const message =
+          data.message ||
           data.error ||
           `Copilot returned an error (status ${data.statusCode ?? res.status}).`;
         setError(message);
@@ -56,9 +60,7 @@ export default function AICopilotTest() {
       setAnswer(data.answer ?? "(No answer text returned from Copilot.)");
     } catch (e) {
       const message =
-        e instanceof Error
-          ? e.message
-          : "Unknown error calling /api/ai/copilot.";
+        e instanceof Error ? e.message : "Unknown error calling /api/ai/copilot.";
       setError(message);
     } finally {
       setLoading(false);
@@ -67,13 +69,9 @@ export default function AICopilotTest() {
 
   return (
     <div className="w-full">
-      <h2 className="mb-2 text-lg font-semibold text-[#0f3c85]">
-        WageFlow AI · Copilot test
-      </h2>
+      <h2 className="mb-2 text-lg font-semibold text-[#0f3c85]">AI Copilot</h2>
       <p className="mb-4 text-xs text-slate-600">
-        This panel sends your question to{" "}
-        <code className="font-mono text-[11px]">/api/ai/copilot</code> so you
-        can confirm the AI service is wired correctly.
+        Ask a payroll question. Copilot will reply in plain English.
       </p>
 
       <label className="mb-1 block text-xs font-medium text-slate-700">
@@ -83,6 +81,7 @@ export default function AICopilotTest() {
         className="mb-3 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#0f3c85] focus:ring-1 focus:ring-[#0f3c85] resize-none"
         rows={5}
         value={question}
+        placeholder="Example. What does tax code 1257L mean. How does NI category A work. What happens with Week 1 Month 1."
         onChange={(e) => setQuestion(e.target.value)}
       />
 
@@ -93,12 +92,11 @@ export default function AICopilotTest() {
           disabled={loading}
           className="inline-flex h-9 items-center justify-center rounded-full bg-[#0f3c85] px-4 text-sm font-medium text-white hover:bg-[#0c326c] disabled:cursor-not-allowed disabled:opacity-60 transition"
         >
-          {loading ? "Asking Copilot…" : "Ask Copilot"}
+          {loading ? "Asking Copilot..." : "Ask Copilot"}
         </button>
+
         {loading && (
-          <span className="text-xs text-slate-600">
-            Waiting for response…
-          </span>
+          <span className="text-xs text-slate-600">Waiting for response...</span>
         )}
       </div>
 
