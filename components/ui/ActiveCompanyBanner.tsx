@@ -1,7 +1,7 @@
 // C:\Users\adamm\Projects\wageflow01\components\ui\ActiveCompanyBanner.tsx
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
+import { cookies, type ReadonlyRequestCookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 
 function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
@@ -9,8 +9,17 @@ function isUuid(s: string) {
   );
 }
 
-function getActiveCompanyId(): string | null {
-  const jar = cookies();
+function getSupabaseEnv() {
+  const url =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const anonKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    "";
+  return { url, anonKey };
+}
+
+function getActiveCompanyId(jar: ReadonlyRequestCookies): string | null {
   const v =
     jar.get("active_company_id")?.value ??
     jar.get("company_id")?.value ??
@@ -22,15 +31,23 @@ function getActiveCompanyId(): string | null {
   return isUuid(trimmed) ? trimmed : null;
 }
 
-async function tryGetCompanyName(companyId: string): Promise<string | null> {
+async function tryGetCompanyName(
+  companyId: string,
+  jar: ReadonlyRequestCookies
+): Promise<string | null> {
   try {
-    const url = process.env.SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const { url, anonKey } = getSupabaseEnv();
+    if (!url || !anonKey) return null;
 
-    if (!url || !serviceKey) return null;
-
-    const supabase = createClient(url, serviceKey, {
-      auth: { persistSession: false },
+    const supabase = createServerClient(url, anonKey, {
+      cookies: {
+        getAll() {
+          return jar.getAll();
+        },
+        setAll() {
+          // This component does not need to mutate cookies.
+        },
+      },
     });
 
     const { data, error } = await supabase
@@ -41,14 +58,16 @@ async function tryGetCompanyName(companyId: string): Promise<string | null> {
 
     if (error || !data) return null;
 
-    return data.name ?? null;
+    const name = typeof data.name === "string" ? data.name.trim() : "";
+    return name || null;
   } catch {
     return null;
   }
 }
 
 export default async function ActiveCompanyBanner() {
-  const companyId = getActiveCompanyId();
+  const jar = cookies();
+  const companyId = getActiveCompanyId(jar);
 
   if (!companyId) {
     return (
@@ -68,15 +87,26 @@ export default async function ActiveCompanyBanner() {
     );
   }
 
-  const companyName = await tryGetCompanyName(companyId);
+  const companyName = await tryGetCompanyName(companyId, jar);
+  const showName = companyName ?? "Selected";
+  const showHint = !companyName;
 
   return (
     <div className="rounded-2xl bg-white/80 px-4 py-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-lg sm:text-xl text-[#0f3c85]">
-          <span className="font-semibold">Active company:</span>{" "}
-          <span className="font-bold">{companyName ?? companyId}</span>
-        </p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-lg sm:text-xl text-[#0f3c85]">
+            <span className="font-semibold">Active company:</span>{" "}
+            <span className="font-bold">{showName}</span>
+          </p>
+          {showHint ? (
+            <p className="text-xs sm:text-sm text-neutral-600 mt-1">
+              Company name could not be loaded on this environment. Use Change
+              company to refresh selection.
+            </p>
+          ) : null}
+        </div>
+
         <Link
           href="/dashboard/companies"
           className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
