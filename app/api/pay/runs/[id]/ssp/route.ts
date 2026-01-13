@@ -5,14 +5,18 @@ import { NextResponse } from "next/server";
 import { getAdmin } from "@lib/admin";
 import { getSspAmountsForRun } from "@/lib/services/absenceService";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: { id: string } };
 
-export async function GET(_req: Request, { params }: Params) {
+function round2(n: number): number {
+  return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
+}
+
+export async function GET(req: Request, { params }: Params) {
   try {
     const admin = await getAdmin();
 
-    // We only care about the Supabase client here. companyId may be null when
-    // this route is called server-to-server from /api/payroll/[id].
     if (!admin || !admin.client) {
       return NextResponse.json(
         { ok: false, error: "Admin client not available" },
@@ -30,8 +34,6 @@ export async function GET(_req: Request, { params }: Params) {
       );
     }
 
-    // IMPORTANT: only filter by id. Do NOT filter by company_id using a
-    // possibly-null companyId, which was causing 22P02 errors.
     const { data: run, error: runErr } = await client
       .from("payroll_runs")
       .select("id, company_id, period_start, period_end")
@@ -53,16 +55,31 @@ export async function GET(_req: Request, { params }: Params) {
       );
     }
 
-    // Compute SSP per employee for this run using the *run's* company_id.
+    const { searchParams } = new URL(req.url);
+    const dailyRateRaw = searchParams.get("dailyRate");
+    const dailyRateOverride =
+      dailyRateRaw !== null && Number(dailyRateRaw) > 0 ? Number(dailyRateRaw) : undefined;
+
     const sspEmployees = await getSspAmountsForRun(
       run.company_id,
       run.period_start,
-      run.period_end
+      run.period_end,
+      dailyRateOverride
     );
 
-    const totalSsp = sspEmployees.reduce(
-      (sum, emp) => sum + (emp.sspAmount || 0),
-      0
+    const totalSsp = round2(
+      sspEmployees.reduce((sum, emp) => sum + (Number(emp.sspAmount) || 0), 0)
+    );
+
+    const firstWithPack = sspEmployees.find((e) => e?.packMeta);
+    const packSummary = firstWithPack?.packMeta ?? null;
+
+    const warnings = Array.from(
+      new Set(
+        sspEmployees
+          .flatMap((e) => (Array.isArray(e?.warnings) ? e.warnings : []))
+          .filter(Boolean)
+      )
     );
 
     return NextResponse.json(
@@ -72,9 +89,14 @@ export async function GET(_req: Request, { params }: Params) {
         companyId: run.company_id,
         period_start: run.period_start,
         period_end: run.period_end,
+
         totalSsp,
         employeeCount: sspEmployees.length,
         employees: sspEmployees,
+
+        dailyRateOverrideUsed: typeof dailyRateOverride === "number" ? dailyRateOverride : null,
+        packSummary,
+        warnings,
       },
       { status: 200 }
     );
