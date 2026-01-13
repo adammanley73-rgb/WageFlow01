@@ -30,6 +30,21 @@ function getActiveCompanyIdFromCookies(): string | null {
   }
 }
 
+function getCompanyIdFallbackFromEnv(): string | null {
+  const v = (process.env.COMPANY_ID || "").trim();
+  if (!v) return null;
+  return isUuid(v) ? v : null;
+}
+
+function resolveCompanyId(): string | null {
+  // Primary: browser/session context
+  const cookieCompanyId = getActiveCompanyIdFromCookies();
+  if (cookieCompanyId) return cookieCompanyId;
+
+  // Fallback: local/dev or single-tenant pinned instance
+  return getCompanyIdFallbackFromEnv();
+}
+
 function isPreview(): boolean {
   return process.env.VERCEL_ENV === "preview" || process.env.WAGEFLOW_PREVIEW === "1";
 }
@@ -88,7 +103,7 @@ function getOrCreateAdminClient(url: string, key: string): SupabaseClient {
 }
 
 export async function getAdmin(): Promise<AdminContext | null> {
-  const companyId = getActiveCompanyIdFromCookies();
+  const companyId = resolveCompanyId();
   if (!companyId) return null;
 
   if (isPreview()) {
