@@ -1,7 +1,9 @@
 // C:\Users\adamm\Projects\wageflow01\components\ui\ActiveCompanyBanner.tsx
 import Link from "next/link";
-import { cookies, type ReadonlyRequestCookies } from "next/headers";
+import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+
+type CookieJar = ReturnType<typeof cookies>;
 
 function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
@@ -19,7 +21,7 @@ function getSupabaseEnv() {
   return { url, anonKey };
 }
 
-function getActiveCompanyId(jar: ReadonlyRequestCookies): string | null {
+function getActiveCompanyId(jar: CookieJar): string | null {
   const v =
     jar.get("active_company_id")?.value ??
     jar.get("company_id")?.value ??
@@ -31,9 +33,15 @@ function getActiveCompanyId(jar: ReadonlyRequestCookies): string | null {
   return isUuid(trimmed) ? trimmed : null;
 }
 
+function safeGetAll(jar: CookieJar) {
+  const anyJar: any = jar as any;
+  if (typeof anyJar?.getAll === "function") return anyJar.getAll();
+  return [];
+}
+
 async function tryGetCompanyName(
   companyId: string,
-  jar: ReadonlyRequestCookies
+  jar: CookieJar
 ): Promise<string | null> {
   try {
     const { url, anonKey } = getSupabaseEnv();
@@ -42,10 +50,10 @@ async function tryGetCompanyName(
     const supabase = createServerClient(url, anonKey, {
       cookies: {
         getAll() {
-          return jar.getAll();
+          return safeGetAll(jar);
         },
         setAll() {
-          // This component does not need to mutate cookies.
+          // Banner should not mutate cookies.
         },
       },
     });
@@ -58,7 +66,7 @@ async function tryGetCompanyName(
 
     if (error || !data) return null;
 
-    const name = typeof data.name === "string" ? data.name.trim() : "";
+    const name = typeof (data as any).name === "string" ? (data as any).name.trim() : "";
     return name || null;
   } catch {
     return null;
@@ -101,8 +109,7 @@ export default async function ActiveCompanyBanner() {
           </p>
           {showHint ? (
             <p className="text-xs sm:text-sm text-neutral-600 mt-1">
-              Company name could not be loaded on this environment. Use Change
-              company to refresh selection.
+              Company name could not be loaded on this environment.
             </p>
           ) : null}
         </div>
