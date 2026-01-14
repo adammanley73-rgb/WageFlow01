@@ -48,6 +48,20 @@ type PayrollRunRow = {
   pay_schedule_id: string | null;
 };
 
+type PostgrestCountResponse = {
+  data: any[] | null;
+  error: any | null;
+  count: number | null;
+};
+
+function normalizeQueryParam(v: string | null) {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  const lower = s.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "all") return null;
+  return s;
+}
+
 function isIsoDateOnly(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
 }
@@ -151,7 +165,7 @@ function applyWeekendAdjustment(dt: Date, rule: string) {
   const r = String(rule || "").trim();
   if (r === "none") return dt;
 
-  const dow = dt.getUTCDay(); // 0 Sun, 6 Sat
+  const dow = dt.getUTCDay();
   if (dow !== 0 && dow !== 6) return dt;
 
   if (r === "previous_working_day") {
@@ -241,9 +255,11 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
+    const debugMode = normalizeQueryParam(searchParams.get("debug")) === "1";
+
     const query: RunsQuery = {
-      frequency: searchParams.get("frequency"),
-      taxYearStart: searchParams.get("taxYearStart"),
+      frequency: normalizeQueryParam(searchParams.get("frequency")),
+      taxYearStart: normalizeQueryParam(searchParams.get("taxYearStart")),
     };
 
     const allowedFrequencies = ["weekly", "fortnightly", "four_weekly", "monthly"];
@@ -257,6 +273,50 @@ export async function GET(req: Request) {
     }
 
     const { taxYearStartIso, taxYearEndIso } = getUkTaxYearBounds(query.taxYearStart ?? null);
+    const companyIdTrim = String(companyId || "").trim();
+
+    const debugCounts: any = debugMode ? {} : null;
+
+    if (debugMode) {
+      const base = client
+        .from("payroll_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyIdTrim) as unknown as PostgrestCountResponse;
+
+      const companyOnlyRes = await (client
+        .from("payroll_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyIdTrim) as any);
+
+      const strictRes = await (client
+        .from("payroll_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyIdTrim)
+        .gte("period_start", taxYearStartIso)
+        .lte("period_end", taxYearEndIso) as any);
+
+      const overlapRes = await (client
+        .from("payroll_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyIdTrim)
+        .lte("period_start", taxYearEndIso)
+        .gte("period_end", taxYearStartIso) as any);
+
+      debugCounts.companyOnly = {
+        count: companyOnlyRes?.count ?? null,
+        error: companyOnlyRes?.error ?? null,
+      };
+
+      debugCounts.strict = {
+        count: strictRes?.count ?? null,
+        error: strictRes?.error ?? null,
+      };
+
+      debugCounts.overlap = {
+        count: overlapRes?.count ?? null,
+        error: overlapRes?.error ?? null,
+      };
+    }
 
     let supaQuery = client
       .from("payroll_runs")
@@ -281,16 +341,19 @@ export async function GET(req: Request) {
           "total_net_pay",
         ].join(", ")
       )
-      .eq("company_id", companyId)
-      .gte("period_start", taxYearStartIso)
-      .lte("period_end", taxYearEndIso);
+      .eq("company_id", companyIdTrim)
+      .lte("period_start", taxYearEndIso)
+      .gte("period_end", taxYearStartIso);
 
     if (frequency) supaQuery = supaQuery.eq("frequency", frequency);
 
     const listRes = await supaQuery.order("period_start", { ascending: false });
 
     if (listRes.error) {
-      return NextResponse.json({ ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v4" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v5" },
+        { status: 500 }
+      );
     }
 
     const rows = Array.isArray(listRes.data) ? listRes.data : [];
@@ -317,17 +380,24 @@ export async function GET(req: Request) {
       },
     }));
 
+    const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "");
+    const supabaseHost = supabaseUrl.replace("https://", "").replace("http://", "").split("/")[0] || null;
+
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_runs_list_debug_v4",
+      debugSource: "payroll_runs_list_debug_v5",
       query,
       taxYear: { start: taxYearStartIso, end: taxYearEndIso },
-      activeCompanyId: companyId,
+      activeCompanyId: companyIdTrim,
+      filterMode: "overlap",
+      frequencyApplied: frequency,
+      supabaseHost,
+      debugCounts,
       runs,
     });
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v4" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v5" },
       { status: 500 }
     );
   }

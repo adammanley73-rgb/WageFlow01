@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
+import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -62,12 +63,6 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
 
   const supabase = createAdminClient();
 
-  const companyPromise = supabase
-    .from("companies")
-    .select("id, name")
-    .eq("id", activeCompanyId)
-    .maybeSingle();
-
   // IMPORTANT:
   // Use employees.id (uuid) for routing. employee_id is your legacy text PK.
   // The employee detail page expects the uuid id, so the list must link with it.
@@ -89,12 +84,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
       .order("first_name", { ascending: sortDirection === "asc" });
   }
 
-  const [
-    { data: company, error: companyError },
-    { data: employeesData, error: employeesError },
-  ] = await Promise.all([companyPromise, employeesQuery]);
-
-  const activeCompanyName = !companyError && company ? company.name ?? null : null;
+  const { data: employeesData, error: employeesError } = await employeesQuery;
 
   const employees = Array.isArray(employeesData) ? employeesData : [];
   const loadError = employeesError ? "There was a problem loading employees." : null;
@@ -140,34 +130,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   return (
     <PageTemplate title="Employees" currentSection="employees">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
-        <div className="rounded-2xl bg-white/80 px-4 py-4">
-          {activeCompanyName ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-lg sm:text-xl text-[#0f3c85]">
-                <span className="font-semibold">Active company:</span>{" "}
-                <span className="font-bold">{activeCompanyName}</span>
-              </p>
-              <Link
-                href="/dashboard/companies"
-                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
-              >
-                Change company
-              </Link>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm sm:text-base text-neutral-800">
-                Active company is selected, but details could not be loaded.
-              </p>
-              <Link
-                href="/dashboard/companies"
-                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
-              >
-                Check companies
-              </Link>
-            </div>
-          )}
-        </div>
+        <ActiveCompanyBanner />
 
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">

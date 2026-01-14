@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageTemplate from "@/components/layout/PageTemplate";
+import ActiveCompanyBannerClient from "@/components/ui/ActiveCompanyBannerClient";
 
 type ActiveCompany = { id?: string; name?: string } | null;
 
@@ -187,6 +188,7 @@ export default function NewEmployeePage() {
 
   const [company, setCompany] = useState<ActiveCompany>(null);
   const [companyErr, setCompanyErr] = useState<string | null>(null);
+  const [companyLoading, setCompanyLoading] = useState(true);
 
   const [form, setForm] = useState<FormState>({
     employee_number: "",
@@ -228,9 +230,19 @@ export default function NewEmployeePage() {
     let ignore = false;
 
     async function loadActiveCompany() {
+      setCompanyLoading(true);
       try {
         setCompanyErr(null);
+
         const res = await fetch("/api/active-company", { cache: "no-store" });
+        if (ignore) return;
+
+        if (res.status === 204) {
+          setCompany(null);
+          setCompanyErr("No active company selected.");
+          return;
+        }
+
         const data = await res.json().catch(() => ({} as any));
         if (ignore) return;
 
@@ -239,8 +251,8 @@ export default function NewEmployeePage() {
             setCompany(data.company);
             return;
           }
-          if (data?.id && data?.name) {
-            setCompany(data);
+          if (data?.id && (data?.name || data?.name === null)) {
+            setCompany({ id: data.id, name: data.name ?? null });
             return;
           }
           if (data?.company_id && data?.company_name) {
@@ -259,6 +271,9 @@ export default function NewEmployeePage() {
         if (ignore) return;
         setCompany(null);
         setCompanyErr("Could not load active company.");
+      } finally {
+        if (ignore) return;
+        setCompanyLoading(false);
       }
     }
 
@@ -568,355 +583,349 @@ export default function NewEmployeePage() {
 
   return (
     <PT currentSection="employees" title="New employee">
-      <div className="mx-auto w-full max-w-none">
-        <div className="rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6">
-          <div className="mb-4">
-            <div className="text-sm text-neutral-700">
-              Active company:{" "}
-              <span className="font-semibold text-neutral-900">
-                {company?.name || (companyErr ? "None selected" : "Loading...")}
-              </span>
-            </div>
-            {companyErr ? <div className="mt-2 text-sm text-red-700">{companyErr}</div> : null}
-          </div>
+      <div className="flex flex-col gap-3 flex-1 min-h-0">
+        <ActiveCompanyBannerClient
+          loading={companyLoading}
+          companyName={company?.name ?? null}
+          errorText={companyErr ?? null}
+        />
 
-          <h1 className="text-2xl font-semibold text-neutral-900">Create employee</h1>
-          <p className="mt-1 text-sm text-neutral-700">
-            Create the employee record, then you will be redirected into the wizard.
-          </p>
+        <div className="mx-auto w-full max-w-none">
+          <div className="rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6">
+            <h1 className="text-2xl font-semibold text-neutral-900">Create employee</h1>
+            <p className="mt-1 text-sm text-neutral-700">
+              Create the employee record, then you will be redirected into the wizard.
+            </p>
 
-          {err ? <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{err}</div> : null}
+            {err ? <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{err}</div> : null}
 
-          <form onSubmit={onSubmit} className="mt-6 space-y-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className="block text-sm text-neutral-800">Employee number</label>
-                <input
-                  value={form.employee_number}
-                  onChange={(e) => setField("employee_number", e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                  name="employee_number"
-                  placeholder={empNoLoading ? "Generating..." : "Auto-generated"}
-                />
-                <div className="mt-1 text-xs text-neutral-600">
-                  {empNoErr ? empNoErr : "Auto-filled. You can change it if needed."}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm text-neutral-800">Pay frequency</label>
-                <select
-                  value={form.pay_frequency}
-                  onChange={(e) => setField("pay_frequency", e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                  name="pay_frequency"
-                >
-                  {payFrequencyOptions.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm text-neutral-800">First name</label>
-                <input
-                  value={form.first_name}
-                  onChange={(e) => setField("first_name", e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                  autoComplete="given-name"
-                  name="first_name"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-neutral-800">Last name</label>
-                <input
-                  value={form.last_name}
-                  onChange={(e) => setField("last_name", e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                  autoComplete="family-name"
-                  name="last_name"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm text-neutral-800">Email</label>
-                <input
-                  value={form.email}
-                  onChange={(e) => setField("email", e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                  autoComplete="email"
-                  name="email"
-                  inputMode="email"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-neutral-800">Job title</label>
-                <input
-                  value={form.job_title}
-                  onChange={(e) => setField("job_title", e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                  name="job_title"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-neutral-800">Start date</label>
-                <input
-                  type="date"
-                  value={form.start_date}
-                  onChange={(e) => setField("start_date", e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                  name="start_date"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-neutral-800">Date of birth</label>
-                <input
-                  type="date"
-                  value={form.date_of_birth}
-                  onChange={(e) => setField("date_of_birth", e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                  name="date_of_birth"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-neutral-800">Employment type</label>
-                <select
-                  value={form.employment_type}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setField("employment_type", v);
-                    if (v !== "apprentice") setField("apprenticeship_year", "1");
-                  }}
-                  className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                  name="employment_type"
-                >
-                  {employmentTypeOptions.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {form.employment_type === "apprentice" ? (
+            <form onSubmit={onSubmit} className="mt-6 space-y-6">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-sm text-neutral-800">Apprenticeship year</label>
-                  <select
-                    value={form.apprenticeship_year}
-                    onChange={(e) => setField("apprenticeship_year", e.target.value)}
+                  <label className="block text-sm text-neutral-800">Employee number</label>
+                  <input
+                    value={form.employee_number}
+                    onChange={(e) => setField("employee_number", e.target.value)}
                     className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                    name="apprenticeship_year"
+                    name="employee_number"
+                    placeholder={empNoLoading ? "Generating..." : "Auto-generated"}
+                  />
+                  <div className="mt-1 text-xs text-neutral-600">
+                    {empNoErr ? empNoErr : "Auto-filled. You can change it if needed."}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-800">Pay frequency</label>
+                  <select
+                    value={form.pay_frequency}
+                    onChange={(e) => setField("pay_frequency", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    name="pay_frequency"
                   >
-                    <option value="1">Year 1</option>
-                    <option value="2">Year 2</option>
-                    <option value="3">Year 3</option>
-                    <option value="4">Year 4</option>
+                    {payFrequencyOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
-              ) : (
-                <div />
-              )}
 
-              <div>
-                <label className="block text-sm text-neutral-800">NI number</label>
-                <input
-                  value={form.ni_number}
-                  onChange={(e) => setField("ni_number", formatNiInput(e.target.value))}
-                  className={`mt-1 w-full rounded-lg border bg-white px-3 py-2 text-neutral-900 ${
-                    !niPreview.valid ? "border-red-500" : "border-neutral-300"
-                  }`}
-                  name="ni_number"
-                  placeholder="AB123456C"
-                  maxLength={9}
-                  inputMode="text"
-                  pattern="[A-Z]{2}[0-9]{6}[A-Z]"
-                  title="2 letters, 6 numbers, then 1 letter. Example: AB123456C"
-                />
-                <div className={`mt-1 text-xs ${!niPreview.valid ? "text-red-700" : "text-neutral-600"}`}>
-                  {!niPreview.hasAny
-                    ? "Optional. If provided, must be AB123456C format."
-                    : !niPreview.complete
-                      ? `Keep going. Normalised: ${niPreview.cleaned}`
-                      : niPreview.valid
-                        ? `Normalised: ${niPreview.cleaned}`
-                        : "Invalid format. Must be 2 letters + 6 digits + 1 letter. Example AB123456C."}
+                <div>
+                  <label className="block text-sm text-neutral-800">First name</label>
+                  <input
+                    value={form.first_name}
+                    onChange={(e) => setField("first_name", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    autoComplete="given-name"
+                    name="first_name"
+                  />
                 </div>
-              </div>
 
-              <div className="md:col-span-2">
-                <div className="rounded-lg border border-neutral-300 bg-white p-4">
-                  <div className="text-sm font-semibold text-neutral-900">Address</div>
+                <div>
+                  <label className="block text-sm text-neutral-800">Last name</label>
+                  <input
+                    value={form.last_name}
+                    onChange={(e) => setField("last_name", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    autoComplete="family-name"
+                    name="last_name"
+                  />
+                </div>
 
-                  <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div className="md:col-span-2">
-                      <label className="block text-sm text-neutral-800">Address line 1</label>
-                      <input
-                        value={form.address_line1}
-                        onChange={(e) => setField("address_line1", e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                        name="address_line1"
-                        autoComplete="address-line1"
-                      />
-                    </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm text-neutral-800">Email</label>
+                  <input
+                    value={form.email}
+                    onChange={(e) => setField("email", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    autoComplete="email"
+                    name="email"
+                    inputMode="email"
+                  />
+                </div>
 
-                    <div className="md:col-span-2">
-                      <label className="block text-sm text-neutral-800">Address line 2</label>
-                      <input
-                        value={form.address_line2}
-                        onChange={(e) => setField("address_line2", e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                        name="address_line2"
-                        autoComplete="address-line2"
-                      />
-                    </div>
+                <div>
+                  <label className="block text-sm text-neutral-800">Job title</label>
+                  <input
+                    value={form.job_title}
+                    onChange={(e) => setField("job_title", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    name="job_title"
+                  />
+                </div>
 
-                    <div>
-                      <label className="block text-sm text-neutral-800">Town or city</label>
-                      <input
-                        value={form.town_city}
-                        onChange={(e) => setField("town_city", e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                        name="town_city"
-                        autoComplete="address-level2"
-                      />
-                    </div>
+                <div>
+                  <label className="block text-sm text-neutral-800">Start date</label>
+                  <input
+                    type="date"
+                    value={form.start_date}
+                    onChange={(e) => setField("start_date", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    name="start_date"
+                  />
+                </div>
 
-                    <div>
-                      <label className="block text-sm text-neutral-800">County</label>
-                      <input
-                        value={form.county}
-                        onChange={(e) => setField("county", e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                        name="county"
-                        autoComplete="address-level1"
-                      />
-                    </div>
+                <div>
+                  <label className="block text-sm text-neutral-800">Date of birth</label>
+                  <input
+                    type="date"
+                    value={form.date_of_birth}
+                    onChange={(e) => setField("date_of_birth", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    name="date_of_birth"
+                  />
+                </div>
 
-                    <div>
-                      <label className="block text-sm text-neutral-800">Postcode</label>
-                      <input
-                        value={form.postcode}
-                        onChange={(e) => setField("postcode", e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                        name="postcode"
-                        autoComplete="postal-code"
-                      />
-                    </div>
+                <div>
+                  <label className="block text-sm text-neutral-800">Employment type</label>
+                  <select
+                    value={form.employment_type}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setField("employment_type", v);
+                      if (v !== "apprentice") setField("apprenticeship_year", "1");
+                    }}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    name="employment_type"
+                  >
+                    {employmentTypeOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                    <div>
-                      <label className="block text-sm text-neutral-800">Country</label>
-                      <input
-                        value={form.country}
-                        onChange={(e) => setField("country", e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                        name="country"
-                        autoComplete="country-name"
-                      />
+                {form.employment_type === "apprentice" ? (
+                  <div>
+                    <label className="block text-sm text-neutral-800">Apprenticeship year</label>
+                    <select
+                      value={form.apprenticeship_year}
+                      onChange={(e) => setField("apprenticeship_year", e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                      name="apprenticeship_year"
+                    >
+                      <option value="1">Year 1</option>
+                      <option value="2">Year 2</option>
+                      <option value="3">Year 3</option>
+                      <option value="4">Year 4</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div />
+                )}
+
+                <div>
+                  <label className="block text-sm text-neutral-800">NI number</label>
+                  <input
+                    value={form.ni_number}
+                    onChange={(e) => setField("ni_number", formatNiInput(e.target.value))}
+                    className={`mt-1 w-full rounded-lg border bg-white px-3 py-2 text-neutral-900 ${
+                      !niPreview.valid ? "border-red-500" : "border-neutral-300"
+                    }`}
+                    name="ni_number"
+                    placeholder="AB123456C"
+                    maxLength={9}
+                    inputMode="text"
+                    pattern="[A-Z]{2}[0-9]{6}[A-Z]"
+                    title="2 letters, 6 numbers, then 1 letter. Example: AB123456C"
+                  />
+                  <div className={`mt-1 text-xs ${!niPreview.valid ? "text-red-700" : "text-neutral-600"}`}>
+                    {!niPreview.hasAny
+                      ? "Optional. If provided, must be AB123456C format."
+                      : !niPreview.complete
+                        ? `Keep going. Normalised: ${niPreview.cleaned}`
+                        : niPreview.valid
+                          ? `Normalised: ${niPreview.cleaned}`
+                          : "Invalid format. Must be 2 letters + 6 digits + 1 letter. Example AB123456C."}
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <div className="rounded-lg border border-neutral-300 bg-white p-4">
+                    <div className="text-sm font-semibold text-neutral-900">Address</div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div className="md:col-span-2">
+                        <label className="block text-sm text-neutral-800">Address line 1</label>
+                        <input
+                          value={form.address_line1}
+                          onChange={(e) => setField("address_line1", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="address_line1"
+                          autoComplete="address-line1"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm text-neutral-800">Address line 2</label>
+                        <input
+                          value={form.address_line2}
+                          onChange={(e) => setField("address_line2", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="address_line2"
+                          autoComplete="address-line2"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Town or city</label>
+                        <input
+                          value={form.town_city}
+                          onChange={(e) => setField("town_city", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="town_city"
+                          autoComplete="address-level2"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">County</label>
+                        <input
+                          value={form.county}
+                          onChange={(e) => setField("county", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="county"
+                          autoComplete="address-level1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Postcode</label>
+                        <input
+                          value={form.postcode}
+                          onChange={(e) => setField("postcode", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="postcode"
+                          autoComplete="postal-code"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Country</label>
+                        <input
+                          value={form.country}
+                          onChange={(e) => setField("country", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="country"
+                          autoComplete="country-name"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="md:col-span-2">
-                <div className="rounded-lg border border-neutral-300 bg-white p-4">
-                  <div className="text-sm font-semibold text-neutral-900">Pay</div>
+                <div className="md:col-span-2">
+                  <div className="rounded-lg border border-neutral-300 bg-white p-4">
+                    <div className="text-sm font-semibold text-neutral-900">Pay</div>
 
-                  <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div>
-                      <label className="block text-sm text-neutral-800">Annual salary (£)</label>
-                      <input
-                        value={form.salary}
-                        onChange={(e) => {
-                          setPaySource("salary");
-                          setField("salary", e.target.value);
-                        }}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                        name="salary"
-                        inputMode="decimal"
-                        placeholder="30000"
-                      />
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div>
+                        <label className="block text-sm text-neutral-800">Annual salary (£)</label>
+                        <input
+                          value={form.salary}
+                          onChange={(e) => {
+                            setPaySource("salary");
+                            setField("salary", e.target.value);
+                          }}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="salary"
+                          inputMode="decimal"
+                          placeholder="30000"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Hourly rate (£)</label>
+                        <input
+                          value={form.hourly_rate}
+                          onChange={(e) => {
+                            setPaySource("hourly");
+                            setField("hourly_rate", e.target.value);
+                          }}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="hourly_rate"
+                          inputMode="decimal"
+                          placeholder="12.50"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Hours per week</label>
+                        <input
+                          value={form.hours_per_week}
+                          onChange={(e) => setField("hours_per_week", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="hours_per_week"
+                          inputMode="decimal"
+                          placeholder="37.5"
+                        />
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-sm text-neutral-800">Hourly rate (£)</label>
-                      <input
-                        value={form.hourly_rate}
-                        onChange={(e) => {
-                          setPaySource("hourly");
-                          setField("hourly_rate", e.target.value);
-                        }}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                        name="hourly_rate"
-                        inputMode="decimal"
-                        placeholder="12.50"
-                      />
-                    </div>
+                    <div className="mt-4 rounded-lg border border-neutral-300 bg-neutral-50 p-3">
+                      <div className="text-sm font-semibold text-neutral-900">NMW check</div>
+                      <div className={`mt-1 text-sm ${nmw.ready && nmw.below ? "text-red-700" : "text-neutral-700"}`}>
+                        {nmw.message}
+                      </div>
 
-                    <div>
-                      <label className="block text-sm text-neutral-800">Hours per week</label>
-                      <input
-                        value={form.hours_per_week}
-                        onChange={(e) => setField("hours_per_week", e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                        name="hours_per_week"
-                        inputMode="decimal"
-                        placeholder="37.5"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-4 rounded-lg border border-neutral-300 bg-neutral-50 p-3">
-                    <div className="text-sm font-semibold text-neutral-900">NMW check</div>
-                    <div className={`mt-1 text-sm ${nmw.ready && nmw.below ? "text-red-700" : "text-neutral-700"}`}>
-                      {nmw.message}
-                    </div>
-
-                    {nmw.ready ? (
-                      <div className="mt-2 text-sm text-neutral-800">
-                        Worker age: <span className="font-semibold">{nmw.age}</span>. Band:{" "}
-                        <span className="font-semibold">{bandLabel(nmw.band as NmwBand)}</span>. Required:{" "}
-                        <span className="font-semibold">£{(nmw.requiredRate as number).toLocaleString("en-GB")}</span>{" "}
-                        per hour. Your hourly figure:{" "}
-                        <span className="font-semibold">£{(nmw.payHourly as number).toLocaleString("en-GB")}</span>.
-                        <div className="mt-1 text-xs text-neutral-600">
-                          Rates applied from {nmw.effectiveFrom}. Final compliance is validated in payroll runs.
+                      {nmw.ready ? (
+                        <div className="mt-2 text-sm text-neutral-800">
+                          Worker age: <span className="font-semibold">{nmw.age}</span>. Band:{" "}
+                          <span className="font-semibold">{bandLabel(nmw.band as NmwBand)}</span>. Required:{" "}
+                          <span className="font-semibold">£{(nmw.requiredRate as number).toLocaleString("en-GB")}</span>{" "}
+                          per hour. Your hourly figure:{" "}
+                          <span className="font-semibold">£{(nmw.payHourly as number).toLocaleString("en-GB")}</span>.
+                          <div className="mt-1 text-xs text-neutral-600">
+                            Rates applied from {nmw.effectiveFrom}. Final compliance is validated in payroll runs.
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="mt-2 text-xs text-neutral-600">
-                        Tip: enter Date of birth and Hours per week, then enter Annual salary or Hourly rate.
-                      </div>
-                    )}
-                  </div>
+                      ) : (
+                        <div className="mt-2 text-xs text-neutral-600">
+                          Tip: enter Date of birth and Hours per week, then enter Annual salary or Hourly rate.
+                        </div>
+                      )}
+                    </div>
 
-                  <div className="mt-2 text-xs text-neutral-600">
-                    Uses {WEEKS_PER_YEAR} weeks per year for conversions.
+                    <div className="mt-2 text-xs text-neutral-600">
+                      Uses {WEEKS_PER_YEAR} weeks per year for conversions.
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="pt-1 flex flex-wrap gap-3">
-              <button type="submit" disabled={saving} className={BTN_PRIMARY}>
-                {saving ? "Saving..." : "Create employee"}
-              </button>
+              <div className="pt-1 flex flex-wrap gap-3">
+                <button type="submit" disabled={saving} className={BTN_PRIMARY}>
+                  {saving ? "Saving..." : "Create employee"}
+                </button>
 
-              <button
-                type="button"
-                className={BTN_SECONDARY}
-                onClick={() => router.push("/dashboard/employees")}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
+                <button type="button" className={BTN_SECONDARY} onClick={() => router.push("/dashboard/employees")}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </div>
     </PT>

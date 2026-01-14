@@ -1,4 +1,4 @@
-﻿// C:\Users\adamm\Projects\wageflow01\lib\admin.ts
+// C:\Users\adamm\Projects\wageflow01\lib\admin.ts
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -45,18 +45,23 @@ function resolveCompanyId(): string | null {
   return getCompanyIdFallbackFromEnv();
 }
 
-function isPreview(): boolean {
-  return process.env.VERCEL_ENV === "preview" || process.env.WAGEFLOW_PREVIEW === "1";
-}
-
 function resolveSupabaseUrl(): string {
-  return (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+  return (
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    ""
+  ).trim();
 }
 
 function resolveServiceKey(): string {
-  return (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "").trim();
+  return (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    ""
+  ).trim();
 }
 
+// Kept for potential future use, but not used by default
 function createPreviewClient(): any {
   const emptyResult = { data: [], error: null };
 
@@ -77,7 +82,8 @@ function createPreviewClient(): any {
     b.limit = chain;
     b.range = chain;
 
-    b.then = (resolve: any, reject: any) => Promise.resolve(emptyResult).then(resolve, reject);
+    b.then = (resolve: any, reject: any) =>
+      Promise.resolve(emptyResult).then(resolve, reject);
 
     return b;
   };
@@ -90,13 +96,18 @@ let cachedUrl = "";
 let cachedKey = "";
 
 function getOrCreateAdminClient(url: string, key: string): SupabaseClient {
-  if (cachedAdminClient && cachedUrl === url && cachedKey === key) return cachedAdminClient;
+  if (cachedAdminClient && cachedUrl === url && cachedKey === key)
+    return cachedAdminClient;
 
   cachedUrl = url;
   cachedKey = key;
 
   cachedAdminClient = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
   });
 
   return cachedAdminClient;
@@ -106,7 +117,10 @@ export async function getAdmin(): Promise<AdminContext | null> {
   const companyId = resolveCompanyId();
   if (!companyId) return null;
 
-  if (isPreview()) {
+  // Preview stub disabled - preview deployments now use real Supabase client
+  // To re-enable stub behavior, set WAGEFLOW_USE_PREVIEW_STUB=1 in environment
+  const useStub = process.env.WAGEFLOW_USE_PREVIEW_STUB === "1";
+  if (useStub) {
     return { client: createPreviewClient(), companyId };
   }
 

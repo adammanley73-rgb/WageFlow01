@@ -6,6 +6,7 @@ import { cookies } from "next/headers"
 import { Inter } from "next/font/google"
 import { createClient } from "@supabase/supabase-js"
 import PageTemplate from "@/components/layout/PageTemplate"
+import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -61,32 +62,6 @@ function createAdminClient() {
   return createClient(url, serviceKey, {
     auth: { persistSession: false },
   })
-}
-
-async function tryGetCompanyName(companyId: string): Promise<string | null> {
-  try {
-    const supabase = createAdminClient()
-
-    const { data, error } = await supabase
-      .from("companies")
-      .select("id, name")
-      .eq("id", companyId)
-      .maybeSingle()
-
-    if (error || !data) {
-      if (error && !isDynamicServerUsage(error)) {
-        console.error("dashboard: error loading active company name", error)
-      }
-      return null
-    }
-
-    return data.name ?? null
-  } catch (err) {
-    if (!isDynamicServerUsage(err)) {
-      console.error("dashboard: company name lookup failed", err)
-    }
-    return null
-  }
 }
 
 async function getCounts(activeCompanyId: string | null): Promise<Counts> {
@@ -186,43 +161,12 @@ function GreyTile(props: { title: string; description?: string; href?: string })
 
 export default async function DashboardPage() {
   const companyId = getActiveCompanyId()
-
-  const [companyName, counts] = await Promise.all([
-    companyId ? tryGetCompanyName(companyId) : Promise.resolve(null),
-    getCounts(companyId),
-  ])
+  const counts = await getCounts(companyId)
 
   return (
     <PageTemplate title="Dashboard" currentSection="dashboard">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
-        <div className="rounded-2xl bg-white/80 px-4 py-4">
-          {companyId ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-lg sm:text-xl text-[#0f3c85]">
-                <span className="font-semibold">Active company:</span>{" "}
-                <span className="font-bold">{companyName ?? companyId}</span>
-              </p>
-              <Link
-                href="/dashboard/companies"
-                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
-              >
-                Change company
-              </Link>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm sm:text-base text-neutral-800">
-                No active company selected. Go to the Companies page to choose one.
-              </p>
-              <Link
-                href="/dashboard/companies"
-                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
-              >
-                Select company
-              </Link>
-            </div>
-          )}
-        </div>
+        <ActiveCompanyBanner />
 
         <div className="grid grid-rows-2 gap-3 flex-1 min-h-0">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 h-full min-h-0">

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import PageTemplate from "@/components/layout/PageTemplate";
 import { createClient } from "@/lib/supabase/client";
+import ActiveCompanyBannerClient from "@/components/ui/ActiveCompanyBannerClient";
 
 type ActiveCompany = { id: string; name: string | null } | null;
 
@@ -187,6 +188,7 @@ export default function EditEmployeePage() {
 
   const [company, setCompany] = useState<ActiveCompany>(null);
   const [companyErr, setCompanyErr] = useState<string | null>(null);
+  const companyLoading = !company && !companyErr;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -310,6 +312,9 @@ export default function EditEmployeePage() {
         return;
       }
 
+      // Wait until the active company fetch has resolved.
+      if (companyLoading) return;
+
       if (companyErr || !company?.id) {
         setLoading(false);
         return;
@@ -426,7 +431,7 @@ export default function EditEmployeePage() {
     return () => {
       alive = false;
     };
-  }, [employeeId, company?.id, companyErr]);
+  }, [employeeId, company?.id, companyErr, companyLoading]);
 
   // Keep hourly rate synced to derived value unless the user is overriding.
   useEffect(() => {
@@ -599,6 +604,12 @@ export default function EditEmployeePage() {
   return (
     <PageTemplate title="Edit employee" currentSection="employees">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
+        <ActiveCompanyBannerClient
+          loading={companyLoading}
+          companyName={company?.name ?? null}
+          errorText={companyErr}
+        />
+
         <div className="rounded-2xl bg-white/80 px-4 py-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
@@ -614,13 +625,8 @@ export default function EditEmployeePage() {
                     <span className="text-neutral-500"> · </span>
                   </>
                 ) : null}
-                Active company:{" "}
-                <span className="font-semibold text-neutral-900">
-                  {company?.name || (companyErr ? "None selected" : "Loading...")}
-                </span>
+                Update employee details and save.
               </div>
-
-              {companyErr ? <div className="mt-1 text-sm text-red-700">{companyErr}</div> : null}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -974,10 +980,20 @@ export default function EditEmployeePage() {
               </div>
 
               <div className="mt-6 flex flex-wrap gap-3 justify-end">
-                <button type="button" onClick={() => onSave("wizard")} disabled={saving || loading} className={BTN_SECONDARY}>
+                <button
+                  type="button"
+                  onClick={() => onSave("wizard")}
+                  disabled={saving || loading}
+                  className={BTN_SECONDARY}
+                >
                   Save to wizard
                 </button>
-                <button type="button" onClick={() => onSave("details")} disabled={saving || loading} className={BTN_PRIMARY}>
+                <button
+                  type="button"
+                  onClick={() => onSave("details")}
+                  disabled={saving || loading}
+                  className={BTN_PRIMARY}
+                >
                   {saving ? "Saving..." : "Save changes"}
                 </button>
               </div>
