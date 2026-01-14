@@ -1,4 +1,5 @@
 // C:\Users\adamm\Projects\wageflow01\components\ui\ActiveCompanyBanner.tsx
+
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
@@ -12,21 +13,13 @@ function isUuid(s: string) {
 }
 
 function getSupabaseEnv() {
-  const url =
-    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const anonKey =
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    "";
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
   return { url, anonKey };
 }
 
 function getActiveCompanyId(jar: CookieJar): string | null {
-  const v =
-    jar.get("active_company_id")?.value ??
-    jar.get("company_id")?.value ??
-    null;
-
+  const v = jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
   if (!v) return null;
 
   const trimmed = String(v).trim();
@@ -39,10 +32,7 @@ function safeGetAll(jar: CookieJar) {
   return [];
 }
 
-async function tryGetCompanyName(
-  companyId: string,
-  jar: CookieJar
-): Promise<string | null> {
+async function tryGetCompanyName(companyId: string, jar: CookieJar): Promise<string | null> {
   try {
     const { url, anonKey } = getSupabaseEnv();
     if (!url || !anonKey) return null;
@@ -96,8 +86,9 @@ export default async function ActiveCompanyBanner() {
   }
 
   const companyName = await tryGetCompanyName(companyId, jar);
-  const showName = companyName ?? "Selected";
-  const showHint = !companyName;
+
+  // Never show the UUID. Ever.
+  const showName = companyName || "Selected";
 
   return (
     <div className="rounded-2xl bg-white/80 px-4 py-4">
@@ -107,9 +98,10 @@ export default async function ActiveCompanyBanner() {
             <span className="font-semibold">Active company:</span>{" "}
             <span className="font-bold">{showName}</span>
           </p>
-          {showHint ? (
-            <p className="text-xs sm:text-sm text-neutral-600 mt-1">
-              Company name could not be loaded on this environment.
+
+          {!companyName ? (
+            <p className="mt-1 text-xs sm:text-sm text-neutral-600">
+              Active company is selected, but details could not be loaded.
             </p>
           ) : null}
         </div>
