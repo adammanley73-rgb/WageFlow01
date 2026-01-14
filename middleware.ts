@@ -83,6 +83,7 @@ function isStaticAllowlist(pathname: string) {
   if (pathname === "/AIStatusBadge.png") return true;
 
   // Safe-ish common static asset extensions at the site root
+  // (keeps login pages from breaking if you swap assets later)
   const lower = pathname.toLowerCase();
   if (lower.endsWith(".png")) return true;
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return true;
@@ -119,7 +120,8 @@ function isWageflowPublicPath(pathname: string, method: string) {
   if (pathname === "/api/ai/health" || pathname.startsWith("/api/ai/health/"))
     return true;
 
-  // Allow GET on copilot route publicly (safe: your routeâ€™s GET just returns help text)
+  // Allow GET on copilot route publicly (safe: your route’s GET just returns help text)
+  // Keep POST protected so unauthenticated users can’t use your AI proxy.
   if (pathname === "/api/ai/copilot" && method === "GET") return true;
 
   return false;
@@ -137,7 +139,13 @@ function clearAuthAndDemoCookies(res: any, request: any) {
     const lower = String(name || "").toLowerCase();
     if (!lower) return false;
 
-    if (lower === DEMO_FLAG || lower === DEMO_STARTED || lower === DEMO_LAST || lower === DEMO_UI) return true;
+    if (
+      lower === DEMO_FLAG ||
+      lower === DEMO_STARTED ||
+      lower === DEMO_LAST ||
+      lower === DEMO_UI
+    )
+      return true;
 
     if (lower.startsWith("sb-")) return true;
     if (lower.includes("supabase")) return true;
@@ -158,7 +166,10 @@ function applyDemoTimeoutsOrTouch(
   pathname: string,
   search: string,
   baseUrl: string
-): { action: "allow" } | { action: "kill"; reason: string } | { action: "touch"; now: number } {
+):
+  | { action: "allow" }
+  | { action: "kill"; reason: string }
+  | { action: "touch"; now: number } {
   const now = nowSec();
   const started = toInt(request?.cookies?.get?.(DEMO_STARTED)?.value);
   const last = toInt(request?.cookies?.get?.(DEMO_LAST)?.value);
@@ -218,7 +229,10 @@ export function middleware(request: any) {
   }
 
   // Company landing on www root (and localhost for testing).
-  if ((host === "www.thebusinessconsortiumltd.co.uk" || host === "localhost") && pathname === "/") {
+  if (
+    (host === "www.thebusinessconsortiumltd.co.uk" || host === "localhost") &&
+    pathname === "/"
+  ) {
     const rewriteUrl = url.clone();
     rewriteUrl.pathname = "/preview/tbc";
     return NextResponse.rewrite(rewriteUrl);
@@ -237,7 +251,12 @@ export function middleware(request: any) {
 
     // If authed AND demo, enforce demo timeouts on this host too.
     if (authed && isDemoRequest(request) && !isStaticAllowlist(pathname)) {
-      const demoCheck = applyDemoTimeoutsOrTouch(request, pathname, url?.search || "", request.url);
+      const demoCheck = applyDemoTimeoutsOrTouch(
+        request,
+        pathname,
+        url?.search || "",
+        request.url
+      );
 
       if (demoCheck.action === "kill") {
         const loginUrl = new URL("/login", request.url);
@@ -283,7 +302,12 @@ export function middleware(request: any) {
 
   // Demo guardrails for dashboard routes (when authed).
   if (isVercelRuntime() && isDemoRequest(request) && !isStaticAllowlist(pathname)) {
-    const demoCheck = applyDemoTimeoutsOrTouch(request, pathname, url?.search || "", request.url);
+    const demoCheck = applyDemoTimeoutsOrTouch(
+      request,
+      pathname,
+      url?.search || "",
+      request.url
+    );
 
     if (demoCheck.action === "kill") {
       const loginUrl = new URL("/login", request.url);

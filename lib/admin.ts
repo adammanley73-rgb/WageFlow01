@@ -46,11 +46,19 @@ function resolveCompanyId(): string | null {
 }
 
 function resolveSupabaseUrl(): string {
-  return (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+  return (
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    ""
+  ).trim();
 }
 
 function resolveServiceKey(): string {
-  return (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "").trim();
+  return (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    ""
+  ).trim();
 }
 
 // Kept for potential future use, but not used by default
@@ -74,7 +82,8 @@ function createPreviewClient(): any {
     b.limit = chain;
     b.range = chain;
 
-    b.then = (resolve: any, reject: any) => Promise.resolve(emptyResult).then(resolve, reject);
+    b.then = (resolve: any, reject: any) =>
+      Promise.resolve(emptyResult).then(resolve, reject);
 
     return b;
   };
@@ -87,13 +96,18 @@ let cachedUrl = "";
 let cachedKey = "";
 
 function getOrCreateAdminClient(url: string, key: string): SupabaseClient {
-  if (cachedAdminClient && cachedUrl === url && cachedKey === key) return cachedAdminClient;
+  if (cachedAdminClient && cachedUrl === url && cachedKey === key)
+    return cachedAdminClient;
 
   cachedUrl = url;
   cachedKey = key;
 
   cachedAdminClient = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
   });
 
   return cachedAdminClient;
