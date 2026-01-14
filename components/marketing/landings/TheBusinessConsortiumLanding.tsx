@@ -60,10 +60,40 @@ export default function TheBusinessConsortiumLanding() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState<ToastState>({ open: false, message: "" });
 
+  // Intro video overlay state
+  const INTRO_KEY = "tbc_intro_played_v1";
+  const [showIntroVideo, setShowIntroVideo] = useState(false);
+
   const showToast = (message: string) => {
     setToast({ open: true, message });
     window.setTimeout(() => setToast({ open: false, message: "" }), 2200);
   };
+
+  const dismissIntro = () => {
+    try {
+      sessionStorage.setItem(INTRO_KEY, "1");
+    } catch {
+      // ignore
+    }
+    setShowIntroVideo(false);
+  };
+
+  useEffect(() => {
+    // Decide whether to show intro video.
+    // Show only once per tab session, and skip for reduced motion.
+    try {
+      const reduced =
+        typeof window !== "undefined" &&
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      const played = sessionStorage.getItem(INTRO_KEY) === "1";
+
+      setShowIntroVideo(!played && !reduced);
+    } catch {
+      setShowIntroVideo(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -81,6 +111,16 @@ export default function TheBusinessConsortiumLanding() {
       document.body.style.overflow = "";
     };
   }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    // Allow ESC to skip the intro video.
+    if (!showIntroVideo) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismissIntro();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showIntroVideo]);
 
   const products: ProductCard[] = useMemo(
     () => [
@@ -167,6 +207,33 @@ export default function TheBusinessConsortiumLanding() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
+      {/* Intro video overlay */}
+      {showIntroVideo && (
+        <div className="fixed inset-0 z-[100] bg-white">
+          <div className="absolute top-4 right-4 z-[110] flex items-center gap-2">
+            <button
+              type="button"
+              onClick={dismissIntro}
+              className="rounded-lg bg-gray-900 text-white px-4 py-2 text-sm font-semibold hover:opacity-95 transition focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
+              aria-label="Skip intro video"
+            >
+              Skip
+            </button>
+          </div>
+
+          <video
+            src="/media/tbc-hero.mp4"
+            autoPlay
+            muted
+            playsInline
+            preload="auto"
+            onEnded={dismissIntro}
+            onError={dismissIntro}
+            className="w-full h-full object-contain"
+          />
+        </div>
+      )}
+
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:bg-white focus:text-gray-900 focus:px-4 focus:py-2 focus:rounded-lg focus:ring-2 focus:ring-[#0f3c85]"
@@ -503,7 +570,9 @@ export default function TheBusinessConsortiumLanding() {
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-12">
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900">How we work</h2>
-              <p className="text-lg text-gray-700 mt-3 max-w-3xl mx-auto">Payroll needs guardrails. Clear steps. Calm review. No drama.</p>
+              <p className="text-lg text-gray-700 mt-3 max-w-3xl mx-auto">
+                Payroll needs guardrails. Clear steps. Calm review. No drama.
+              </p>
             </div>
 
             <div className="grid md:grid-cols-3 gap-6">
@@ -512,7 +581,9 @@ export default function TheBusinessConsortiumLanding() {
                   <Users className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />
                   Understand the workflow
                 </div>
-                <p className="text-gray-700 mt-2">We design around how payroll actually runs, including checks, approvals, and exceptions.</p>
+                <p className="text-gray-700 mt-2">
+                  We design around how payroll actually runs, including checks, approvals, and exceptions.
+                </p>
               </div>
 
               <div className="border border-gray-200 rounded-2xl p-6">
@@ -520,7 +591,9 @@ export default function TheBusinessConsortiumLanding() {
                   <Shield className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />
                   Build guardrails
                 </div>
-                <p className="text-gray-700 mt-2">The system should prevent common mistakes and make changes obvious before you commit.</p>
+                <p className="text-gray-700 mt-2">
+                  The system should prevent common mistakes and make changes obvious before you commit.
+                </p>
               </div>
 
               <div className="border border-gray-200 rounded-2xl p-6">
@@ -528,7 +601,9 @@ export default function TheBusinessConsortiumLanding() {
                   <Sparkles className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />
                   Automate safely
                 </div>
-                <p className="text-gray-700 mt-2">Automation reduces manual work. You keep control where it matters.</p>
+                <p className="text-gray-700 mt-2">
+                  Automation reduces manual work. You keep control where it matters.
+                </p>
               </div>
             </div>
           </div>
@@ -564,7 +639,7 @@ export default function TheBusinessConsortiumLanding() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Phone className="w-4 h-4 text-[#0f3c85]" aria-hidden="true" />
-                    <span>Replace with your public phone number</span>
+                    <span>+44 07932 720 789</span>
                   </div>
                 </div>
               </div>
@@ -681,32 +756,12 @@ export default function TheBusinessConsortiumLanding() {
                 </li>
               </ul>
             </div>
-
-            <div>
-              <h4 className="text-white font-semibold mb-4">Legal</h4>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <a href="#" className="hover:text-white transition">
-                    Privacy
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-white transition">
-                    Terms
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-white transition">
-                    Cookies
-                  </a>
-                </li>
-              </ul>
-            </div>
           </div>
 
-          <div className="border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-sm text-gray-400">© {new Date().getFullYear()} The Business Consortium Ltd. All rights reserved.</p>
-            <p className="text-sm text-gray-400">Replace with your registered company details.</p>
+          <div className="border-t border-gray-800 pt-8">
+            <p className="text-sm text-gray-400 text-center">
+              © {new Date().getFullYear()} The Business Consortium Ltd. All rights reserved.
+            </p>
           </div>
         </div>
       </footer>

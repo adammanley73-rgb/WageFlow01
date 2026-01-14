@@ -119,7 +119,7 @@ function isWageflowPublicPath(pathname: string, method: string) {
   if (pathname === "/api/ai/health" || pathname.startsWith("/api/ai/health/"))
     return true;
 
-  // Allow GET on copilot route publicly (safe: your route’s GET just returns help text)
+  // Allow GET on copilot route publicly (safe: your routeâ€™s GET just returns help text)
   if (pathname === "/api/ai/copilot" && method === "GET") return true;
 
   return false;
@@ -139,64 +139,46 @@ function clearAuthAndDemoCookies(res: any, request: any) {
 
     if (lower === DEMO_FLAG || lower === DEMO_STARTED || lower === DEMO_LAST || lower === DEMO_UI) return true;
 
-    if (lower === "sb-access-token") return true;
-    if (lower === "sb-refresh-token") return true;
-    if (lower === "supabase-auth-token") return true;
-
-    if (lower.startsWith("sb-")) {
-      if (lower.includes("auth-token")) return true;
-      if (lower.includes("access-token")) return true;
-      if (lower.includes("refresh-token")) return true;
-    }
+    if (lower.startsWith("sb-")) return true;
+    if (lower.includes("supabase")) return true;
+    if (lower.includes("auth-token")) return true;
 
     return false;
   };
 
-  const unique = Array.from(new Set(names));
-  for (const n of unique) {
-    if (!shouldClear(n)) continue;
-    res.cookies.set(n, "", {
-      path: "/",
-      expires: new Date(0),
-      httpOnly: true,
-      sameSite: "lax",
-      secure: isVercelRuntime(),
-    });
+  for (const name of names) {
+    if (shouldClear(name)) {
+      res.cookies.delete(name);
+    }
   }
-
-  // Ensure the UI cookie is cleared even though it is not HttpOnly
-  res.cookies.set(DEMO_UI, "", {
-    path: "/",
-    expires: new Date(0),
-    httpOnly: false,
-    sameSite: "lax",
-    secure: isVercelRuntime(),
-  });
 }
 
-function applyDemoTimeoutsOrTouch(request: any, pathname: string, urlSearch: string, requestUrl: string) {
-  if (!isDemoRequest(request)) return { action: "none" as const };
-
+function applyDemoTimeoutsOrTouch(
+  request: any,
+  pathname: string,
+  search: string,
+  baseUrl: string
+): { action: "allow" } | { action: "kill"; reason: string } | { action: "touch"; now: number } {
   const now = nowSec();
+  const started = toInt(request?.cookies?.get?.(DEMO_STARTED)?.value);
+  const last = toInt(request?.cookies?.get?.(DEMO_LAST)?.value);
 
-  const startedRaw = request?.cookies?.get?.(DEMO_STARTED)?.value;
-  const lastRaw = request?.cookies?.get?.(DEMO_LAST)?.value;
-
-  const started = toInt(startedRaw) ?? now;
-  const last = toInt(lastRaw) ?? started;
-
-  const age = now - started;
-  const idle = now - last;
-
-  if (age >= DEMO_MAX_AGE_SEC) {
-    return { action: "kill" as const, reason: "expired" as const };
+  if (!started) {
+    return { action: "touch" as const, now };
   }
 
-  if (idle >= DEMO_IDLE_SEC) {
-    return { action: "kill" as const, reason: "idle" as const };
+  const elapsed = now - started;
+  if (elapsed > DEMO_MAX_AGE_SEC) {
+    return { action: "kill" as const, reason: "Demo session expired (60 min limit)" };
   }
 
-  // Touch last activity (best-effort server-side in Step 1)
+  if (last) {
+    const idle = now - last;
+    if (idle > DEMO_IDLE_SEC) {
+      return { action: "kill" as const, reason: "Demo session timed out (15 min idle)" };
+    }
+  }
+
   return { action: "touch" as const, now };
 }
 
@@ -235,8 +217,8 @@ export function middleware(request: any) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Company landing on www root.
-  if (host === "www.thebusinessconsortiumltd.co.uk" && pathname === "/") {
+  // Company landing on www root (and localhost for testing).
+  if ((host === "www.thebusinessconsortiumltd.co.uk" || host === "localhost") && pathname === "/") {
     const rewriteUrl = url.clone();
     rewriteUrl.pathname = "/preview/tbc";
     return NextResponse.rewrite(rewriteUrl);
