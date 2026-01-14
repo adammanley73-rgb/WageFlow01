@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PageTemplate from "@/components/layout/PageTemplate";
 
@@ -180,6 +181,46 @@ function bandLabel(band: NmwBand) {
   if (band === "age18to20") return "18-20";
   if (band === "under18") return "Under 18";
   return "Apprentice (eligible)";
+}
+
+function ActiveCompanyHeader(props: { company: ActiveCompany; companyErr: string | null }) {
+  const hasCompanyName = Boolean(props.company?.name && String(props.company?.name).trim());
+  const hasCompany = Boolean(props.company?.id || hasCompanyName);
+
+  if (hasCompany && !props.companyErr) {
+    return (
+      <div className="rounded-2xl bg-white/80 px-4 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-lg sm:text-xl text-[#0f3c85]">
+            <span className="font-semibold">Active company:</span>{" "}
+            <span className="font-bold">{String(props.company?.name || "Selected company")}</span>
+          </p>
+          <Link
+            href="/dashboard/companies"
+            className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+          >
+            Change company
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl bg-white/80 px-4 py-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm sm:text-base text-neutral-800">
+          {props.companyErr ? props.companyErr : "No active company selected. Go to the Companies page to choose one."}
+        </p>
+        <Link
+          href="/dashboard/companies"
+          className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+        >
+          Select company
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 export default function NewEmployeePage() {
@@ -568,18 +609,10 @@ export default function NewEmployeePage() {
 
   return (
     <PT currentSection="employees" title="New employee">
-      <div className="mx-auto w-full max-w-none">
-        <div className="rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6">
-          <div className="mb-4">
-            <div className="text-sm text-neutral-700">
-              Active company:{" "}
-              <span className="font-semibold text-neutral-900">
-                {company?.name || (companyErr ? "None selected" : "Loading...")}
-              </span>
-            </div>
-            {companyErr ? <div className="mt-2 text-sm text-red-700">{companyErr}</div> : null}
-          </div>
+      <div className="flex flex-col gap-3 flex-1 min-h-0">
+        <ActiveCompanyHeader company={company} companyErr={companyErr} />
 
+        <div className="rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6">
           <h1 className="text-2xl font-semibold text-neutral-900">Create employee</h1>
           <p className="mt-1 text-sm text-neutral-700">
             Create the employee record, then you will be redirected into the wizard.
