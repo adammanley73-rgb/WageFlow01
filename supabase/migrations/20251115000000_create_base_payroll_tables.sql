@@ -20,8 +20,19 @@ CREATE TABLE IF NOT EXISTS public.payroll_runs (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Add columns that may be missing in remote database
+ALTER TABLE public.payroll_runs
+    ADD COLUMN IF NOT EXISTS status text;
+
+-- Set default for status if column was just added
+UPDATE public.payroll_runs
+SET status = COALESCE(status, 'draft');
+
+ALTER TABLE public.payroll_runs
+    ALTER COLUMN status SET DEFAULT 'draft';
+
 -- Add foreign key only if it doesn't exist
-DO $$
+DO $
 BEGIN
     IF NOT EXISTS (
         SELECT 1
@@ -35,7 +46,7 @@ BEGIN
         ON DELETE CASCADE;
     END IF;
 END
-$$;
+$;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_payroll_runs_company_id 
