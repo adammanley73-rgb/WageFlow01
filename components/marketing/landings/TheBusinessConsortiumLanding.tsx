@@ -260,7 +260,7 @@ export default function TheBusinessConsortiumLanding() {
               aria-label="Go to top"
             >
               <div className="text-left leading-tight">
-                <div className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#10b981] leading-none">
+                <div className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#d32f2f] leading-none">
                   The Business Consortium Ltd
                 </div>
                 <div className="text-xs sm:text-sm text-gray-600 mt-1">
@@ -656,8 +656,6 @@ export default function TheBusinessConsortiumLanding() {
                   Get 1st month free
                   <ChevronRight className="w-5 h-5" aria-hidden="true" />
                 </button>
-
-                <p className="text-xs text-gray-600 mt-3">This is intentionally not a dead button.</p>
               </div>
             </div>
           </div>
