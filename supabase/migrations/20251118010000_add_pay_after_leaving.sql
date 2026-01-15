@@ -1,8 +1,14 @@
--- Add pay_after_leaving flag to pay_run_employees
-ALTER TABLE pay_run_employees
-ADD COLUMN pay_after_leaving boolean NOT NULL DEFAULT false;
+-- 20251118010000_add_pay_after_leaving.sql
+-- Purpose:
+-- Add pay_after_leaving flag to run-employee attachment table.
+-- This repo has evidence of a historical table name change:
+--   - Older: public.pay_run_employees
+--   - Newer: public.payroll_run_employees
+-- Fresh demo databases may not have the older table, and/or the newer table may be created later.
+-- This migration must never hard-fail, and must support both names.
 
--- Backfill existing rows
-UPDATE pay_run_employees
-SET pay_after_leaving = false
-WHERE pay_after_leaving IS NULL;
+alter table if exists public.pay_run_employees
+  add column if not exists pay_after_leaving boolean not null default false;
+
+alter table if exists public.payroll_run_employees
+  add column if not exists pay_after_leaving boolean not null default false;
