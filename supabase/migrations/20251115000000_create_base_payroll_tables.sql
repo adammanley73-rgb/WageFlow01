@@ -32,7 +32,7 @@ ALTER TABLE public.payroll_runs
     ALTER COLUMN status SET DEFAULT 'draft';
 
 -- Add foreign key only if it doesn't exist
-DO $
+DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1
@@ -46,7 +46,7 @@ BEGIN
         ON DELETE CASCADE;
     END IF;
 END
-$;
+$$;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_payroll_runs_company_id 
