@@ -1,12 +1,29 @@
 -- C:\Users\adamm\Projects\wageflow01\supabase\migrations\20251122xxxxxx_seed_test_employees_by_frequency.sql
 -- Seed stable test employees for each pay frequency for The Business Consortium Ltd
+-- Defensive: skips if companies table doesn't have expected schema
 
 BEGIN;
 
 DO $$
 DECLARE
   v_company_id uuid;
+  v_has_name_column boolean;
 BEGIN
+  -- Check if companies table has a 'name' column
+  SELECT EXISTS (
+    SELECT 1 
+    FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'companies' 
+    AND column_name = 'name'
+  ) INTO v_has_name_column;
+
+  -- Skip entirely if companies table doesn't have the expected structure
+  IF NOT v_has_name_column THEN
+    RAISE NOTICE 'Seed test employees: companies table does not have name column, skipping seed.';
+    RETURN;
+  END IF;
+
   -- Find the test company by name
   SELECT id
   INTO v_company_id
@@ -17,6 +34,27 @@ BEGIN
 
   IF NOT FOUND THEN
     RAISE NOTICE 'Seed test employees: company "The Business Consortium Ltd" not found, skipping inserts.';
+    RETURN;
+  END IF;
+
+  -- Check if employees table has required columns before inserting
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'employees' 
+    AND column_name = 'hire_date'
+  ) THEN
+    RAISE NOTICE 'Seed test employees: employees table missing hire_date column, skipping seed.';
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'employees' 
+    AND column_name = 'is_director'
+  ) THEN
+    RAISE NOTICE 'Seed test employees: employees table missing is_director column, skipping seed.';
     RETURN;
   END IF;
 
@@ -243,6 +281,8 @@ BEGIN
       student_loan     = EXCLUDED.student_loan,
       postgraduate_loan= EXCLUDED.postgraduate_loan,
       status           = EXCLUDED.status;
+
+  RAISE NOTICE 'Seed test employees: successfully seeded 4 test employees.';
 
 END;
 $$;
