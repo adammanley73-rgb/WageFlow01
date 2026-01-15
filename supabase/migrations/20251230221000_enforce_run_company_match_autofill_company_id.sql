@@ -1,5 +1,8 @@
 begin;
 
+-- Ensure wf_util schema exists before creating function in it
+CREATE SCHEMA IF NOT EXISTS wf_util;
+
 create or replace function wf_util.enforce_run_company_match()
 returns trigger
 language plpgsql
