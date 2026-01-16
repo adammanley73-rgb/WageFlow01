@@ -4,34 +4,65 @@
 -- 2) Prevent future NULL/blank pay_frequency_used on inserts (trigger).
 -- 3) For draft runs with a valid frequency, remove mismatched attachments and re-attach correctly.
 -- 4) Skip draft runs that have NULL/blank frequency (so db push cannot fail again).
+-- Defensive: handles both 'frequency' and 'pay_frequency' column names
 
 BEGIN;
 
 -- 1) Backfill pay_frequency_used from employees.pay_frequency first (best source),
---    then fallback to payroll_runs.frequency.
+--    then fallback to payroll_runs frequency column (either 'frequency' or 'pay_frequency').
 -- IMPORTANT: Do not reference the UPDATE target alias in a JOIN condition.
-UPDATE public.payroll_run_employees AS pre
-SET pay_frequency_used = COALESCE(
-  NULLIF(BTRIM(pre.pay_frequency_used), ''),
-  NULLIF(BTRIM(e.pay_frequency), ''),
-  NULLIF(BTRIM(pr.frequency), '')
-)
-FROM public.employees AS e,
-     public.payroll_runs AS pr
-WHERE pre.employee_id = e.id
-  AND pre.run_id = pr.id
-  AND (pre.pay_frequency_used IS NULL OR BTRIM(pre.pay_frequency_used) = '');
+DO $$
+DECLARE
+  v_pr_freq_col text;
+BEGIN
+  -- Determine which frequency column exists in payroll_runs
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'payroll_runs' 
+    AND column_name = 'frequency'
+  ) THEN
+    v_pr_freq_col := 'frequency';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'payroll_runs' 
+    AND column_name = 'pay_frequency'
+  ) THEN
+    v_pr_freq_col := 'pay_frequency';
+  ELSE
+    RAISE NOTICE 'payroll_runs has neither frequency nor pay_frequency column, skipping backfill';
+    RETURN;
+  END IF;
 
--- 2) Any remaining NULL/blank rows: fallback to payroll_runs.frequency.
-UPDATE public.payroll_run_employees AS pre
-SET pay_frequency_used = NULLIF(BTRIM(pr.frequency), '')
-FROM public.payroll_runs AS pr
-WHERE pre.run_id = pr.id
-  AND (pre.pay_frequency_used IS NULL OR BTRIM(pre.pay_frequency_used) = '')
-  AND pr.frequency IS NOT NULL
-  AND BTRIM(pr.frequency) <> '';
+  -- Backfill using dynamic SQL
+  EXECUTE format('
+    UPDATE public.payroll_run_employees AS pre
+    SET pay_frequency_used = COALESCE(
+      NULLIF(BTRIM(pre.pay_frequency_used), ''''),
+      NULLIF(BTRIM(e.pay_frequency), ''''),
+      NULLIF(BTRIM(pr.%I), '''')
+    )
+    FROM public.employees AS e,
+         public.payroll_runs AS pr
+    WHERE pre.employee_id = e.id
+      AND pre.run_id = pr.id
+      AND (pre.pay_frequency_used IS NULL OR BTRIM(pre.pay_frequency_used) = '''')
+  ', v_pr_freq_col);
 
--- 3) Guard trigger: if pay_frequency_used is not provided, set it automatically.
+  -- Fallback for any remaining NULL/blank rows
+  EXECUTE format('
+    UPDATE public.payroll_run_employees AS pre
+    SET pay_frequency_used = NULLIF(BTRIM(pr.%I), '''')
+    FROM public.payroll_runs AS pr
+    WHERE pre.run_id = pr.id
+      AND (pre.pay_frequency_used IS NULL OR BTRIM(pre.pay_frequency_used) = '''')
+      AND pr.%I IS NOT NULL
+      AND BTRIM(pr.%I) <> ''''
+  ', v_pr_freq_col, v_pr_freq_col, v_pr_freq_col);
+END $$;
+
+-- 2) Guard trigger: if pay_frequency_used is not provided, set it automatically.
 CREATE OR REPLACE FUNCTION public.payroll_run_employees_set_pay_frequency_used()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -39,6 +70,7 @@ AS $$
 DECLARE
   v_emp_freq text;
   v_run_freq text;
+  v_pr_freq_col text;
 BEGIN
   IF NEW.pay_frequency_used IS NOT NULL AND BTRIM(NEW.pay_frequency_used) <> '' THEN
     RETURN NEW;
@@ -49,10 +81,28 @@ BEGIN
   FROM public.employees e
   WHERE e.id = NEW.employee_id;
 
-  SELECT pr.frequency
-  INTO v_run_freq
-  FROM public.payroll_runs pr
-  WHERE pr.id = NEW.run_id;
+  -- Determine which frequency column exists in payroll_runs
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'payroll_runs' 
+    AND column_name = 'frequency'
+  ) THEN
+    v_pr_freq_col := 'frequency';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'payroll_runs' 
+    AND column_name = 'pay_frequency'
+  ) THEN
+    v_pr_freq_col := 'pay_frequency';
+  END IF;
+
+  IF v_pr_freq_col IS NOT NULL THEN
+    EXECUTE format('SELECT %I FROM public.payroll_runs WHERE id = $1', v_pr_freq_col)
+    INTO v_run_freq
+    USING NEW.run_id;
+  END IF;
 
   NEW.pay_frequency_used := COALESCE(
     NULLIF(BTRIM(v_emp_freq), ''),
@@ -71,20 +121,43 @@ BEFORE INSERT ON public.payroll_run_employees
 FOR EACH ROW
 EXECUTE FUNCTION public.payroll_run_employees_set_pay_frequency_used();
 
--- 4) Clean up draft runs: remove any attached rows that do not match the run frequency,
+-- 3) Clean up draft runs: remove any attached rows that do not match the run frequency,
 --    then re-attach due employees using the existing attach_due_employees_to_run function.
 --    Skip runs with NULL/blank frequency, so this migration can never fail on them.
 DO $$
 DECLARE
   r record;
+  v_pr_freq_col text;
 BEGIN
+  -- Determine which frequency column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'payroll_runs' 
+    AND column_name = 'frequency'
+  ) THEN
+    v_pr_freq_col := 'frequency';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'payroll_runs' 
+    AND column_name = 'pay_frequency'
+  ) THEN
+    v_pr_freq_col := 'pay_frequency';
+  ELSE
+    RAISE NOTICE 'payroll_runs has neither frequency nor pay_frequency column, skipping cleanup';
+    RETURN;
+  END IF;
+
   FOR r IN
-    SELECT pr.id AS run_id, pr.frequency
-    FROM public.payroll_runs pr
-    WHERE pr.status = 'draft'
-      AND pr.company_id IS NOT NULL
-      AND pr.frequency IS NOT NULL
-      AND BTRIM(pr.frequency) <> ''
+    EXECUTE format('
+      SELECT pr.id AS run_id, pr.%I AS frequency
+      FROM public.payroll_runs pr
+      WHERE pr.status = ''draft''
+        AND pr.company_id IS NOT NULL
+        AND pr.%I IS NOT NULL
+        AND BTRIM(pr.%I) <> ''''
+    ', v_pr_freq_col, v_pr_freq_col, v_pr_freq_col)
   LOOP
     DELETE FROM public.payroll_run_employees pre
     WHERE pre.run_id = r.run_id

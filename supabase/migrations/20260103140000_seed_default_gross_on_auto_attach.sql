@@ -5,9 +5,10 @@
   - Calculates a default basic_pay from employees (annual_salary or hourly_rate + hours/week)
   - Writes basic_pay, gross_pay, taxable_pay for brand-new rows (trigger)
   - Backfills existing rows that are currently all-zero
-  - Skips rows that are manual_override = true
+  - Skips rows that are manual_override = true (if column exists)
   - Skips leavers when pay_after_leaving = false
   - Skips rows included_in_rti = true (do not touch filed/queued RTI)
+  - Defensive: only uses columns that exist
 */
 
 begin;
@@ -86,73 +87,136 @@ declare
   v_overtime numeric;
   v_bonus numeric;
   v_other_earnings numeric;
+  
+  v_has_manual_override boolean;
 begin
-  select
-    pre.pay_basis_used,
-    pre.pay_frequency_used,
-    coalesce(pre.hours_per_week_used, e.hours_per_week, 0) as hours_used,
-    e.annual_salary,
-    e.hourly_rate,
-    e.status,
+  -- Check if manual_override column exists
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'payroll_run_employees' 
+    AND column_name = 'manual_override'
+  ) INTO v_has_manual_override;
 
-    coalesce(pre.manual_override, false) as manual_override,
-    coalesce(pre.pay_after_leaving, false) as pay_after_leaving,
-    coalesce(pre.included_in_rti, false) as included_in_rti,
+  -- Build query based on available columns
+  IF v_has_manual_override THEN
+    SELECT
+      pre.pay_basis_used,
+      pre.pay_frequency_used,
+      coalesce(pre.hours_per_week_used, e.hours_per_week, 0) as hours_used,
+      e.annual_salary,
+      e.hourly_rate,
+      e.status,
 
-    coalesce(pre.overtime_pay, 0) as overtime_pay,
-    coalesce(pre.bonus_pay, 0) as bonus_pay,
-    coalesce(pre.other_earnings, 0) as other_earnings
-  into
-    v_basis,
-    v_freq,
-    v_hours,
-    v_annual,
-    v_hourly,
-    v_emp_status,
+      coalesce(pre.manual_override, false) as manual_override,
+      coalesce(pre.pay_after_leaving, false) as pay_after_leaving,
+      coalesce(pre.included_in_rti, false) as included_in_rti,
 
-    v_manual,
-    v_pay_after_leaving,
-    v_included_in_rti,
+      coalesce(pre.overtime_pay, 0) as overtime_pay,
+      coalesce(pre.bonus_pay, 0) as bonus_pay,
+      coalesce(pre.other_earnings, 0) as other_earnings
+    INTO
+      v_basis,
+      v_freq,
+      v_hours,
+      v_annual,
+      v_hourly,
+      v_emp_status,
 
-    v_overtime,
-    v_bonus,
-    v_other_earnings
-  from payroll_run_employees pre
-  join employees e
-    on e.id = pre.employee_id
-   and e.company_id = pre.company_id
-  where pre.id = p_prep_id;
+      v_manual,
+      v_pay_after_leaving,
+      v_included_in_rti,
 
-  if not found then
-    return;
-  end if;
+      v_overtime,
+      v_bonus,
+      v_other_earnings
+    FROM payroll_run_employees pre
+    JOIN employees e
+      ON e.id = pre.employee_id
+     AND e.company_id = pre.company_id
+    WHERE pre.id = p_prep_id;
+  ELSE
+    -- Without manual_override column, assume not manual
+    SELECT
+      pre.pay_basis_used,
+      pre.pay_frequency_used,
+      coalesce(pre.hours_per_week_used, e.hours_per_week, 0) as hours_used,
+      e.annual_salary,
+      e.hourly_rate,
+      e.status,
 
-  if v_included_in_rti is true then
-    return;
-  end if;
+      false as manual_override,
+      coalesce(pre.pay_after_leaving, false) as pay_after_leaving,
+      coalesce(pre.included_in_rti, false) as included_in_rti,
 
-  if v_manual is true then
-    return;
-  end if;
+      coalesce(pre.overtime_pay, 0) as overtime_pay,
+      coalesce(pre.bonus_pay, 0) as bonus_pay,
+      coalesce(pre.other_earnings, 0) as other_earnings
+    INTO
+      v_basis,
+      v_freq,
+      v_hours,
+      v_annual,
+      v_hourly,
+      v_emp_status,
 
-  if lower(coalesce(v_emp_status, '')) = 'leaver' and v_pay_after_leaving is false then
-    return;
-  end if;
+      v_manual,
+      v_pay_after_leaving,
+      v_included_in_rti,
+
+      v_overtime,
+      v_bonus,
+      v_other_earnings
+    FROM payroll_run_employees pre
+    JOIN employees e
+      ON e.id = pre.employee_id
+     AND e.company_id = pre.company_id
+    WHERE pre.id = p_prep_id;
+  END IF;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  IF v_included_in_rti IS TRUE THEN
+    RETURN;
+  END IF;
+
+  IF v_manual IS TRUE THEN
+    RETURN;
+  END IF;
+
+  IF lower(coalesce(v_emp_status, '')) = 'leaver' AND v_pay_after_leaving IS FALSE THEN
+    RETURN;
+  END IF;
 
   v_basic := public.wf_calc_default_basic_pay(v_basis, v_freq, v_annual, v_hourly, v_hours);
   v_gross := round(v_basic + v_overtime + v_bonus + v_other_earnings, 2);
 
-  update payroll_run_employees
-     set basic_pay = v_basic,
-         gross_pay = v_gross,
-         taxable_pay = v_gross
-   where id = p_prep_id
-     and coalesce(gross_pay, 0) = 0
-     and coalesce(basic_pay, 0) = 0
-     and coalesce(taxable_pay, 0) = 0
-     and coalesce(manual_override, false) = false
-     and coalesce(included_in_rti, false) = false;
-end;
+  -- Update without referencing manual_override if it doesn't exist
+  IF v_has_manual_override THEN
+    UPDATE payroll_run_employees
+       SET basic_pay = v_basic,
+           gross_pay = v_gross,
+           taxable_pay = v_gross
+     WHERE id = p_prep_id
+       AND coalesce(gross_pay, 0) = 0
+       AND coalesce(basic_pay, 0) = 0
+       AND coalesce(taxable_pay, 0) = 0
+       AND coalesce(manual_override, false) = false
+       AND coalesce(included_in_rti, false) = false;
+  ELSE
+    UPDATE payroll_run_employees
+       SET basic_pay = v_basic,
+           gross_pay = v_gross,
+           taxable_pay = v_gross
+     WHERE id = p_prep_id
+       AND coalesce(gross_pay, 0) = 0
+       AND coalesce(basic_pay, 0) = 0
+       AND coalesce(taxable_pay, 0) = 0
+       AND coalesce(included_in_rti, false) = false;
+  END IF;
+END;
 $$;
 
 create or replace function public.wf_trg_seed_prep_defaults()
@@ -175,47 +239,104 @@ for each row
 execute function public.wf_trg_seed_prep_defaults();
 
 /* Backfill existing all-zero rows (safe-guarded) */
-update public.payroll_run_employees pre
-set
-  basic_pay = public.wf_calc_default_basic_pay(
-    pre.pay_basis_used,
-    pre.pay_frequency_used,
-    e.annual_salary,
-    e.hourly_rate,
-    coalesce(pre.hours_per_week_used, e.hours_per_week, 0)
-  ),
-  gross_pay = round(
-    public.wf_calc_default_basic_pay(
-      pre.pay_basis_used,
-      pre.pay_frequency_used,
-      e.annual_salary,
-      e.hourly_rate,
-      coalesce(pre.hours_per_week_used, e.hours_per_week, 0)
-    )
-    + coalesce(pre.overtime_pay, 0)
-    + coalesce(pre.bonus_pay, 0)
-    + coalesce(pre.other_earnings, 0)
-  , 2),
-  taxable_pay = round(
-    public.wf_calc_default_basic_pay(
-      pre.pay_basis_used,
-      pre.pay_frequency_used,
-      e.annual_salary,
-      e.hourly_rate,
-      coalesce(pre.hours_per_week_used, e.hours_per_week, 0)
-    )
-    + coalesce(pre.overtime_pay, 0)
-    + coalesce(pre.bonus_pay, 0)
-    + coalesce(pre.other_earnings, 0)
-  , 2)
-from public.employees e
-where e.id = pre.employee_id
-  and e.company_id = pre.company_id
-  and coalesce(pre.manual_override, false) = false
-  and coalesce(pre.included_in_rti, false) = false
-  and (lower(coalesce(e.status, '')) <> 'leaver' or coalesce(pre.pay_after_leaving, false) = true)
-  and coalesce(pre.gross_pay, 0) = 0
-  and coalesce(pre.basic_pay, 0) = 0
-  and coalesce(pre.taxable_pay, 0) = 0;
+DO $$
+DECLARE
+  v_has_manual_override boolean;
+BEGIN
+  -- Check if manual_override column exists
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'payroll_run_employees' 
+    AND column_name = 'manual_override'
+  ) INTO v_has_manual_override;
+
+  IF v_has_manual_override THEN
+    UPDATE public.payroll_run_employees pre
+    SET
+      basic_pay = public.wf_calc_default_basic_pay(
+        pre.pay_basis_used,
+        pre.pay_frequency_used,
+        e.annual_salary,
+        e.hourly_rate,
+        coalesce(pre.hours_per_week_used, e.hours_per_week, 0)
+      ),
+      gross_pay = round(
+        public.wf_calc_default_basic_pay(
+          pre.pay_basis_used,
+          pre.pay_frequency_used,
+          e.annual_salary,
+          e.hourly_rate,
+          coalesce(pre.hours_per_week_used, e.hours_per_week, 0)
+        )
+        + coalesce(pre.overtime_pay, 0)
+        + coalesce(pre.bonus_pay, 0)
+        + coalesce(pre.other_earnings, 0)
+      , 2),
+      taxable_pay = round(
+        public.wf_calc_default_basic_pay(
+          pre.pay_basis_used,
+          pre.pay_frequency_used,
+          e.annual_salary,
+          e.hourly_rate,
+          coalesce(pre.hours_per_week_used, e.hours_per_week, 0)
+        )
+        + coalesce(pre.overtime_pay, 0)
+        + coalesce(pre.bonus_pay, 0)
+        + coalesce(pre.other_earnings, 0)
+      , 2)
+    FROM public.employees e
+    WHERE e.id = pre.employee_id
+      AND e.company_id = pre.company_id
+      AND coalesce(pre.manual_override, false) = false
+      AND coalesce(pre.included_in_rti, false) = false
+      AND (lower(coalesce(e.status, '')) <> 'leaver' OR coalesce(pre.pay_after_leaving, false) = true)
+      AND coalesce(pre.gross_pay, 0) = 0
+      AND coalesce(pre.basic_pay, 0) = 0
+      AND coalesce(pre.taxable_pay, 0) = 0;
+  ELSE
+    UPDATE public.payroll_run_employees pre
+    SET
+      basic_pay = public.wf_calc_default_basic_pay(
+        pre.pay_basis_used,
+        pre.pay_frequency_used,
+        e.annual_salary,
+        e.hourly_rate,
+        coalesce(pre.hours_per_week_used, e.hours_per_week, 0)
+      ),
+      gross_pay = round(
+        public.wf_calc_default_basic_pay(
+          pre.pay_basis_used,
+          pre.pay_frequency_used,
+          e.annual_salary,
+          e.hourly_rate,
+          coalesce(pre.hours_per_week_used, e.hours_per_week, 0)
+        )
+        + coalesce(pre.overtime_pay, 0)
+        + coalesce(pre.bonus_pay, 0)
+        + coalesce(pre.other_earnings, 0)
+      , 2),
+      taxable_pay = round(
+        public.wf_calc_default_basic_pay(
+          pre.pay_basis_used,
+          pre.pay_frequency_used,
+          e.annual_salary,
+          e.hourly_rate,
+          coalesce(pre.hours_per_week_used, e.hours_per_week, 0)
+        )
+        + coalesce(pre.overtime_pay, 0)
+        + coalesce(pre.bonus_pay, 0)
+        + coalesce(pre.other_earnings, 0)
+      , 2)
+    FROM public.employees e
+    WHERE e.id = pre.employee_id
+      AND e.company_id = pre.company_id
+      AND coalesce(pre.included_in_rti, false) = false
+      AND (lower(coalesce(e.status, '')) <> 'leaver' OR coalesce(pre.pay_after_leaving, false) = true)
+      AND coalesce(pre.gross_pay, 0) = 0
+      AND coalesce(pre.basic_pay, 0) = 0
+      AND coalesce(pre.taxable_pay, 0) = 0;
+  END IF;
+END $$;
 
 commit;
