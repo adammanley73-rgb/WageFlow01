@@ -12,7 +12,6 @@ import {
   Briefcase,
   Building2,
   Mail,
-  Phone,
   ArrowRight,
   Check,
   Sparkles,
@@ -63,6 +62,10 @@ export default function TheBusinessConsortiumLanding() {
   // Intro video overlay state
   const INTRO_KEY = "tbc_intro_played_v1";
   const [showIntroVideo, setShowIntroVideo] = useState(false);
+
+  // Put your HMRC “gate” logo here (public file).
+  // Expected path: C:\Users\adamm\Projects\wageflow01\public\hmrc-gate.png
+  const HMRC_GATE_LOGO_SRC = "/hmrc-gate.png";
 
   const showToast = (message: string) => {
     setToast({ open: true, message });
@@ -200,14 +203,13 @@ export default function TheBusinessConsortiumLanding() {
     const mailto = buildMailto(
       "enquiries@thebusinessconsortiumltd.co.uk",
       "WageFlow demo request",
-      "Hi,\n\nPlease can I request a WageFlow demo.\n\nCompany name:\nNumber of employees:\nPay frequency (weekly/fortnightly/4-weekly/monthly):\nPreferred contact number:\n\nThanks,"
+      "Hi,\n\nPlease can I request a WageFlow demo.\n\nCompany name:\nNumber of employees:\nPay frequency (weekly/fortnightly/4-weekly/monthly):\n\nThanks,"
     );
     window.location.href = mailto;
   };
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
-      {/* Intro video overlay */}
       {showIntroVideo && (
         <div className="fixed inset-0 z-[100] bg-white">
           <div className="absolute top-4 right-4 z-[110] flex items-center gap-2">
@@ -263,9 +265,7 @@ export default function TheBusinessConsortiumLanding() {
                 <div className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#d32f2f] leading-none">
                   The Business Consortium Ltd
                 </div>
-                <div className="text-xs sm:text-sm text-gray-600 mt-1">
-                  Payroll-first systems for SMEs
-                </div>
+                <div className="text-xs sm:text-sm text-gray-600 mt-1">Payroll-first systems for SMEs</div>
               </div>
             </button>
 
@@ -437,6 +437,28 @@ export default function TheBusinessConsortiumLanding() {
                   </div>
                 </div>
 
+                {/* HMRC compliance callout styled to match the cards below */}
+                <div className="mt-6 bg-white border border-gray-200 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex-shrink-0">
+                      <Image
+                        src={HMRC_GATE_LOGO_SRC}
+                        alt="HMRC compliance"
+                        width={20}
+                        height={20}
+                        className="w-5 h-5 object-contain"
+                      />
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-900">Built for HMRC compliance</p>
+                      <p className="text-gray-700 mt-1">
+                        WageFlow is built around UK payroll rules and HMRC RTI requirements. Compliance is a core requirement, not an add-on.
+                      </p>
+                      <p className="text-gray-700 mt-1 text-sm">Not affiliated with or endorsed by HMRC.</p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="mt-6 grid gap-4">
                   {pillars.map((p, idx) => (
                     <div key={idx} className="bg-white border border-gray-200 rounded-xl p-4">
@@ -491,13 +513,7 @@ export default function TheBusinessConsortiumLanding() {
                     <div className="flex items-start justify-between gap-4">
                       <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center text-[#0f3c85] overflow-hidden">
                         {p.logoSrc ? (
-                          <Image
-                            src={p.logoSrc}
-                            alt={`${p.name} logo`}
-                            width={72}
-                            height={72}
-                            className="object-contain"
-                          />
+                          <Image src={p.logoSrc} alt={`${p.name} logo`} width={72} height={72} className="object-contain" />
                         ) : (
                           p.icon
                         )}
@@ -570,9 +586,7 @@ export default function TheBusinessConsortiumLanding() {
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-12">
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900">How we work</h2>
-              <p className="text-lg text-gray-700 mt-3 max-w-3xl mx-auto">
-                Payroll needs guardrails. Clear steps. Calm review. No drama.
-              </p>
+              <p className="text-lg text-gray-700 mt-3 max-w-3xl mx-auto">Payroll needs guardrails. Clear steps. Calm review. No drama.</p>
             </div>
 
             <div className="grid md:grid-cols-3 gap-6">
@@ -601,9 +615,7 @@ export default function TheBusinessConsortiumLanding() {
                   <Sparkles className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />
                   Automate safely
                 </div>
-                <p className="text-gray-700 mt-2">
-                  Automation reduces manual work. You keep control where it matters.
-                </p>
+                <p className="text-gray-700 mt-2">Automation reduces manual work. You keep control where it matters.</p>
               </div>
             </div>
           </div>
@@ -636,10 +648,6 @@ export default function TheBusinessConsortiumLanding() {
                   <div className="flex items-center gap-2">
                     <Mail className="w-4 h-4 text-[#0f3c85]" aria-hidden="true" />
                     <span>enquiries@thebusinessconsortiumltd.co.uk</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-[#0f3c85]" aria-hidden="true" />
-                    <span>+44 07932 720 789</span>
                   </div>
                 </div>
               </div>
