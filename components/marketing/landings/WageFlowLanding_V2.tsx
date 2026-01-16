@@ -1,7 +1,7 @@
 // C:\Users\adamm\Projects\wageflow01\components\marketing\landings\WageFlowLanding_V2.tsx
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import {
   Check,
@@ -19,10 +19,6 @@ import {
   Mail,
   Phone,
   ArrowRight,
-  Play,
-  Pause,
-  AlertTriangle,
-  ExternalLink,
 } from "lucide-react";
 
 type BillingMode = "annual" | "monthly";
@@ -84,80 +80,43 @@ function buildMailto(to: string, subject: string, body: string) {
 
 type ToastState = { open: boolean; message: string };
 
-type VideoStatus = "idle" | "loading" | "ready" | "error";
-
-function describeMediaError(err: MediaError | null | undefined) {
-  if (!err) return "Unknown media error.";
-  switch (err.code) {
-    case err.MEDIA_ERR_ABORTED:
-      return "Playback aborted.";
-    case err.MEDIA_ERR_NETWORK:
-      return "Network error while loading the video.";
-    case err.MEDIA_ERR_DECODE:
-      return "Video decode error. The file codec may not be supported.";
-    case err.MEDIA_ERR_SRC_NOT_SUPPORTED:
-      return "Video source not supported, or the server is not serving it as a video.";
-    default:
-      return "Unknown media error.";
-  }
-}
-
 function HostedShortVideo({ src, title }: { src: string; title: string }) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [status, setStatus] = useState<VideoStatus>("idle");
+  const [hasError, setHasError] = useState(false);
   const [errorText, setErrorText] = useState<string>("");
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
-  useEffect(() => {
-    setStatus("loading");
-    setErrorText("");
-    setIsPlaying(false);
-
-    const v = videoRef.current;
-    if (!v) return;
-
-    try {
-      v.pause();
-      v.currentTime = 0;
-      v.load();
-    } catch {
-      // no-op
-    }
-  }, [src]);
-
-  const tryPlay = async () => {
-    const v = videoRef.current;
-    if (!v) return;
-
-    setErrorText("");
-
-    try {
-      const p = v.play();
-      if (p && typeof (p as Promise<void>).then === "function") {
-        await p;
+  const onVideoError = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const v = e.currentTarget;
+    // Best-effort: HTMLMediaElement.error is not always fully descriptive in all browsers.
+    const mediaError = v.error;
+    let msg = "Unknown media error.";
+    if (mediaError) {
+      switch (mediaError.code) {
+        case 1:
+          msg = "Playback aborted.";
+          break;
+        case 2:
+          msg = "Network error while loading video.";
+          break;
+        case 3:
+          msg = "Decoding error. The file may be corrupted or unsupported.";
+          break;
+        case 4:
+          msg = "Video source not supported.";
+          break;
+        default:
+          msg = "Unknown media error.";
+          break;
       }
-      setIsPlaying(true);
-    } catch (e: any) {
-      const msg =
-        typeof e?.message === "string" && e.message.length > 0
-          ? e.message
-          : "The browser blocked playback. Usually this is a server or format issue.";
-      setStatus("error");
-      setErrorText(msg);
     }
+    setHasError(true);
+    setErrorText(msg);
   };
 
-  const togglePlay = async () => {
-    const v = videoRef.current;
-    if (!v) return;
-
-    if (v.paused || v.ended) {
-      await tryPlay();
-      return;
-    }
-
-    v.pause();
-    setIsPlaying(false);
+  const onRetry = () => {
+    setHasError(false);
+    setErrorText("");
+    setRetryKey((k) => k + 1);
   };
 
   return (
@@ -165,88 +124,51 @@ function HostedShortVideo({ src, title }: { src: string; title: string }) {
       <div className="rounded-2xl overflow-hidden border border-gray-200 bg-white shadow-sm">
         <div className="relative w-full" style={{ paddingTop: "177.7778%" }}>
           <video
-            ref={videoRef}
+            key={retryKey}
             className="absolute inset-0 h-full w-full object-contain bg-black"
+            src={src}
+            controls
             playsInline
             preload="metadata"
-            controls
-            onLoadStart={() => setStatus("loading")}
-            onCanPlay={() => setStatus("ready")}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onEnded={() => setIsPlaying(false)}
-            onError={() => {
-              const v = videoRef.current;
-              setStatus("error");
-              setErrorText(describeMediaError(v?.error));
-            }}
-          >
-            <source src={src} type="video/mp4" />
-          </video>
+            onError={onVideoError}
+          />
 
-          <div className="absolute inset-0 pointer-events-none">
-            {status === "loading" && (
-              <div className="absolute inset-x-0 top-3 flex justify-center">
-                <div className="pointer-events-none rounded-full bg-black/60 text-white text-xs px-3 py-1 border border-white/10">
-                  Loading…
+          {hasError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60 px-4">
+              <div className="w-full max-w-[260px] rounded-xl bg-black/80 text-white border border-white/10 shadow-lg p-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-yellow-300" aria-hidden="true">
+                    ⚠
+                  </span>
+                  <div className="font-semibold">Video failed to play</div>
+                </div>
+                <div className="text-sm text-white/80 mt-1">{errorText}</div>
+
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-white text-gray-900 px-3 py-2 text-sm font-semibold hover:bg-gray-100 transition focus:outline-none focus:ring-2 focus:ring-white"
+                  >
+                    <span aria-hidden="true">▶</span>
+                    Retry
+                  </button>
+
+                  <a
+                    href={src}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-transparent text-white px-3 py-2 text-sm font-semibold hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white"
+                  >
+                    <span aria-hidden="true">↗</span>
+                    Open file
+                  </a>
                 </div>
               </div>
-            )}
-
-            {status === "error" && (
-              <div className="absolute inset-0 flex items-center justify-center px-4">
-                <div className="pointer-events-auto w-full rounded-xl bg-black/75 text-white border border-white/10 p-4">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-5 h-5 text-yellow-300 mt-0.5 flex-shrink-0" aria-hidden="true" />
-                    <div className="min-w-0">
-                      <div className="font-semibold">Video failed to play</div>
-                      <div className="text-xs text-white/80 mt-1 break-words">
-                        {errorText || "The file could not be loaded or decoded."}
-                      </div>
-
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={tryPlay}
-                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-white text-black px-3 py-2 text-sm font-semibold hover:bg-gray-100 transition"
-                        >
-                          <Play className="w-4 h-4" aria-hidden="true" />
-                          Retry
-                        </button>
-
-                        <a
-                          href={src}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 px-3 py-2 text-sm font-semibold hover:bg-white/10 transition"
-                        >
-                          <ExternalLink className="w-4 h-4" aria-hidden="true" />
-                          Open file
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {status !== "error" && (
-              <div className="absolute inset-x-0 bottom-3 flex justify-center">
-                <button
-                  type="button"
-                  onClick={togglePlay}
-                  className="pointer-events-auto inline-flex items-center justify-center gap-2 rounded-full bg-black/65 text-white px-4 py-2 border border-white/10 hover:bg-black/75 transition focus:outline-none focus:ring-2 focus:ring-white/40"
-                  aria-label={isPlaying ? "Pause video" : "Play video"}
-                >
-                  {isPlaying ? <Pause className="w-4 h-4" aria-hidden="true" /> : <Play className="w-4 h-4" aria-hidden="true" />}
-                  <span className="text-sm font-semibold">{isPlaying ? "Pause" : "Play"}</span>
-                </button>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
-
       <div className="sr-only">{title}</div>
     </div>
   );
@@ -429,9 +351,10 @@ export default function WageFlowLandingV2() {
     showToast("Get 1st month free is coming soon.");
   };
 
-  const HERO_LEFT = "https://media.thebusinessconsortiumltd.co.uk/hero-left.mp4";
-  const HERO_RIGHT = "https://media.thebusinessconsortiumltd.co.uk/hero-right.mp4";
-  const MID_WALKTHROUGH = "https://media.thebusinessconsortiumltd.co.uk/mid-walkthrough.mp4";
+  // Serve videos from your own Vercel-hosted site (public/videos/*)
+  const HERO_LEFT = "/videos/hero-left.mp4";
+  const HERO_RIGHT = "/videos/hero-right.mp4";
+  const MID_WALKTHROUGH = "/videos/mid-walkthrough.mp4";
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
@@ -461,7 +384,13 @@ export default function WageFlowLandingV2() {
               aria-label="Go to top"
             >
               <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden animate-pulse">
-                <Image src="/WageFlowLogo.png" alt="WageFlow logo" width={36} height={36} className="object-contain" />
+                <Image
+                  src="/WageFlowLogo.png"
+                  alt="WageFlow logo"
+                  width={36}
+                  height={36}
+                  className="object-contain"
+                />
               </div>
               <span className="text-2xl font-bold text-[#0f3c85]">WageFlow</span>
             </button>
@@ -656,9 +585,7 @@ export default function WageFlowLandingV2() {
 
               <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 md:p-8">
                 <h2 className="text-xl font-bold text-gray-900">What you get</h2>
-                <p className="text-gray-700 mt-2">
-                  Core features built to keep payroll clean, fast, and explainable.
-                </p>
+                <p className="text-gray-700 mt-2">Core features built to keep payroll clean, fast, and explainable.</p>
 
                 <div className="mt-6 grid gap-4">
                   {features.map((feature, index) => (
@@ -683,9 +610,7 @@ export default function WageFlowLandingV2() {
                     </div>
                     <div>
                       <p className="font-semibold text-gray-900">WageFlow is the flagship</p>
-                      <p className="text-sm text-gray-700">
-                        PeopleFlow and AccountsFlow follow. BusinessFlow is the package name later.
-                      </p>
+                      <p className="text-sm text-gray-700">PeopleFlow and AccountsFlow follow. BusinessFlow is the package name later.</p>
                     </div>
                   </div>
                 </div>
@@ -710,9 +635,7 @@ export default function WageFlowLandingV2() {
                   <Clock className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />
                   Reduce payroll time
                 </div>
-                <p className="text-gray-700 mt-2">
-                  Focus on exceptions and approvals, not endless manual steps.
-                </p>
+                <p className="text-gray-700 mt-2">Focus on exceptions and approvals, not endless manual steps.</p>
               </div>
 
               <div className="border border-gray-200 rounded-xl p-5">
@@ -720,9 +643,7 @@ export default function WageFlowLandingV2() {
                   <Shield className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />
                   Compliance-led workflow
                 </div>
-                <p className="text-gray-700 mt-2">
-                  Clear run history and consistent outputs. Less chaos when you need answers.
-                </p>
+                <p className="text-gray-700 mt-2">Clear run history and consistent outputs. Less chaos when you need answers.</p>
               </div>
 
               <div className="border border-gray-200 rounded-xl p-5">
@@ -730,9 +651,7 @@ export default function WageFlowLandingV2() {
                   <TrendingUp className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />
                   Understand changes
                 </div>
-                <p className="text-gray-700 mt-2">
-                  Review movements before approval so problems are caught early.
-                </p>
+                <p className="text-gray-700 mt-2">Review movements before approval so problems are caught early.</p>
               </div>
             </div>
           </div>
@@ -742,9 +661,7 @@ export default function WageFlowLandingV2() {
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-10">
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Simple, transparent pricing</h2>
-              <p className="text-lg text-gray-700 mt-3">
-                Annual pricing shown upfront. Monthly is available too.
-              </p>
+              <p className="text-lg text-gray-700 mt-3">Annual pricing shown upfront. Monthly is available too.</p>
             </div>
 
             <div className="flex flex-col items-center gap-6 mb-10">
@@ -901,9 +818,7 @@ export default function WageFlowLandingV2() {
                         </p>
                       )}
 
-                      <p className="text-sm text-gray-700 mt-3">
-                        Card required before first live payroll run.
-                      </p>
+                      <p className="text-sm text-gray-700 mt-3">Card required before first live payroll run.</p>
                     </div>
 
                     <ul className="space-y-3 mt-6">
@@ -931,9 +846,7 @@ export default function WageFlowLandingV2() {
                       Request a demo
                     </button>
 
-                    <p className="text-xs text-gray-600 text-center mt-3">
-                      Offer and billing go live soon. Buttons confirm instead of failing.
-                    </p>
+                    <p className="text-xs text-gray-600 text-center mt-3">Offer and billing go live soon. Buttons confirm instead of failing.</p>
                   </div>
                 );
               })}
@@ -945,9 +858,7 @@ export default function WageFlowLandingV2() {
                   <CreditCard className="w-5 h-5 text-[#0f3c85] mt-0.5" aria-hidden="true" />
                   <div>
                     <p className="font-semibold text-gray-900">Card-before-first-payroll policy</p>
-                    <p className="text-gray-700 mt-1">
-                      You can explore WageFlow without a card. To run your first live payroll, you add a card. Simple.
-                    </p>
+                    <p className="text-gray-700 mt-1">You can explore WageFlow without a card. To run your first live payroll, you add a card. Simple.</p>
                   </div>
                 </div>
               </div>
@@ -986,9 +897,7 @@ export default function WageFlowLandingV2() {
             <div className="grid md:grid-cols-2 gap-6">
               <div className="bg-white border border-gray-200 rounded-2xl p-6 text-left">
                 <p className="font-semibold text-gray-900">Request a demo</p>
-                <p className="text-gray-700 mt-2">
-                  Simple. No forms. No pretending.
-                </p>
+                <p className="text-gray-700 mt-2">Simple. No forms. No pretending.</p>
                 <button
                   type="button"
                   onClick={onRequestDemo}
@@ -1032,9 +941,7 @@ export default function WageFlowLandingV2() {
         <section className="py-16 px-4 bg-[#0f3c85]">
           <div className="max-w-4xl mx-auto text-center">
             <h2 className="text-3xl md:text-4xl font-bold text-white">Ready to simplify payroll?</h2>
-            <p className="text-lg text-blue-50 mt-4">
-              Exception-led review. Calm approvals. Less time wasted.
-            </p>
+            <p className="text-lg text-blue-50 mt-4">Exception-led review. Calm approvals. Less time wasted.</p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8">
               <button
@@ -1053,10 +960,7 @@ export default function WageFlowLandingV2() {
               </button>
             </div>
 
-            <a
-              href="/"
-              className="inline-flex items-center justify-center gap-2 text-blue-50 hover:text-white transition mt-8"
-            >
+            <a href="/" className="inline-flex items-center justify-center gap-2 text-blue-50 hover:text-white transition mt-8">
               Back to The Business Consortium
               <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </a>
@@ -1074,9 +978,7 @@ export default function WageFlowLandingV2() {
                 </div>
                 <div className="text-2xl font-bold text-white">WageFlow</div>
               </div>
-              <p className="text-sm text-gray-300">
-                UK payroll software built for speed, clarity, and clean workflows.
-              </p>
+              <p className="text-sm text-gray-300">UK payroll software built for speed, clarity, and clean workflows.</p>
             </div>
 
             <div>
