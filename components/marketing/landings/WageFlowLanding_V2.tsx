@@ -1,7 +1,7 @@
 // C:\Users\adamm\Projects\wageflow01\components\marketing\landings\WageFlowLanding_V2.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   Check,
@@ -19,6 +19,10 @@ import {
   Mail,
   Phone,
   ArrowRight,
+  Play,
+  Pause,
+  AlertTriangle,
+  ExternalLink,
 } from "lucide-react";
 
 type BillingMode = "annual" | "monthly";
@@ -80,26 +84,169 @@ function buildMailto(to: string, subject: string, body: string) {
 
 type ToastState = { open: boolean; message: string };
 
-function HostedShortVideo({
-  src,
-  title,
-}: {
-  src: string;
-  title: string;
-}) {
+type VideoStatus = "idle" | "loading" | "ready" | "error";
+
+function describeMediaError(err: MediaError | null | undefined) {
+  if (!err) return "Unknown media error.";
+  switch (err.code) {
+    case err.MEDIA_ERR_ABORTED:
+      return "Playback aborted.";
+    case err.MEDIA_ERR_NETWORK:
+      return "Network error while loading the video.";
+    case err.MEDIA_ERR_DECODE:
+      return "Video decode error. The file codec may not be supported.";
+    case err.MEDIA_ERR_SRC_NOT_SUPPORTED:
+      return "Video source not supported, or the server is not serving it as a video.";
+    default:
+      return "Unknown media error.";
+  }
+}
+
+function HostedShortVideo({ src, title }: { src: string; title: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [status, setStatus] = useState<VideoStatus>("idle");
+  const [errorText, setErrorText] = useState<string>("");
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => {
+    setStatus("loading");
+    setErrorText("");
+    setIsPlaying(false);
+
+    const v = videoRef.current;
+    if (!v) return;
+
+    try {
+      v.pause();
+      v.currentTime = 0;
+      v.load();
+    } catch {
+      // no-op
+    }
+  }, [src]);
+
+  const tryPlay = async () => {
+    const v = videoRef.current;
+    if (!v) return;
+
+    setErrorText("");
+
+    try {
+      const p = v.play();
+      if (p && typeof (p as Promise<void>).then === "function") {
+        await p;
+      }
+      setIsPlaying(true);
+    } catch (e: any) {
+      const msg =
+        typeof e?.message === "string" && e.message.length > 0
+          ? e.message
+          : "The browser blocked playback. Usually this is a server or format issue.";
+      setStatus("error");
+      setErrorText(msg);
+    }
+  };
+
+  const togglePlay = async () => {
+    const v = videoRef.current;
+    if (!v) return;
+
+    if (v.paused || v.ended) {
+      await tryPlay();
+      return;
+    }
+
+    v.pause();
+    setIsPlaying(false);
+  };
+
   return (
     <div className="w-full max-w-[320px] mx-auto">
       <div className="rounded-2xl overflow-hidden border border-gray-200 bg-white shadow-sm">
         <div className="relative w-full" style={{ paddingTop: "177.7778%" }}>
           <video
+            ref={videoRef}
             className="absolute inset-0 h-full w-full object-contain bg-black"
-            src={src}
-            controls
             playsInline
             preload="metadata"
-          />
+            controls
+            onLoadStart={() => setStatus("loading")}
+            onCanPlay={() => setStatus("ready")}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => setIsPlaying(false)}
+            onError={() => {
+              const v = videoRef.current;
+              setStatus("error");
+              setErrorText(describeMediaError(v?.error));
+            }}
+          >
+            <source src={src} type="video/mp4" />
+          </video>
+
+          <div className="absolute inset-0 pointer-events-none">
+            {status === "loading" && (
+              <div className="absolute inset-x-0 top-3 flex justify-center">
+                <div className="pointer-events-none rounded-full bg-black/60 text-white text-xs px-3 py-1 border border-white/10">
+                  Loading…
+                </div>
+              </div>
+            )}
+
+            {status === "error" && (
+              <div className="absolute inset-0 flex items-center justify-center px-4">
+                <div className="pointer-events-auto w-full rounded-xl bg-black/75 text-white border border-white/10 p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-5 h-5 text-yellow-300 mt-0.5 flex-shrink-0" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <div className="font-semibold">Video failed to play</div>
+                      <div className="text-xs text-white/80 mt-1 break-words">
+                        {errorText || "The file could not be loaded or decoded."}
+                      </div>
+
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={tryPlay}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-white text-black px-3 py-2 text-sm font-semibold hover:bg-gray-100 transition"
+                        >
+                          <Play className="w-4 h-4" aria-hidden="true" />
+                          Retry
+                        </button>
+
+                        <a
+                          href={src}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 px-3 py-2 text-sm font-semibold hover:bg-white/10 transition"
+                        >
+                          <ExternalLink className="w-4 h-4" aria-hidden="true" />
+                          Open file
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {status !== "error" && (
+              <div className="absolute inset-x-0 bottom-3 flex justify-center">
+                <button
+                  type="button"
+                  onClick={togglePlay}
+                  className="pointer-events-auto inline-flex items-center justify-center gap-2 rounded-full bg-black/65 text-white px-4 py-2 border border-white/10 hover:bg-black/75 transition focus:outline-none focus:ring-2 focus:ring-white/40"
+                  aria-label={isPlaying ? "Pause video" : "Play video"}
+                >
+                  {isPlaying ? <Pause className="w-4 h-4" aria-hidden="true" /> : <Play className="w-4 h-4" aria-hidden="true" />}
+                  <span className="text-sm font-semibold">{isPlaying ? "Pause" : "Play"}</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
       <div className="sr-only">{title}</div>
     </div>
   );
