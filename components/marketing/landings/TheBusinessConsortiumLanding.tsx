@@ -54,14 +54,20 @@ function buildMailto(to: string, subject: string, body: string) {
 }
 
 type ToastState = { open: boolean; message: string };
+type IntroPhase = "show" | "hide";
 
-export default function TheBusinessConsortiumLanding() {
+type Props = {
+  initialShowIntro: boolean;
+};
+
+export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState<ToastState>({ open: false, message: "" });
 
-  // Intro video overlay state
-  const INTRO_KEY = "tbc_intro_played_v1";
-  const [showIntroVideo, setShowIntroVideo] = useState(false);
+  // Intro video is now controlled by a cookie so the server can decide BEFORE first paint.
+  // Cookie is session-scoped (no Max-Age), so it resets when the browser fully closes.
+  const INTRO_COOKIE = "tbc_intro_played_v1";
+  const [introPhase, setIntroPhase] = useState<IntroPhase>(initialShowIntro ? "show" : "hide");
 
   // Put your HMRC “gate” logo here (public file).
   // Expected path: C:\Users\adamm\Projects\wageflow01\public\hmrc-gate.png
@@ -72,30 +78,45 @@ export default function TheBusinessConsortiumLanding() {
     window.setTimeout(() => setToast({ open: false, message: "" }), 2200);
   };
 
-  const dismissIntro = () => {
+  const setIntroCookie = () => {
     try {
-      sessionStorage.setItem(INTRO_KEY, "1");
+      document.cookie = `${INTRO_COOKIE}=1; Path=/; SameSite=Lax`;
     } catch {
       // ignore
     }
-    setShowIntroVideo(false);
+  };
+
+  const dismissIntro = () => {
+    setIntroCookie();
+    setIntroPhase("hide");
   };
 
   useEffect(() => {
-    // Decide whether to show intro video.
-    // Show only once per tab session, and skip for reduced motion.
+    // If user prefers reduced motion, skip the intro and set cookie so the server stops offering it next time.
     try {
       const reduced =
         typeof window !== "undefined" &&
         typeof window.matchMedia === "function" &&
         window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-      const played = sessionStorage.getItem(INTRO_KEY) === "1";
-
-      setShowIntroVideo(!played && !reduced);
+      if (reduced) {
+        setIntroCookie();
+        setIntroPhase("hide");
+        return;
+      }
     } catch {
-      setShowIntroVideo(true);
+      // ignore
     }
+
+    // Safety net: if cookie already exists but server did not pass it correctly, hide.
+    try {
+      if (document.cookie.includes(`${INTRO_COOKIE}=1`)) {
+        setIntroPhase("hide");
+      }
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -116,14 +137,13 @@ export default function TheBusinessConsortiumLanding() {
   }, [mobileMenuOpen]);
 
   useEffect(() => {
-    // Allow ESC to skip the intro video.
-    if (!showIntroVideo) return;
+    if (introPhase !== "show") return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") dismissIntro();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showIntroVideo]);
+  }, [introPhase]);
 
   const products: ProductCard[] = useMemo(
     () => [
@@ -210,8 +230,13 @@ export default function TheBusinessConsortiumLanding() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
-      {showIntroVideo && (
-        <div className="fixed inset-0 z-[100] bg-white">
+      {introPhase === "show" && (
+        <div
+          className="fixed inset-0 z-[100] bg-white motion-reduce:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Intro video"
+        >
           <div className="absolute top-4 right-4 z-[110] flex items-center gap-2">
             <button
               type="button"
@@ -437,7 +462,6 @@ export default function TheBusinessConsortiumLanding() {
                   </div>
                 </div>
 
-                {/* HMRC compliance callout styled to match the cards below */}
                 <div className="mt-6 bg-white border border-gray-200 rounded-xl p-4">
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5 flex-shrink-0">
