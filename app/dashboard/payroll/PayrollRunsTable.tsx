@@ -24,8 +24,10 @@ type PayrollRun = {
   run_name?: string | null;
 
   frequency: Frequency;
-  period_start: string;
-  period_end: string;
+
+  // These are frequently null or come back under different key names.
+  period_start?: string | null;
+  period_end?: string | null;
 
   status: string;
   pay_date: string | null;
@@ -41,6 +43,14 @@ type PayrollRun = {
   parent_run_id?: string | null;
   created_at?: string | null;
   pay_schedule_id?: string | null;
+
+  // Possible legacy/alt API shapes (we pick these at render time)
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  pay_period_start?: string | null;
+  pay_period_end?: string | null;
+  payPeriodStart?: string | null;
+  payPeriodEnd?: string | null;
 };
 
 type RunsResponse = {
@@ -60,6 +70,16 @@ const FREQUENCIES: { key: FrequencyFilter; label: string }[] = [
   { key: "four_weekly", label: "4-weekly" },
   { key: "monthly", label: "Monthly" },
 ];
+
+function pickFirst(...values: any[]): string | null {
+  for (const v of values) {
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    return s;
+  }
+  return null;
+}
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "";
@@ -133,16 +153,13 @@ function runDisplayLabel(run: PayrollRun): string {
 }
 
 function buildRunMeta(runs: PayrollRun[]): Map<string, RunMeta> {
-  const byId = new Map<string, PayrollRun>();
-  for (const r of runs) byId.set(r.id, r);
-
   const groups = new Map<string, PayrollRun[]>();
   const keyFor = (r: PayrollRun) =>
     [
       r.company_id ?? "",
       r.frequency ?? "",
-      r.period_start ?? "",
-      r.period_end ?? "",
+      pickFirst(r.period_start, r.periodStart, r.pay_period_start, r.payPeriodStart) ?? "",
+      pickFirst(r.period_end, r.periodEnd, r.pay_period_end, r.payPeriodEnd) ?? "",
       r.pay_schedule_id ?? "",
     ].join("|");
 
@@ -170,7 +187,7 @@ function buildRunMeta(runs: PayrollRun[]): Map<string, RunMeta> {
         const k = normalizeKind(r.run_kind);
         if (k === "supplementary") return true;
         if (primaryId && r.parent_run_id && r.parent_run_id === primaryId) return true;
-        // If API doesn’t send run_kind, but does send parent_run_id, treat as supplementary.
+        // If API does not send run_kind, but does send parent_run_id, treat as supplementary.
         if (r.parent_run_id) return true;
         return false;
       })
@@ -206,6 +223,36 @@ function buildRunMeta(runs: PayrollRun[]): Map<string, RunMeta> {
   return meta;
 }
 
+function getPeriodStart(run: any): string | null {
+  return pickFirst(run?.period_start, run?.periodStart, run?.pay_period_start, run?.payPeriodStart);
+}
+
+function getPeriodEnd(run: any): string | null {
+  return pickFirst(run?.period_end, run?.periodEnd, run?.pay_period_end, run?.payPeriodEnd);
+}
+
+function renderPeriod(run: any): JSX.Element {
+  const ps = getPeriodStart(run);
+  const pe = getPeriodEnd(run);
+
+  const psFmt = formatDate(ps);
+  const peFmt = formatDate(pe);
+
+  if (!psFmt && !peFmt) {
+    return <span className="text-neutral-500">Not set</span>;
+  }
+
+  if (psFmt && peFmt) {
+    return <span>{psFmt} to {peFmt}</span>;
+  }
+
+  if (psFmt) {
+    return <span>From {psFmt}</span>;
+  }
+
+  return <span>To {peFmt}</span>;
+}
+
 export default function PayrollRunsTable() {
   const [frequency, setFrequency] = useState<FrequencyFilter>("all");
   const [runs, setRuns] = useState<PayrollRun[]>([]);
@@ -233,9 +280,7 @@ export default function PayrollRunsTable() {
       const json: RunsResponse = await res.json();
 
       if (!json.ok) {
-        setError(
-          json.error?.message || json.error || "Failed to load payroll runs for this company."
-        );
+        setError(json.error?.message || json.error || "Failed to load payroll runs for this company.");
         setRuns([]);
         setTaxYearStart(json.taxYear?.start ?? null);
         setTaxYearEnd(json.taxYear?.end ?? null);
@@ -243,8 +288,8 @@ export default function PayrollRunsTable() {
       }
 
       const sortedRuns = [...(json.runs || [])].sort((a, b) => {
-        const aKey = sortKey(a.period_start);
-        const bKey = sortKey(b.period_start);
+        const aKey = sortKey(getPeriodStart(a) ?? "");
+        const bKey = sortKey(getPeriodStart(b) ?? "");
         return bKey.localeCompare(aKey);
       });
 
@@ -366,9 +411,7 @@ export default function PayrollRunsTable() {
                       </div>
                     </td>
 
-                    <td className="px-4 py-3">
-                      {formatDate(run.period_start)} to {formatDate(run.period_end)}
-                    </td>
+                    <td className="px-4 py-3">{renderPeriod(run)}</td>
 
                     <td className="px-4 py-3">
                       {formatDate(run.pay_date)}

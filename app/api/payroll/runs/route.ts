@@ -85,6 +85,45 @@ function diffDaysUtc(a: Date, b: Date) {
   return Math.round((a.getTime() - b.getTime()) / 86400000);
 }
 
+function addDaysUtc(d: Date, days: number) {
+  const out = new Date(d.getTime());
+  out.setUTCDate(out.getUTCDate() + days);
+  return out;
+}
+
+function dateOnlyIsoUtc(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+/*
+  Derive pay period dates when the DB does not store period_start/period_end.
+
+  Assumptions (simple, consistent, predictable):
+  - weekly/fortnightly/four_weekly: period_end = pay_date, period_start = pay_date - (n-1)
+  - monthly: period_start = 1st of pay_date month, period_end = last day of pay_date month
+*/
+function derivePeriodFromPayDate(frequency: string, payDateIso: string | null): { startIso: string | null; endIso: string | null } {
+  if (!payDateIso || !isIsoDateOnly(payDateIso)) return { startIso: null, endIso: null };
+
+  const f = String(frequency || "").trim();
+  const payUtc = parseIsoDateOnlyToUtc(payDateIso);
+
+  if (f === "monthly") {
+    const y = payUtc.getUTCFullYear();
+    const m = payUtc.getUTCMonth(); // 0..11
+    const start = new Date(Date.UTC(y, m, 1));
+    const end = new Date(Date.UTC(y, m + 1, 0)); // day 0 = last day of previous month
+    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+  }
+
+  const periodDays = f === "weekly" ? 7 : f === "fortnightly" ? 14 : f === "four_weekly" ? 28 : null;
+  if (!periodDays) return { startIso: null, endIso: null };
+
+  const end = payUtc;
+  const start = addDaysUtc(end, -(periodDays - 1));
+  return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+}
+
 function getUkTaxYearBounds(taxYearStartParam?: string | null) {
   if (taxYearStartParam) {
     const start = new Date(taxYearStartParam);
@@ -263,15 +302,17 @@ export async function GET(req: Request) {
       const computedRunNumber = makeRunNumberFromPayDate(f, payDateIso, taxYearStartIso);
       const computedRunName = defaultRunNameFromPayDate(f, payDateIso);
 
+      const derivedPeriod = derivePeriodFromPayDate(f, payDateIso);
+
       return {
         id: row.id,
         company_id: row.company_id,
 
-        // Keep the payload shape stable for the UI, even if the DB no longer stores these fields.
+        // Keep the payload shape stable for the UI, even if the DB does not store these fields.
         run_number: computedRunNumber,
         run_name: computedRunName,
-        period_start: null,
-        period_end: null,
+        period_start: derivedPeriod.startIso,
+        period_end: derivedPeriod.endIso,
         pay_schedule_id: null,
 
         frequency: row.frequency,
@@ -425,6 +466,8 @@ export async function POST(req: Request) {
     const computedRunNumber = makeRunNumberFromPayDate(String(run.frequency || ""), run.pay_date ?? null, taxYearStartIso);
     const computedRunName = defaultRunNameFromPayDate(String(run.frequency || ""), run.pay_date ?? null);
 
+    const derivedPeriod = derivePeriodFromPayDate(String(run.frequency || ""), run.pay_date ?? null);
+
     const res = NextResponse.json(
       {
         ok: true,
@@ -436,8 +479,8 @@ export async function POST(req: Request) {
           ...run,
           run_number: computedRunNumber,
           run_name: computedRunName,
-          period_start: null,
-          period_end: null,
+          period_start: derivedPeriod.startIso,
+          period_end: derivedPeriod.endIso,
           pay_schedule_id: null,
         },
 
