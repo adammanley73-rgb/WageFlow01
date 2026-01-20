@@ -164,8 +164,25 @@ function computeEquivalentHourlyRate(annualSalary: number, hoursPerWeek: number)
   return annualSalary / (WEEKS_PER_YEAR * hoursPerWeek);
 }
 
+function parseMaybeJsonObject(v: any) {
+  if (!v) return {};
+  if (typeof v === "object") return v;
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return {};
+    try {
+      const parsed = JSON.parse(s);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 function normalizeAddress(address: any) {
-  const a = address || {};
+  const a: any = parseMaybeJsonObject(address);
+
   const line1 = a.line1 ?? a.address_line1 ?? a.line_1 ?? "";
   const line2 = a.line2 ?? a.address_line2 ?? a.line_2 ?? "";
   const town_city = a.town_city ?? a.city ?? a.town ?? a.locality ?? "";
@@ -205,6 +222,22 @@ function extractMissingColumn(message: string): string | null {
 function looksLikeMissingColumn(err: any, col: string) {
   const msg = String(err?.message || err || "");
   return msg.toLowerCase().includes(`column employees.${String(col).toLowerCase()} does not exist`);
+}
+
+function getSupportedColumns(row: any): Set<string> {
+  const s = new Set<string>();
+  if (!row || typeof row !== "object") return s;
+  for (const k of Object.keys(row)) s.add(k);
+  return s;
+}
+
+function filterToSupportedColumns(payload: Record<string, any>, supported: Set<string>) {
+  if (!supported || supported.size === 0) return { ...payload };
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(payload)) {
+    if (supported.has(k)) out[k] = v;
+  }
+  return out;
 }
 
 export default function EditEmployeePage() {
@@ -528,6 +561,11 @@ export default function EditEmployeePage() {
       return;
     }
 
+    if (!employee) {
+      setErr("Employee is not loaded yet. Wait for the page to finish loading and try again.");
+      return;
+    }
+
     const first = form.first_name.trim();
     const last = form.last_name.trim();
     const email = form.email.trim();
@@ -593,7 +631,7 @@ export default function EditEmployeePage() {
         }
       : null;
 
-    const updateRow: Record<string, any> = {
+    const rawUpdateRow: Record<string, any> = {
       employee_number: form.employee_number.trim() || null,
 
       first_name: first,
@@ -618,9 +656,12 @@ export default function EditEmployeePage() {
       address,
     };
 
-    Object.keys(updateRow).forEach((k) => {
-      if (updateRow[k] === undefined) delete updateRow[k];
+    Object.keys(rawUpdateRow).forEach((k) => {
+      if (rawUpdateRow[k] === undefined) delete rawUpdateRow[k];
     });
+
+    const supportedCols = getSupportedColumns(employee);
+    let payload: Record<string, any> = filterToSupportedColumns(rawUpdateRow, supportedCols);
 
     try {
       setSaving(true);
@@ -634,8 +675,6 @@ export default function EditEmployeePage() {
       matchVal = String(matchVal || "").trim();
 
       let matchCol: "id" | "employee_id" = isUuid(matchVal) ? "id" : "employee_id";
-
-      let payload: Record<string, any> = { ...updateRow };
 
       for (let attempt = 0; attempt < 8; attempt++) {
         const res = await supabase
@@ -695,6 +734,13 @@ export default function EditEmployeePage() {
   }, [employee?.first_name, employee?.last_name]);
 
   const showOverrideBanner = Boolean(derivedHourlyStr && hourlyRateTouched && hourlyLooksOverridden);
+
+  const supportsAddress = useMemo(() => {
+    if (!employee) return true;
+    const supported = getSupportedColumns(employee);
+    if (supported.size === 0) return true;
+    return supported.has("address");
+  }, [employee]);
 
   return (
     <PageTemplate title="Edit employee" currentSection="employees">
@@ -974,9 +1020,7 @@ export default function EditEmployeePage() {
                             )}
                           </div>
                         ) : (
-                          <div className="mt-1 text-xs text-neutral-600">
-                            Auto-derivation needs Annual salary and Hours per week.
-                          </div>
+                          <div className="mt-1 text-xs text-neutral-600">Auto-derivation needs Annual salary and Hours per week.</div>
                         )}
                       </div>
 
@@ -1003,6 +1047,12 @@ export default function EditEmployeePage() {
                   <div className="rounded-lg border border-neutral-300 bg-white p-4">
                     <div className="text-sm font-semibold text-neutral-900">Address (optional)</div>
 
+                    {!supportsAddress ? (
+                      <div className="mt-2 rounded-md bg-amber-100 px-3 py-2 text-xs text-amber-900">
+                        Address cannot be saved in this environment because the employees table has no address column.
+                      </div>
+                    ) : null}
+
                     <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div className="md:col-span-2">
                         <label className="block text-sm text-neutral-800">Address line 1</label>
@@ -1012,6 +1062,7 @@ export default function EditEmployeePage() {
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="address_line1"
                           autoComplete="address-line1"
+                          disabled={!supportsAddress}
                         />
                       </div>
 
@@ -1023,6 +1074,7 @@ export default function EditEmployeePage() {
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="address_line2"
                           autoComplete="address-line2"
+                          disabled={!supportsAddress}
                         />
                       </div>
 
@@ -1034,6 +1086,7 @@ export default function EditEmployeePage() {
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="town_city"
                           autoComplete="address-level2"
+                          disabled={!supportsAddress}
                         />
                       </div>
 
@@ -1045,6 +1098,7 @@ export default function EditEmployeePage() {
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="county"
                           autoComplete="address-level1"
+                          disabled={!supportsAddress}
                         />
                       </div>
 
@@ -1056,6 +1110,7 @@ export default function EditEmployeePage() {
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="postcode"
                           autoComplete="postal-code"
+                          disabled={!supportsAddress}
                         />
                       </div>
 
@@ -1067,6 +1122,7 @@ export default function EditEmployeePage() {
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="country"
                           autoComplete="country-name"
+                          disabled={!supportsAddress}
                         />
                       </div>
                     </div>
@@ -1075,10 +1131,20 @@ export default function EditEmployeePage() {
               </div>
 
               <div className="mt-6 flex flex-wrap gap-3 justify-end">
-                <button type="button" onClick={() => onSave("wizard")} disabled={saving || loading} className={BTN_SECONDARY}>
+                <button
+                  type="button"
+                  onClick={() => onSave("wizard")}
+                  disabled={saving || loading}
+                  className={BTN_SECONDARY}
+                >
                   Save to wizard
                 </button>
-                <button type="button" onClick={() => onSave("details")} disabled={saving || loading} className={BTN_PRIMARY}>
+                <button
+                  type="button"
+                  onClick={() => onSave("details")}
+                  disabled={saving || loading}
+                  className={BTN_PRIMARY}
+                >
                   {saving ? "Saving..." : "Save changes"}
                 </button>
               </div>
