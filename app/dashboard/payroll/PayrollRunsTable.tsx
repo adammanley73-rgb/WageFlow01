@@ -1,7 +1,6 @@
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\payroll\PayrollRunsTable.tsx
 "use client";
-
-/* @ts-nocheck */
 
 import { useEffect, useMemo, useState } from "react";
 import ActionButton from "@/components/ui/ActionButton";
@@ -231,7 +230,7 @@ function getPeriodEnd(run: any): string | null {
   return pickFirst(run?.period_end, run?.periodEnd, run?.pay_period_end, run?.payPeriodEnd);
 }
 
-function renderPeriod(run: any): JSX.Element {
+function renderPeriod(run: any) {
   const ps = getPeriodStart(run);
   const pe = getPeriodEnd(run);
 
@@ -243,7 +242,11 @@ function renderPeriod(run: any): JSX.Element {
   }
 
   if (psFmt && peFmt) {
-    return <span>{psFmt} to {peFmt}</span>;
+    return (
+      <span>
+        {psFmt} to {peFmt}
+      </span>
+    );
   }
 
   if (psFmt) {
