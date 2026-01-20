@@ -1,5 +1,5 @@
-/* C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\payroll\page.tsx */
 /* @ts-nocheck */
+/* C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\payroll\page.tsx */
 
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -31,6 +31,16 @@ function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
     String(s || "")
   );
+}
+
+function looksTruncatedId(s: string) {
+  const v = String(s || "").trim();
+  if (!v) return false;
+  if (v.includes("…")) return true;
+  if (v.length < 30) return true;
+  // common “copied from UI” truncated patterns
+  if (v.endsWith("-") && v.split("-").length < 5) return true;
+  return false;
 }
 
 function safeStr(v: any) {
@@ -96,38 +106,6 @@ function extractPeriod(run: any) {
   return start ? `From ${fmtDate(start)}` : `To ${fmtDate(end)}`;
 }
 
-type EmployeeRow = {
-  employee_id: string;
-  id: string | null;
-  company_id: string;
-
-  employee_number: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-
-  ni_number: string | null;
-  pay_frequency: string | null;
-
-  status: string | null;
-  leaving_date: string | null;
-
-  job_title: string | null;
-  employment_type: string | null;
-
-  start_date: string | null;
-  date_of_birth: string | null;
-
-  annual_salary: number | null;
-  hourly_rate: number | null;
-  hours_per_week: number | null;
-
-  address: any | null;
-
-  created_at: string | null;
-  updated_at: string | null;
-};
-
 function isMissingRelation(err: any) {
   const msg = String(err?.message || "").toLowerCase();
   const code = String(err?.code || "");
@@ -139,34 +117,88 @@ function isMissingRelation(err: any) {
   );
 }
 
+function isMissingColumn(err: any) {
+  const msg = String(err?.message || "").toLowerCase();
+  const code = String(err?.code || "");
+  return code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
+}
+
+async function queryEmployee(
+  supabase: ReturnType<typeof createAdminClient>,
+  companyId: string,
+  whereCol: string,
+  whereVal: string,
+  useCompanyFilter: boolean
+) {
+  let q = supabase.from("employees").select("*");
+
+  if (useCompanyFilter) {
+    q = q.eq("company_id", companyId);
+  }
+
+  const { data, error } = await q.eq(whereCol, whereVal).maybeSingle();
+
+  return { employee: (data as any) ?? null, error: error ?? null };
+}
+
 async function loadEmployeeForCompany(
   supabase: ReturnType<typeof createAdminClient>,
   companyId: string,
   routeId: string
-): Promise<{ employee: EmployeeRow | null; error: any | null }> {
-  const selectCols =
-    "employee_id,id,company_id,employee_number,first_name,last_name,email,ni_number,pay_frequency,status,leaving_date,job_title,employment_type,start_date,date_of_birth,annual_salary,hourly_rate,hours_per_week,address,created_at,updated_at";
+): Promise<{ employee: any | null; error: any | null }> {
+  const rid = String(routeId || "").trim();
+  if (!rid) return { employee: null, error: null };
 
-  let { data: employee, error } = await supabase
-    .from("employees")
-    .select(selectCols)
-    .eq("company_id", companyId)
-    .eq("employee_id", routeId)
-    .maybeSingle<EmployeeRow>();
+  const attempts: Array<{ col: string; val: string; companyFilter: boolean }> = [];
 
-  if (!employee && isUuid(routeId)) {
-    const r2 = await supabase
-      .from("employees")
-      .select(selectCols)
-      .eq("company_id", companyId)
-      .eq("id", routeId)
-      .maybeSingle<EmployeeRow>();
-
-    employee = r2.data as any;
-    error = r2.error as any;
+  // Prefer id lookup if route param is a UUID
+  if (isUuid(rid)) {
+    attempts.push({ col: "id", val: rid, companyFilter: true });
+    attempts.push({ col: "employee_id", val: rid, companyFilter: true });
+  } else {
+    attempts.push({ col: "employee_id", val: rid, companyFilter: true });
   }
 
-  return { employee: (employee as any) ?? null, error: error ?? null };
+  // Fallback: try without company filter if demo schema lacks company_id
+  if (isUuid(rid)) {
+    attempts.push({ col: "id", val: rid, companyFilter: false });
+    attempts.push({ col: "employee_id", val: rid, companyFilter: false });
+  } else {
+    attempts.push({ col: "employee_id", val: rid, companyFilter: false });
+  }
+
+  let lastErr: any | null = null;
+
+  for (const a of attempts) {
+    const { employee, error } = await queryEmployee(supabase, companyId, a.col, a.val, a.companyFilter);
+
+    if (error) {
+      lastErr = error;
+
+      // If the WHERE column is missing, move to the next strategy
+      if (isMissingColumn(error)) continue;
+
+      // If company filter column is missing, try again without it
+      if (a.companyFilter && String(error?.message || "").toLowerCase().includes("company_id") && isMissingColumn(error)) {
+        continue;
+      }
+
+      // Other errors, continue but keep lastErr for display
+      continue;
+    }
+
+    if (employee) {
+      // If we had to drop the company filter, still try to enforce it when possible
+      if (a.companyFilter === false && employee?.company_id && String(employee.company_id) !== String(companyId)) {
+        lastErr = { message: "Employee found but does not belong to the active company." };
+        continue;
+      }
+
+      return { employee, error: null };
+    }
+  }
+
+  return { employee: null, error: lastErr };
 }
 
 async function loadRuns(
@@ -233,8 +265,7 @@ async function findEmployeeTotalsInRun(
       }
     } else if (data) {
       const gross = data.gross ?? data.total_gross ?? data.gross_pay ?? null;
-      const deductions =
-        data.deductions ?? data.total_deductions ?? data.deduction_total ?? null;
+      const deductions = data.deductions ?? data.total_deductions ?? data.deduction_total ?? null;
       const net = data.net ?? data.net_pay ?? data.total_net ?? null;
 
       return {
@@ -284,8 +315,7 @@ async function findEmployeeTotalsInRun(
 
     if (data) {
       const gross = data.gross ?? data.total_gross ?? data.gross_pay ?? null;
-      const deductions =
-        data.deductions ?? data.total_deductions ?? data.deduction_total ?? null;
+      const deductions = data.deductions ?? data.total_deductions ?? data.deduction_total ?? null;
       const net = data.net ?? data.net_pay ?? data.total_net ?? null;
 
       return {
@@ -300,7 +330,6 @@ async function findEmployeeTotalsInRun(
     }
   }
 
-  // If neither found a row, it simply means the employee was not in this run (or totals live elsewhere)
   return {
     found: false,
     gross: null,
@@ -338,20 +367,31 @@ export default async function EmployeePayrollHistoryPage({
   );
 
   if (!employee) {
+    const truncatedHint = looksTruncatedId(routeId);
+
     return (
       <PageTemplate title="Payroll history" currentSection="employees">
         <div className="flex flex-col gap-3 flex-1 min-h-0">
           <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
             <div className="px-6 py-10 text-center bg-white">
               <div className="text-2xl font-semibold text-neutral-900">Employee Not Found</div>
+
               <div className="mt-2 text-sm text-neutral-700">
                 The employee with ID "{routeId}" could not be found for the active company.
               </div>
+
+              {truncatedHint ? (
+                <div className="mt-3 text-sm text-neutral-700">
+                  This link looks truncated. Open the employee from the Employees list, then use the Payroll history link from inside the app.
+                </div>
+              ) : null}
+
               {empErr ? (
                 <div className="mt-3 text-xs text-red-700">
                   {String(empErr?.message || "Lookup error")}
                 </div>
               ) : null}
+
               <div className="mt-6">
                 <Link
                   href="/dashboard/employees"
@@ -367,7 +407,8 @@ export default async function EmployeePayrollHistoryPage({
     );
   }
 
-  const empKey = employee.employee_id;
+  const empKey = String(employee.employee_id || employee.id || routeId);
+
   const fullName =
     `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim() || "Unnamed employee";
 
@@ -377,7 +418,8 @@ export default async function EmployeePayrollHistoryPage({
   if (routeId && isUuid(routeId) && !candidateEmployeeIds.includes(routeId)) candidateEmployeeIds.push(routeId);
 
   const payslipEmployeeId =
-    (employee.id && isUuid(employee.id) ? employee.id : null) || employee.employee_id;
+    (employee.id && isUuid(employee.id) ? employee.id : null) ||
+    (employee.employee_id ? employee.employee_id : routeId);
 
   const { runs, error: runsErr } = await loadRuns(supabase, String(activeCompanyId));
 
