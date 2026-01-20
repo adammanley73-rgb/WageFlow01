@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { unstable_noStore as noStore } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 const MISSING = "\u2014";
 
@@ -141,14 +143,32 @@ type EmployeeRow = {
   updated_at?: string | null;
 };
 
+function tryParseJsonObject(v: any): any {
+  if (!v) return null;
+  if (typeof v === "object") return v;
+  if (typeof v !== "string") return null;
+
+  const s = v.trim();
+  if (!s) return null;
+
+  try {
+    const parsed = JSON.parse(s);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeAddress(address: any) {
-  const a = address || {};
-  const line1 = a.line1 ?? a.address_line1 ?? a.line_1 ?? null;
-  const line2 = a.line2 ?? a.address_line2 ?? a.line_2 ?? null;
-  const townCity = a.town_city ?? a.city ?? a.town ?? a.locality ?? null;
-  const county = a.county ?? a.region ?? null;
-  const postcode = a.postcode ?? a.post_code ?? a.zip ?? null;
-  const country = a.country ?? null;
+  const parsed = tryParseJsonObject(address);
+  const a = parsed || address || {};
+
+  const line1 = (a as any).line1 ?? (a as any).address_line1 ?? (a as any).line_1 ?? null;
+  const line2 = (a as any).line2 ?? (a as any).address_line2 ?? (a as any).line_2 ?? null;
+  const townCity = (a as any).town_city ?? (a as any).city ?? (a as any).town ?? (a as any).locality ?? null;
+  const county = (a as any).county ?? (a as any).region ?? null;
+  const postcode = (a as any).postcode ?? (a as any).post_code ?? (a as any).zip ?? null;
+  const country = (a as any).country ?? null;
 
   const parts = [line1, line2, townCity, county, postcode, country]
     .map((x) => String(x ?? "").trim())
@@ -179,15 +199,16 @@ function cardBox(title: string, children: any) {
 }
 
 function looksLikeMissingColumn(err: any, column: string) {
-  const msg = String(err?.message || err || "");
-  return msg.toLowerCase().includes(`column`) && msg.toLowerCase().includes(column.toLowerCase());
+  const msg = String(err?.message || err || "").toLowerCase();
+  return msg.includes("column") && msg.includes(column.toLowerCase());
 }
 
 export default async function EmployeeDetailsPage({ params }: { params: { id: string } }) {
+  noStore();
+
   const jar = cookies();
 
-  const activeCompanyId =
-    jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+  const activeCompanyId = jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
 
   if (!activeCompanyId || !isUuid(String(activeCompanyId))) {
     redirect("/dashboard/companies");
@@ -202,14 +223,12 @@ export default async function EmployeeDetailsPage({ params }: { params: { id: st
   const selectCols = "*";
 
   async function fetchBy(col: "id" | "employee_id" | "employee_number", value: string) {
-    const res = await supabase
+    return await supabase
       .from("employees")
       .select(selectCols)
       .eq("company_id", activeCompanyId)
       .eq(col, value)
       .maybeSingle<EmployeeRow>();
-
-    return res;
   }
 
   let employee: EmployeeRow | null = null;
@@ -274,8 +293,7 @@ export default async function EmployeeDetailsPage({ params }: { params: { id: st
     );
   }
 
-  const fullName =
-    `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim() || "Unnamed employee";
+  const fullName = `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim() || "Unnamed employee";
 
   const preferredId = String(employee.id || "").trim();
   const legacyId = String(employee.employee_id || "").trim();
