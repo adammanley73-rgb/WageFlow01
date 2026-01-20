@@ -42,6 +42,23 @@ function isUuid(s: string) {
   );
 }
 
+function formatSupabaseError(err: any) {
+  const msg =
+    err?.message ||
+    err?.hint ||
+    err?.details ||
+    (typeof err === "string" ? err : "") ||
+    "";
+
+  if (msg) return String(msg);
+
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return "Unknown error";
+  }
+}
+
 export default async function EmployeesPage({ searchParams }: EmployeesPageProps) {
   const jar = cookies();
 
@@ -57,19 +74,18 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const showLeaversParam = searchParams?.showLeavers;
 
   const sortKey: "name" | "number" = sortParam === "number" ? "number" : "name";
-  const sortDirection: "asc" | "desc" = directionParam === "desc" ? "desc" : "asc";
+  const sortDirection: "asc" | "desc" =
+    directionParam === "desc" ? "desc" : "asc";
 
   const showLeavers = showLeaversParam === "1";
 
   const supabase = createAdminClient();
 
-  // IMPORTANT:
-  // Use employees.id (uuid) for routing. employee_id is your legacy text PK.
-  // The employee detail page expects the uuid id, so the list must link with it.
+  // Demo schema: employee_id does not exist. Use id only.
   let employeesQuery = supabase
     .from("employees")
     .select(
-      "id, employee_id, employee_number, first_name, last_name, email, ni_number, pay_frequency, status, leaving_date"
+      "id, employee_number, first_name, last_name, email, ni_number, pay_frequency, status"
     )
     .eq("company_id", activeCompanyId);
 
@@ -87,7 +103,14 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const { data: employeesData, error: employeesError } = await employeesQuery;
 
   const employees = Array.isArray(employeesData) ? employeesData : [];
-  const loadError = employeesError ? "There was a problem loading employees." : null;
+
+  const loadError = employeesError
+    ? process.env.NODE_ENV === "production"
+      ? "There was a problem loading employees."
+      : `There was a problem loading employees: ${formatSupabaseError(
+          employeesError
+        )}`
+    : null;
 
   const visibleEmployees = showLeavers
     ? employees
@@ -98,8 +121,10 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const isNameSorted = sortKey === "name";
   const isNumberSorted = sortKey === "number";
 
-  const nextNameDirection = isNameSorted && sortDirection === "asc" ? "desc" : "asc";
-  const nextNumberDirection = isNumberSorted && sortDirection === "asc" ? "desc" : "asc";
+  const nextNameDirection =
+    isNameSorted && sortDirection === "asc" ? "desc" : "asc";
+  const nextNumberDirection =
+    isNumberSorted && sortDirection === "asc" ? "desc" : "asc";
 
   const nameSortLabel = isNameSorted
     ? sortDirection === "asc"
@@ -136,7 +161,9 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-semibold text-neutral-900">Employees</div>
+                <div className="text-sm font-semibold text-neutral-900">
+                  Employees
+                </div>
                 <div className="text-xs text-neutral-700">
                   {showLeavers
                     ? "All employees for the active company, including leavers."
@@ -214,7 +241,9 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                   </tr>
                 ) : (
                   visibleEmployees.map((employee) => {
-                    const name = `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim();
+                    const name = `${employee.first_name ?? ""} ${
+                      employee.last_name ?? ""
+                    }`.trim();
 
                     const rawStatus = employee.status ?? "active";
                     const isLeaver = rawStatus === "leaver";
@@ -224,10 +253,10 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                       ? "border-red-300 bg-red-100 text-red-800"
                       : "border-emerald-300 bg-emerald-100 text-emerald-800";
 
-                    const routeId = employee.id || employee.employee_id;
+                    const routeId = employee.id;
 
                     return (
-                      <tr key={employee.id || employee.employee_id}>
+                      <tr key={employee.id}>
                         <td className="px-4 py-3 text-neutral-900">
                           {employee.employee_number ?? "\u2014"}
                         </td>

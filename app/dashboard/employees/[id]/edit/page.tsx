@@ -11,32 +11,34 @@ import ActiveCompanyBannerClient from "@/components/ui/ActiveCompanyBannerClient
 type ActiveCompany = { id: string; name: string | null } | null;
 
 type EmployeeRow = {
-  id?: string | null; // some environments use employees.id (uuid) for payroll joins
-  employee_id: string; // some environments use employees.employee_id (text/uuid-like) for UI routes
-  company_id: string;
+  id?: string | null;
+  employee_id?: string | null;
+  company_id?: string | null;
 
-  employee_number: string | null;
+  employee_number?: any | null;
 
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
 
-  job_title: string | null;
-  employment_type: string | null;
+  job_title?: string | null;
+  employment_type?: string | null;
 
-  start_date: string | null;
-  date_of_birth: string | null;
+  start_date?: string | null;
+  date_of_birth?: string | null;
 
-  pay_frequency: string | null;
+  pay_frequency?: string | null;
 
-  annual_salary: any | null; // numeric can come back as string from Supabase
-  hourly_rate: any | null; // numeric can come back as string from Supabase
-  hours_per_week: any | null; // numeric can come back as string from Supabase
+  annual_salary?: any | null;
+  hourly_rate?: any | null;
+  hours_per_week?: any | null;
 
-  ni_number: string | null;
-  national_insurance_number: string | null;
+  ni_number?: string | null;
+  national_insurance_number?: string | null;
 
-  address: any | null;
+  address?: any | null;
+
+  [key: string]: any;
 };
 
 type FormState = {
@@ -75,9 +77,13 @@ const BTN_SECONDARY =
   "w-32 inline-flex items-center justify-center rounded-lg border border-neutral-400 bg-white px-4 py-2 text-neutral-800 hover:bg-neutral-100 disabled:opacity-60";
 
 const WEEKS_PER_YEAR = 52.14285714;
-
-// How different does the manual hourly rate need to be before we call it an override?
 const OVERRIDE_DIFF_THRESHOLD = 0.05;
+
+function isUuid(s: string) {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
+    String(s || "").trim()
+  );
+}
 
 function cleanNi(raw: any) {
   return String(raw || "")
@@ -181,9 +187,29 @@ function isAllowedPayFrequency(v: string) {
   return ["weekly", "fortnightly", "four_weekly", "monthly"].includes(String(v || "").trim());
 }
 
+function extractMissingColumn(message: string): string | null {
+  const msg = String(message || "");
+
+  let m = msg.match(/column\s+employees\.([a-zA-Z0-9_]+)\s+does not exist/i);
+  if (m && m[1]) return m[1];
+
+  m = msg.match(/column\s+"([a-zA-Z0-9_]+)"\s+does not exist/i);
+  if (m && m[1]) return m[1];
+
+  m = msg.match(/Could not find the '([a-zA-Z0-9_]+)' column/i);
+  if (m && m[1]) return m[1];
+
+  return null;
+}
+
+function looksLikeMissingColumn(err: any, col: string) {
+  const msg = String(err?.message || err || "");
+  return msg.toLowerCase().includes(`column employees.${String(col).toLowerCase()} does not exist`);
+}
+
 export default function EditEmployeePage() {
   const params = useParams<{ id: string }>();
-  const employeeId = useMemo(() => String(params?.id || "").trim(), [params]);
+  const routeId = useMemo(() => String(params?.id || "").trim(), [params]);
   const router = useRouter();
 
   const [company, setCompany] = useState<ActiveCompany>(null);
@@ -196,7 +222,6 @@ export default function EditEmployeePage() {
 
   const [employee, setEmployee] = useState<EmployeeRow | null>(null);
 
-  // If true, user has deliberately overridden the derived equivalent hourly rate.
   const [hourlyRateTouched, setHourlyRateTouched] = useState(false);
 
   const [form, setForm] = useState<FormState>({
@@ -306,16 +331,16 @@ export default function EditEmployeePage() {
     let alive = true;
 
     async function loadEmployee() {
-      if (!employeeId) {
+      if (!routeId) {
         setErr("Missing employee id.");
         setLoading(false);
         return;
       }
 
-      // Wait until the active company fetch has resolved.
       if (companyLoading) return;
 
-      if (companyErr || !company?.id) {
+      const companyId = company?.id ? String(company.id) : "";
+      if (companyErr || !companyId) {
         setLoading(false);
         return;
       }
@@ -325,38 +350,67 @@ export default function EditEmployeePage() {
         setErr(null);
 
         const supabase = createClient();
+        const selectCols = "*";
 
-        const { data, error } = await supabase
-          .from("employees")
-          .select(
-            [
-              "id",
-              "employee_id",
-              "company_id",
-              "employee_number",
-              "first_name",
-              "last_name",
-              "email",
-              "job_title",
-              "employment_type",
-              "start_date",
-              "date_of_birth",
-              "pay_frequency",
-              "annual_salary",
-              "hourly_rate",
-              "hours_per_week",
-              "ni_number",
-              "national_insurance_number",
-              "address",
-            ].join(",")
-          )
-          .or(`employee_id.eq.${employeeId},id.eq.${employeeId}`)
-          .eq("company_id", company.id)
-          .maybeSingle<EmployeeRow>();
+        async function tryBy(col: "id" | "employee_id", value: string) {
+          return await supabase
+            .from("employees")
+            .select(selectCols)
+            .eq("company_id", companyId)
+            .eq(col, value)
+            .maybeSingle<EmployeeRow>();
+        }
 
-        if (!alive) return;
+        let data: EmployeeRow | null = null;
+        let error: any = null;
 
-        if (error) throw new Error(error.message);
+        if (isUuid(routeId)) {
+          const r1 = await tryBy("id", routeId);
+          if (!alive) return;
+
+          if (r1.error && looksLikeMissingColumn(r1.error, "id")) {
+            error = r1.error;
+          } else {
+            data = (r1.data as any) ?? null;
+            error = r1.error ?? null;
+          }
+
+          if (!data) {
+            const r2 = await tryBy("employee_id", routeId);
+            if (!alive) return;
+
+            if (r2.error && looksLikeMissingColumn(r2.error, "employee_id")) {
+              // ignore
+            } else {
+              data = (r2.data as any) ?? null;
+              error = r2.error ?? error;
+            }
+          }
+        } else {
+          const r1 = await tryBy("employee_id", routeId);
+          if (!alive) return;
+
+          if (r1.error && looksLikeMissingColumn(r1.error, "employee_id")) {
+            // ignore
+          } else {
+            data = (r1.data as any) ?? null;
+            error = r1.error ?? null;
+          }
+
+          if (!data) {
+            const r2 = await tryBy("id", routeId);
+            if (!alive) return;
+
+            if (r2.error && looksLikeMissingColumn(r2.error, "id")) {
+              error = r2.error;
+            } else {
+              data = (r2.data as any) ?? null;
+              error = r2.error ?? error;
+            }
+          }
+        }
+
+        if (error && !data) throw new Error(String(error?.message || error));
         if (!data) {
           setEmployee(null);
           setErr("Employee not found for the active company.");
@@ -365,29 +419,39 @@ export default function EditEmployeePage() {
 
         setEmployee(data);
 
-        const addr = normalizeAddress(data.address);
+        const addr = normalizeAddress((data as any).address);
 
         const nextForm: FormState = {
-          employee_number: String(data.employee_number || "").trim(),
+          employee_number: String((data as any).employee_number || "").trim(),
 
-          first_name: String(data.first_name || "").trim(),
-          last_name: String(data.last_name || "").trim(),
-          email: String(data.email || "").trim(),
+          first_name: String((data as any).first_name || "").trim(),
+          last_name: String((data as any).last_name || "").trim(),
+          email: String((data as any).email || "").trim(),
 
-          job_title: String(data.job_title || "").trim(),
-          employment_type: String(data.employment_type || "full_time").trim() || "full_time",
+          job_title: String((data as any).job_title || "").trim(),
+          employment_type: String((data as any).employment_type || "full_time").trim() || "full_time",
 
-          start_date: String(data.start_date || "").trim(),
-          date_of_birth: String(data.date_of_birth || "").trim(),
+          start_date: String((data as any).start_date || "").trim(),
+          date_of_birth: String((data as any).date_of_birth || "").trim(),
 
-          pay_frequency: String(data.pay_frequency || "monthly").trim() || "monthly",
+          pay_frequency: String((data as any).pay_frequency || "monthly").trim() || "monthly",
 
-          annual_salary: data.annual_salary !== null && data.annual_salary !== undefined ? String(data.annual_salary) : "",
-          hourly_rate: data.hourly_rate !== null && data.hourly_rate !== undefined ? String(data.hourly_rate) : "",
+          annual_salary:
+            (data as any).annual_salary !== null && (data as any).annual_salary !== undefined
+              ? String((data as any).annual_salary)
+              : "",
+          hourly_rate:
+            (data as any).hourly_rate !== null && (data as any).hourly_rate !== undefined
+              ? String((data as any).hourly_rate)
+              : "",
           hours_per_week:
-            data.hours_per_week !== null && data.hours_per_week !== undefined ? String(data.hours_per_week) : "",
+            (data as any).hours_per_week !== null && (data as any).hours_per_week !== undefined
+              ? String((data as any).hours_per_week)
+              : "",
 
-          ni_number: formatNiInput(String(data.ni_number || data.national_insurance_number || "").trim()),
+          ni_number: formatNiInput(
+            String((data as any).ni_number || (data as any).national_insurance_number || "").trim()
+          ),
 
           address_line1: addr.line1,
           address_line2: addr.line2,
@@ -397,18 +461,15 @@ export default function EditEmployeePage() {
           country: addr.country || "United Kingdom",
         };
 
-        // Decide whether the stored hourly rate is a manual override or just the derived value.
         const derivedOnLoadStr = deriveHourlyStringFromForm(nextForm.annual_salary, nextForm.hours_per_week);
         const derivedOnLoadNum = derivedOnLoadStr ? toNumberOrNull(derivedOnLoadStr) : null;
         const storedHourlyNum = toNumberOrNull(nextForm.hourly_rate);
 
         let isOverride = false;
-
         if (derivedOnLoadNum !== null && storedHourlyNum !== null) {
           isOverride = Math.abs(storedHourlyNum - derivedOnLoadNum) >= OVERRIDE_DIFF_THRESHOLD;
         }
 
-        // If hourly is blank/0 and we can derive, prefill it.
         if (derivedOnLoadStr) {
           const treatAsMissing =
             !String(nextForm.hourly_rate || "").trim() || storedHourlyNum === null || storedHourlyNum <= 0;
@@ -431,9 +492,8 @@ export default function EditEmployeePage() {
     return () => {
       alive = false;
     };
-  }, [employeeId, company?.id, companyErr, companyLoading]);
+  }, [routeId, company?.id, companyErr, companyLoading]);
 
-  // Keep hourly rate synced to derived value unless the user is overriding.
   useEffect(() => {
     if (hourlyRateTouched) return;
 
@@ -449,21 +509,21 @@ export default function EditEmployeePage() {
       return;
     }
 
-    // If not overriding, always keep it aligned to the derived value.
     if (currentStr !== derivedStr) {
       setField("hourly_rate", derivedStr);
     }
-  }, [derivedHourlyStr, hourlyRateTouched]); // intentionally not dependent on form.hourly_rate to avoid loops
+  }, [derivedHourlyStr, hourlyRateTouched]);
 
   async function onSave(target: "details" | "wizard") {
     setErr(null);
 
-    if (companyErr || !company?.id) {
+    const companyId = company?.id ? String(company.id) : "";
+    if (companyErr || !companyId) {
       setErr("No active company selected. Go back and select your company first.");
       return;
     }
 
-    if (!employeeId) {
+    if (!routeId) {
       setErr("Missing employee id.");
       return;
     }
@@ -498,9 +558,6 @@ export default function EditEmployeePage() {
     let hourly_rate = toNumberOrNull(form.hourly_rate);
     const hours_per_week = toNumberOrNull(form.hours_per_week);
 
-    // If salary+hours exist:
-    // - If NOT overridden: force-save the derived equivalent hourly rate.
-    // - If overridden: save the manual hourly rate (as long as it's a number).
     if (annual_salary !== null && hours_per_week !== null) {
       const derived = computeEquivalentHourlyRate(annual_salary, hours_per_week);
       if (derived !== null) {
@@ -509,7 +566,6 @@ export default function EditEmployeePage() {
         if (!hourlyRateTouched) {
           hourly_rate = derivedRounded;
         } else {
-          // If user claims override but the field is blank, fall back to derived.
           if (hourly_rate === null || hourly_rate <= 0) {
             hourly_rate = derivedRounded;
           }
@@ -571,20 +627,59 @@ export default function EditEmployeePage() {
 
       const supabase = createClient();
 
-      const { error } = await supabase
-        .from("employees")
-        .update(updateRow)
-        .eq("company_id", company.id)
-        .or(`employee_id.eq.${employeeId},id.eq.${employeeId}`);
+      const idCandidate = String((employee as any)?.id || "").trim();
+      const employeeIdCandidate = String((employee as any)?.employee_id || "").trim();
 
-      if (error) throw new Error(error.message);
+      let matchVal = (isUuid(routeId) ? routeId : "") || idCandidate || employeeIdCandidate || routeId;
+      matchVal = String(matchVal || "").trim();
 
-      if (target === "wizard") {
-        router.push(`/dashboard/employees/${employeeId}/wizard/starter`);
-        return;
+      let matchCol: "id" | "employee_id" = isUuid(matchVal) ? "id" : "employee_id";
+
+      let payload: Record<string, any> = { ...updateRow };
+
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const res = await supabase
+          .from("employees")
+          .update(payload)
+          .eq("company_id", companyId)
+          .eq(matchCol, matchVal);
+
+        if (!res.error) {
+          const nextId = matchVal || routeId;
+
+          if (target === "wizard") {
+            router.push(`/dashboard/employees/${nextId}/wizard/starter`);
+            return;
+          }
+
+          router.push(`/dashboard/employees/${nextId}`);
+          return;
+        }
+
+        const msg = String(res.error.message || res.error);
+        const missing = extractMissingColumn(msg);
+
+        if (missing) {
+          if (missing === matchCol) {
+            if (matchCol === "employee_id" && isUuid(matchVal)) {
+              matchCol = "id";
+              continue;
+            }
+            throw new Error(msg);
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, missing)) {
+            delete payload[missing];
+            continue;
+          }
+
+          throw new Error(msg);
+        }
+
+        throw new Error(msg);
       }
 
-      router.push(`/dashboard/employees/${employeeId}`);
+      throw new Error("Save failed after retries.");
     } catch (e: any) {
       setErr(String(e?.message || e));
     } finally {
@@ -615,14 +710,16 @@ export default function EditEmployeePage() {
             <div className="min-w-0">
               <div className="text-lg sm:text-xl text-[#0f3c85] truncate">
                 <span className="font-bold">Edit employee</span>
-                <span className="text-neutral-700"> · {displayName}</span>
+                <span className="text-neutral-700"> - {displayName}</span>
               </div>
 
               <div className="mt-1 text-sm text-neutral-700">
-                {employee?.employee_number ? (
+                {String((employee as any)?.employee_number || "").trim() ? (
                   <>
-                    <span className="font-semibold text-neutral-900">Emp {employee.employee_number}</span>
-                    <span className="text-neutral-500"> · </span>
+                    <span className="font-semibold text-neutral-900">
+                      Emp {String((employee as any)?.employee_number || "").trim()}
+                    </span>
+                    <span className="text-neutral-500"> - </span>
                   </>
                 ) : null}
                 Update employee details and save.
@@ -630,10 +727,10 @@ export default function EditEmployeePage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Link href={`/dashboard/employees/${employeeId}`} className={BTN_SECONDARY}>
+              <Link href={`/dashboard/employees/${routeId}`} className={BTN_SECONDARY}>
                 Back
               </Link>
-              <Link href={`/dashboard/employees/${employeeId}/wizard/starter`} className={BTN_SECONDARY}>
+              <Link href={`/dashboard/employees/${routeId}/wizard/starter`} className={BTN_SECONDARY}>
                 Wizard
               </Link>
               <button onClick={() => onSave("details")} disabled={saving || loading} className={BTN_PRIMARY}>
@@ -645,7 +742,7 @@ export default function EditEmployeePage() {
 
         <div className={CARD}>
           {loading ? (
-            <div className="text-sm text-neutral-900">Loading…</div>
+            <div className="text-sm text-neutral-900">Loading...</div>
           ) : err ? (
             <div className="rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">{err}</div>
           ) : (
@@ -804,7 +901,6 @@ export default function EditEmployeePage() {
                             const v = e.target.value;
                             setField("hourly_rate", v);
 
-                            // If they type something that differs from derived, treat as override.
                             const trimmed = String(v || "").trim();
                             if (!trimmed) {
                               setHourlyRateTouched(false);
@@ -864,7 +960,6 @@ export default function EditEmployeePage() {
                                     type="button"
                                     className="inline-flex items-center justify-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-neutral-900 ring-1 ring-neutral-300 hover:bg-neutral-50"
                                     onClick={() => {
-                                      // Keep current value, but make it explicit that it's an override.
                                       setHourlyRateTouched(true);
                                     }}
                                   >
@@ -980,20 +1075,10 @@ export default function EditEmployeePage() {
               </div>
 
               <div className="mt-6 flex flex-wrap gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={() => onSave("wizard")}
-                  disabled={saving || loading}
-                  className={BTN_SECONDARY}
-                >
+                <button type="button" onClick={() => onSave("wizard")} disabled={saving || loading} className={BTN_SECONDARY}>
                   Save to wizard
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onSave("details")}
-                  disabled={saving || loading}
-                  className={BTN_PRIMARY}
-                >
+                <button type="button" onClick={() => onSave("details")} disabled={saving || loading} className={BTN_PRIMARY}>
                   {saving ? "Saving..." : "Save changes"}
                 </button>
               </div>

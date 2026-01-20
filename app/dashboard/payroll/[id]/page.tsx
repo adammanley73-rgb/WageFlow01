@@ -67,6 +67,101 @@ function pickFirst(...vals: any[]) {
   return null;
 }
 
+/* -----------------------
+   Run label + period fallbacks
+------------------------ */
+
+type Frequency = "weekly" | "fortnightly" | "four_weekly" | "monthly" | string;
+
+function isIsoDateOnly(s: any) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s ?? "").trim());
+}
+
+function parseIsoDateOnlyToUtc(iso: string) {
+  const s = String(iso || "").trim();
+  if (!isIsoDateOnly(s)) throw new Error("Bad date: " + s);
+  const [y, m, d] = s.split("-").map((p) => parseInt(p, 10));
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+}
+
+function isoDateOnlyFromUtc(dt: Date) {
+  return dt.toISOString().slice(0, 10);
+}
+
+function addDaysUtc(dt: Date, days: number) {
+  return new Date(dt.getTime() + days * 86400000);
+}
+
+function ukTaxYearStartForPayDate(payDateIso: string) {
+  const s = String(payDateIso || "").trim();
+  if (!isIsoDateOnly(s)) return null;
+
+  const d = parseIsoDateOnlyToUtc(s);
+  const y = d.getUTCFullYear();
+  const candidate = new Date(Date.UTC(y, 3, 6)); // 6 April
+  const startYear = d.getTime() >= candidate.getTime() ? y : y - 1;
+
+  const start = new Date(Date.UTC(startYear, 3, 6));
+  return isoDateOnlyFromUtc(start);
+}
+
+function makeRunNumberFromPayDate(frequency: Frequency, payDateIso: string | null) {
+  if (!payDateIso || !isIsoDateOnly(payDateIso)) return null;
+
+  const f = String(frequency || "").trim();
+  const taxYearStartIso = ukTaxYearStartForPayDate(payDateIso);
+  if (!taxYearStartIso) return null;
+
+  const payUtc = parseIsoDateOnlyToUtc(payDateIso);
+  const startUtc = parseIsoDateOnlyToUtc(taxYearStartIso);
+
+  const diffDays = Math.round((payUtc.getTime() - startUtc.getTime()) / 86400000);
+  if (diffDays < 0) return null;
+
+  if (f === "monthly") {
+    // Tax-year month label: Apr=1 ... Mar=12
+    const m = payUtc.getUTCMonth(); // 0..11
+    const mth = m >= 3 ? m - 3 + 1 : m + 9 + 1;
+    return `Mth ${mth}`;
+  }
+
+  const period = f === "weekly" ? 7 : f === "fortnightly" ? 14 : f === "four_weekly" ? 28 : null;
+  if (!period) return null;
+
+  const n = Math.floor(diffDays / period) + 1;
+
+  if (f === "weekly") return `wk ${n}`;
+  if (f === "fortnightly") return `fn ${n}`;
+  if (f === "four_weekly") return `4wk ${n}`;
+
+  return null;
+}
+
+function derivePeriodFromPayDate(frequency: Frequency, payDateIso: string | null) {
+  if (!payDateIso || !isIsoDateOnly(payDateIso)) return null;
+
+  const f = String(frequency || "").trim();
+  const endUtc = parseIsoDateOnlyToUtc(payDateIso);
+
+  if (f === "monthly") {
+    const [yStr, mStr] = String(payDateIso).split("-");
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10); // 1..12
+
+    if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
+
+    const startUtc = new Date(Date.UTC(y, m - 1, 1));
+    const endOfMonthUtc = new Date(Date.UTC(y, m, 0)); // day 0 of next month
+    return { startIso: isoDateOnlyFromUtc(startUtc), endIso: isoDateOnlyFromUtc(endOfMonthUtc) };
+  }
+
+  const len = f === "weekly" ? 7 : f === "fortnightly" ? 14 : f === "four_weekly" ? 28 : null;
+  if (!len) return null;
+
+  const startUtc = addDaysUtc(endUtc, -(len - 1));
+  return { startIso: isoDateOnlyFromUtc(startUtc), endIso: isoDateOnlyFromUtc(endUtc) };
+}
+
 function cleanEmail(v: any) {
   const raw = pickFirst(v, null);
   if (raw === null || raw === undefined) return "—";
@@ -77,7 +172,6 @@ function cleanEmail(v: any) {
   const lower = s.toLowerCase();
   if (lower === "null" || lower === "undefined" || lower === "n/a") return "—";
 
-  // Mojibake variants seen in your data
   if (s.includes("â") || s.includes("â€”") || s.includes("â€“") || s.includes("\uFFFD")) return "—";
 
   if (s === "-" || s === "—" || s === "–") return "—";
@@ -265,10 +359,14 @@ export default function PayrollRunDetailPage() {
   const seededMode = seededModeFromApi !== null ? seededModeFromApi : seededModeDerivedFromCalcMode;
 
   const blockingCount =
-    Number.isFinite(Number(exceptionsObj?.blockingCount)) ? Number(exceptionsObj?.blockingCount) : exceptionItems.filter(isBlock).length;
+    Number.isFinite(Number(exceptionsObj?.blockingCount))
+      ? Number(exceptionsObj?.blockingCount)
+      : exceptionItems.filter(isBlock).length;
 
   const warningCount =
-    Number.isFinite(Number(exceptionsObj?.warningCount)) ? Number(exceptionsObj?.warningCount) : exceptionItems.filter((x: any) => !isBlock(x)).length;
+    Number.isFinite(Number(exceptionsObj?.warningCount))
+      ? Number(exceptionsObj?.warningCount)
+      : exceptionItems.filter((x: any) => !isBlock(x)).length;
 
   const exceptionTotal =
     Number.isFinite(Number(exceptionsObj?.total)) ? Number(exceptionsObj?.total) : exceptionItems.length;
@@ -472,10 +570,17 @@ export default function PayrollRunDetailPage() {
     window.location.href = `/api/payroll/${runId}/export`;
   };
 
-  const runNumber = String(pickFirst(runObj.runNumber, runObj.run_number, "—") || "—");
+  const payDateIso = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
+  const frequencyRaw = String(pickFirst(runObj.frequency, runObj.pay_frequency, runObj.payFrequency, "") || "").trim();
 
-  const periodStart = pickFirst(runObj.periodStart, runObj.period_start, null) as any;
-  const periodEnd = pickFirst(runObj.periodEnd, runObj.period_end, null) as any;
+  const runNumberFromApi = pickFirst(runObj.runNumber, runObj.run_number, null) as any;
+  const runNumberDerived = makeRunNumberFromPayDate(frequencyRaw, payDateIso ? String(payDateIso) : null);
+  const runNumber = String(pickFirst(runNumberFromApi, runNumberDerived, "—") || "—");
+
+  const periodDerived = derivePeriodFromPayDate(frequencyRaw, payDateIso ? String(payDateIso) : null);
+
+  const periodStart = pickFirst(runObj.periodStart, runObj.period_start, periodDerived?.startIso ?? null, null) as any;
+  const periodEnd = pickFirst(runObj.periodEnd, runObj.period_end, periodDerived?.endIso ?? null, null) as any;
 
   const payDate = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
 
@@ -494,10 +599,7 @@ export default function PayrollRunDetailPage() {
     !hasErrors &&
     !saving;
 
-  // Step 1: Approval gate uses API truth only (seededMode + exceptions), not totals heuristics.
-  // If seededMode or exceptions are not returned by the API, approval stays disabled.
   const apiGateReady = apiSeededKnown && apiExceptionsKnown;
-
   const canApprove = canApproveBase && apiGateReady && !seededMode && !hasBlockingExceptions;
 
   const approveDisabledReason = !apiGateReady
@@ -530,7 +632,7 @@ export default function PayrollRunDetailPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-lg font-extrabold text-slate-900">Run {runNumber}</div>
+                <div className="text-lg font-extrabold text-slate-900">{runNumber !== "—" ? `Run ${runNumber}` : "Run"}</div>
 
                 <span
                   className="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold"
@@ -691,7 +793,6 @@ export default function PayrollRunDetailPage() {
           ) : null}
         </div>
 
-        {/* Step 1: Exceptions panel on-page, driven by API exceptions (counts + items). */}
         <div ref={exceptionsAnchorRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col">
