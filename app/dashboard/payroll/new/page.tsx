@@ -10,59 +10,12 @@ const inter = Inter({ subsets: ["latin"], display: "swap" });
 
 type Frequency = "weekly" | "fortnightly" | "four_weekly" | "monthly";
 
-type PayScheduleRow = {
+type CompanyPayScheduleRow = {
   id: string;
-  name: string | null;
   frequency: Frequency;
-  is_flexible: boolean | null;
-  is_active: boolean | null;
-  pay_day_of_week: number | null;
-  pay_day_of_month: number | null;
-  pay_timing: string | null;
-  cycle_anchor_pay_date: string | null;
-  pay_date_adjustment: string | null;
-  pay_date_offset_days: number | null;
-  max_advance_days: number | null;
-  max_lag_days: number | null;
-};
-
-function labelFreq(v: Frequency) {
-  switch (v) {
-    case "weekly":
-      return "Weekly";
-    case "fortnightly":
-      return "Fortnightly";
-    case "four_weekly":
-      return "Four-weekly";
-    case "monthly":
-      return "Monthly";
-  }
-}
-
-function scheduleLabel(s: PayScheduleRow) {
-  const base = String(s?.name || "").trim();
-  const name = base || `${labelFreq(s.frequency)}${s.is_flexible ? " - Flexible" : ""}`;
-  const freq = labelFreq(s.frequency);
-  const flex = s.is_flexible ? "Flexible" : "Fixed";
-  return `${name} (${freq}, ${flex})`;
-}
-
-type WizardTokenResponse = {
-  ok?: boolean;
-  wizardToken?: string;
-  error?: any;
-  message?: any;
-};
-
-type CreateRunResponse = {
-  ok?: boolean;
-  id?: string;
-  run_id?: string;
-  run?: any;
-  error?: any;
-  message?: any;
-  code?: string;
-  debugSource?: string;
+  pay_date_mode: string;
+  pay_date_param_int: number | null;
+  allow_override: boolean;
 };
 
 function normalizeMsg(v: any): string {
@@ -85,10 +38,102 @@ function isIsoDateOnly(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
 }
 
+function normalizeFrequency(v: any): Frequency {
+  const raw = String(v ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+
+  if (raw === "weekly") return "weekly";
+  if (raw === "fortnightly") return "fortnightly";
+  if (raw === "four_weekly" || raw === "fourweekly" || raw === "4_weekly" || raw === "four_week") return "four_weekly";
+  if (raw === "monthly") return "monthly";
+  return "monthly";
+}
+
+function labelFreq(v: Frequency) {
+  switch (v) {
+    case "weekly":
+      return "Weekly";
+    case "fortnightly":
+      return "Fortnightly";
+    case "four_weekly":
+      return "Four-weekly";
+    case "monthly":
+      return "Monthly";
+  }
+}
+
+function freqSortKey(v: Frequency): number {
+  switch (v) {
+    case "weekly":
+      return 1;
+    case "fortnightly":
+      return 2;
+    case "four_weekly":
+      return 3;
+    case "monthly":
+      return 4;
+  }
+}
+
+function dayNameFromIdx(idx: number): string {
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const i = Number.isFinite(idx) ? idx : -1;
+  if (i >= 0 && i <= 6) return days[i];
+  return `Day ${idx}`;
+}
+
+function payModeLabel(modeRaw: string, param: number | null): string {
+  const mode = String(modeRaw || "").trim().toLowerCase();
+
+  if (!mode) return "Pay date rule: not set";
+
+  if (mode.includes("day_of_week") || mode.includes("dow") || mode.includes("weekday")) {
+    return param === null ? "Pay date rule: weekday" : `Pay date rule: ${dayNameFromIdx(param)}`;
+  }
+
+  if (mode.includes("day_of_month") || mode.includes("dom") || mode.includes("month_day")) {
+    return param === null ? "Pay date rule: day of month" : `Pay date rule: day ${param}`;
+  }
+
+  if (mode.includes("period_end") || mode.includes("end") || mode.includes("offset")) {
+    return param === null ? "Pay date rule: offset" : `Pay date rule: offset ${param} day(s)`;
+  }
+
+  return param === null ? `Pay date rule: ${mode}` : `Pay date rule: ${mode} (${param})`;
+}
+
+function scheduleLabel(s: CompanyPayScheduleRow) {
+  const freq = labelFreq(s.frequency);
+  const mode = payModeLabel(s.pay_date_mode, s.pay_date_param_int);
+  const override = s.allow_override ? "Override allowed" : "Fixed";
+  return `${freq} (${mode}, ${override})`;
+}
+
+type WizardTokenResponse = {
+  ok?: boolean;
+  wizardToken?: string;
+  error?: any;
+  message?: any;
+};
+
+type CreateRunResponse = {
+  ok?: boolean;
+  id?: string;
+  run_id?: string;
+  run?: any;
+  error?: any;
+  message?: any;
+  code?: string;
+  debugSource?: string;
+};
+
 export default function PayrollNewPage() {
   const router = useRouter();
 
-  const [schedules, setSchedules] = useState<PayScheduleRow[]>([]);
+  const [schedules, setSchedules] = useState<CompanyPayScheduleRow[]>([]);
   const [scheduleId, setScheduleId] = useState<string>("");
 
   const [startDate, setStartDate] = useState<string>("");
@@ -115,29 +160,11 @@ export default function PayrollNewPage() {
     async function loadSchedules() {
       try {
         const supabase = createClient();
+
         const res = await supabase
-          .from("pay_schedules")
-          .select(
-            [
-              "id",
-              "name",
-              "frequency",
-              "is_flexible",
-              "is_active",
-              "pay_day_of_week",
-              "pay_day_of_month",
-              "pay_timing",
-              "cycle_anchor_pay_date",
-              "pay_date_adjustment",
-              "pay_date_offset_days",
-              "max_advance_days",
-              "max_lag_days",
-            ].join(", ")
-          )
-          .neq("is_active", false)
-          .order("frequency", { ascending: true })
-          .order("is_flexible", { ascending: false })
-          .order("name", { ascending: true });
+          .from("company_pay_schedules")
+          .select("id, frequency, pay_date_mode, pay_date_param_int, allow_override")
+          .order("updated_at", { ascending: false });
 
         if (cancelled) return;
 
@@ -148,23 +175,32 @@ export default function PayrollNewPage() {
         }
 
         const rows = Array.isArray(res.data) ? (res.data as any[]) : [];
-        const cleaned: PayScheduleRow[] = rows
+
+        const cleaned: CompanyPayScheduleRow[] = rows
           .filter((r) => r && typeof r.id === "string")
           .map((r) => ({
             id: String(r.id),
-            name: r.name ?? null,
-            frequency: (String(r.frequency) as Frequency) || "monthly",
-            is_flexible: r.is_flexible ?? null,
-            is_active: r.is_active ?? null,
-            pay_day_of_week: r.pay_day_of_week ?? null,
-            pay_day_of_month: r.pay_day_of_month ?? null,
-            pay_timing: r.pay_timing ?? null,
-            cycle_anchor_pay_date: r.cycle_anchor_pay_date ?? null,
-            pay_date_adjustment: r.pay_date_adjustment ?? null,
-            pay_date_offset_days: r.pay_date_offset_days ?? null,
-            max_advance_days: r.max_advance_days ?? null,
-            max_lag_days: r.max_lag_days ?? null,
-          }));
+            frequency: normalizeFrequency(r.frequency),
+            pay_date_mode: String(r.pay_date_mode ?? ""),
+            pay_date_param_int: r.pay_date_param_int === null || r.pay_date_param_int === undefined ? null : Number(r.pay_date_param_int),
+            allow_override: Boolean(r.allow_override),
+          }))
+          .sort((a, b) => {
+            const ak = freqSortKey(a.frequency);
+            const bk = freqSortKey(b.frequency);
+            if (ak !== bk) return ak - bk;
+
+            const am = String(a.pay_date_mode || "").toLowerCase();
+            const bm = String(b.pay_date_mode || "").toLowerCase();
+            if (am !== bm) return am.localeCompare(bm);
+
+            const ap = a.pay_date_param_int === null ? 9999 : a.pay_date_param_int;
+            const bp = b.pay_date_param_int === null ? 9999 : b.pay_date_param_int;
+            if (ap !== bp) return ap - bp;
+
+            if (a.allow_override !== b.allow_override) return a.allow_override ? -1 : 1;
+            return 0;
+          });
 
         setSchedules(cleaned);
 
@@ -172,7 +208,7 @@ export default function PayrollNewPage() {
           setScheduleId(cleaned[0].id);
         }
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message ? String(e.message) : "Failed to load pay schedules");
+        if (!cancelled) setErr(e?.message ? String(e.message) : "Failed to load company pay schedules");
       }
     }
 
@@ -293,7 +329,7 @@ export default function PayrollNewPage() {
   return (
     <div className="flex flex-col gap-2">
       <h2 className="text-xl font-semibold text-neutral-900">Payroll Run Wizard</h2>
-      <p className="text-sm text-neutral-700">Choose a pay schedule, enter your dates, then start the run.</p>
+      <p className="text-sm text-neutral-700">Choose a company pay schedule, enter your dates, then start the run.</p>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <label className="block sm:col-span-2">
