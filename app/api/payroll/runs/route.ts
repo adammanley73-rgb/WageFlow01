@@ -33,6 +33,12 @@ type PayrollRunRow = {
   total_net_pay?: number | null;
 };
 
+type CompanyPayScheduleRow = {
+  id: string;
+  company_id: string;
+  frequency: string | null;
+};
+
 type PostgrestCountResponse = {
   data: any[] | null;
   error: any | null;
@@ -102,7 +108,10 @@ function dateOnlyIsoUtc(d: Date) {
   - weekly/fortnightly/four_weekly: period_end = pay_date, period_start = pay_date - (n-1)
   - monthly: period_start = 1st of pay_date month, period_end = last day of pay_date month
 */
-function derivePeriodFromPayDate(frequency: string, payDateIso: string | null): { startIso: string | null; endIso: string | null } {
+function derivePeriodFromPayDate(
+  frequency: string,
+  payDateIso: string | null
+): { startIso: string | null; endIso: string | null } {
   if (!payDateIso || !isIsoDateOnly(payDateIso)) return { startIso: null, endIso: null };
 
   const f = String(frequency || "").trim();
@@ -171,9 +180,7 @@ function makeRunNumberFromPayDate(frequency: string, payDateIso: string | null, 
     return `Mth ${mth}`;
   }
 
-  const period =
-    f === "weekly" ? 7 : f === "fortnightly" ? 14 : f === "four_weekly" ? 28 : null;
-
+  const period = f === "weekly" ? 7 : f === "fortnightly" ? 14 : f === "four_weekly" ? 28 : null;
   if (!period) return null;
 
   const n = Math.floor(diff / period) + 1;
@@ -188,6 +195,18 @@ function makeRunNumberFromPayDate(frequency: string, payDateIso: string | null, 
 function defaultRunNameFromPayDate(frequency: string, payDateIso: string | null) {
   const pay = payDateIso ? isoToUkDate(payDateIso) : "unscheduled";
   return frequencyLabel(frequency) + " payroll (pay date " + pay + ")";
+}
+
+function isMissingColumnError(err: any, columnNames: string[]) {
+  const msg = String(err?.message ?? err ?? "");
+  if (!msg) return false;
+
+  const looksLikeMissingColumn =
+    msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column");
+
+  if (!looksLikeMissingColumn) return false;
+
+  return columnNames.some((c) => msg.includes(c));
 }
 
 /* -----------------------
@@ -356,9 +375,11 @@ export async function GET(req: Request) {
 
 /* -----------------------
    POST (create run)
-   Simplified for demo schema:
-   - Inserts only the columns we know exist in payroll_runs.
-   - Wizard token gate stays in place.
+   Wizard-compatible:
+   - Requires pay_schedule_id, period_start, period_end, pay_date
+   - Looks up company_pay_schedules to derive frequency
+   - Inserts only known-safe columns, with a best-effort attempt to store schedule/period if the schema supports it
+   - Wizard token gate stays in place
 ------------------------ */
 
 export async function POST(req: Request) {
@@ -396,14 +417,24 @@ export async function POST(req: Request) {
 
     const allowedFrequencies = ["weekly", "fortnightly", "four_weekly", "monthly"];
 
-    const frequency_input = typeof body?.frequency === "string" ? body.frequency.trim() : "";
+    const pay_schedule_id_input = typeof body?.pay_schedule_id === "string" ? body.pay_schedule_id.trim() : "";
+    const period_start_input = typeof body?.period_start === "string" ? body.period_start.trim() : "";
+    const period_end_input = typeof body?.period_end === "string" ? body.period_end.trim() : "";
+
     const pay_date_raw_1 = typeof body?.pay_date === "string" ? body.pay_date.trim() : "";
     const pay_date_raw_2 = typeof body?.payment_date === "string" ? body.payment_date.trim() : "";
     const pay_date_input = (pay_date_raw_1 || pay_date_raw_2 || "").trim();
 
-    if (!allowedFrequencies.includes(frequency_input)) {
+    if (!pay_schedule_id_input) {
       return NextResponse.json(
-        { ok: false, error: "Invalid frequency. Expected weekly, fortnightly, four_weekly, monthly.", code: "BAD_FREQUENCY" },
+        { ok: false, error: "Missing pay_schedule_id.", code: "MISSING_PAY_SCHEDULE_ID" },
+        { status: 400 }
+      );
+    }
+
+    if (!isIsoDateOnly(period_start_input) || !isIsoDateOnly(period_end_input)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid period_start or period_end. Expected YYYY-MM-DD.", code: "BAD_PERIOD" },
         { status: 400 }
       );
     }
@@ -415,15 +446,50 @@ export async function POST(req: Request) {
       );
     }
 
-    const overrideReason = typeof body?.pay_date_override_reason === "string" ? body.pay_date_override_reason.trim() : "";
+    // Look up the schedule row for this company to derive frequency
+    const scheduleRes = (await client
+      .from("company_pay_schedules")
+      .select("id, company_id, frequency")
+      .eq("id", pay_schedule_id_input)
+      .eq("company_id", String(companyId))
+      .single()) as PostgrestSingleResponse<CompanyPayScheduleRow>;
+
+    if (scheduleRes.error || !scheduleRes.data) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Invalid pay_schedule_id for this company.",
+          code: "BAD_PAY_SCHEDULE_ID",
+          debug: scheduleRes.error ?? null,
+        },
+        { status: 400 }
+      );
+    }
+
+    const derivedFrequency = String(scheduleRes.data.frequency || "").trim();
+
+    if (!allowedFrequencies.includes(derivedFrequency)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Invalid derived frequency from schedule. Expected weekly, fortnightly, four_weekly, monthly.",
+          code: "BAD_DERIVED_FREQUENCY",
+          derivedFrequency,
+        },
+        { status: 400 }
+      );
+    }
+
+    const overrideReason =
+      typeof body?.pay_date_override_reason === "string" ? body.pay_date_override_reason.trim() : "";
     const pay_date_overridden_input = typeof body?.pay_date_overridden === "boolean" ? body.pay_date_overridden : null;
 
     let pay_date_overridden = pay_date_overridden_input !== null ? !!pay_date_overridden_input : false;
     if (overrideReason) pay_date_overridden = true;
 
-    const insertRow: any = {
+    const insertRowBase: any = {
       company_id: companyId,
-      frequency: frequency_input,
+      frequency: derivedFrequency,
       status: "draft",
       pay_date: pay_date_input,
       pay_date_overridden,
@@ -431,9 +497,17 @@ export async function POST(req: Request) {
       attached_all_due_employees: false,
     };
 
-    const createdRes = (await client
+    // Best-effort: if payroll_runs supports these columns, we store them.
+    const insertRowWithWizardFields: any = {
+      ...insertRowBase,
+      pay_schedule_id: pay_schedule_id_input,
+      period_start: period_start_input,
+      period_end: period_end_input,
+    };
+
+    let createdRes = (await client
       .from("payroll_runs")
-      .insert(insertRow)
+      .insert(insertRowWithWizardFields)
       .select(
         [
           "id",
@@ -453,9 +527,34 @@ export async function POST(req: Request) {
       )
       .single()) as PostgrestSingleResponse<PayrollRunRow>;
 
+    // Fallback for schemas that do not have pay_schedule_id / period_* columns
+    if (createdRes.error && isMissingColumnError(createdRes.error, ["pay_schedule_id", "period_start", "period_end"])) {
+      createdRes = (await client
+        .from("payroll_runs")
+        .insert(insertRowBase)
+        .select(
+          [
+            "id",
+            "company_id",
+            "frequency",
+            "status",
+            "pay_date",
+            "pay_date_overridden",
+            "pay_date_override_reason",
+            "attached_all_due_employees",
+            "created_at",
+            "total_gross_pay",
+            "total_tax",
+            "total_ni",
+            "total_net_pay",
+          ].join(", ")
+        )
+        .single()) as PostgrestSingleResponse<PayrollRunRow>;
+    }
+
     if (createdRes.error || !createdRes.data) {
       return NextResponse.json(
-        { ok: false, error: createdRes.error, debugSource: "payroll_runs_create_debug_v6_schema_safe" },
+        { ok: false, error: createdRes.error, debugSource: "payroll_runs_create_debug_v7_wizard_contract" },
         { status: 500 }
       );
     }
@@ -466,7 +565,12 @@ export async function POST(req: Request) {
     const computedRunNumber = makeRunNumberFromPayDate(String(run.frequency || ""), run.pay_date ?? null, taxYearStartIso);
     const computedRunName = defaultRunNameFromPayDate(String(run.frequency || ""), run.pay_date ?? null);
 
-    const derivedPeriod = derivePeriodFromPayDate(String(run.frequency || ""), run.pay_date ?? null);
+    // Prefer wizard-provided period values for the create response.
+    // If you later store period_start/period_end in payroll_runs, GET can be upgraded to use them.
+    const derivedPeriod = {
+      startIso: period_start_input,
+      endIso: period_end_input,
+    };
 
     const res = NextResponse.json(
       {
@@ -481,10 +585,10 @@ export async function POST(req: Request) {
           run_name: computedRunName,
           period_start: derivedPeriod.startIso,
           period_end: derivedPeriod.endIso,
-          pay_schedule_id: null,
+          pay_schedule_id: pay_schedule_id_input,
         },
 
-        debugSource: "payroll_runs_create_debug_v6_schema_safe",
+        debugSource: "payroll_runs_create_debug_v7_wizard_contract",
       },
       { status: 201 }
     );
@@ -500,7 +604,7 @@ export async function POST(req: Request) {
     return res;
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_create_debug_v6_schema_safe" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_create_debug_v7_wizard_contract" },
       { status: 500 }
     );
   }
