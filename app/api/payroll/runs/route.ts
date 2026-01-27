@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { randomUUID } from "crypto";
 import { getAdmin } from "@lib/admin";
 
 export const dynamic = "force-dynamic";
@@ -101,13 +102,6 @@ function dateOnlyIsoUtc(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-/*
-  Derive pay period dates when the DB does not store period_start/period_end.
-
-  Assumptions (simple, consistent, predictable):
-  - weekly/fortnightly/four_weekly: period_end = pay_date, period_start = pay_date - (n-1)
-  - monthly: period_start = 1st of pay_date month, period_end = last day of pay_date month
-*/
 function derivePeriodFromPayDate(
   frequency: string,
   payDateIso: string | null
@@ -119,9 +113,9 @@ function derivePeriodFromPayDate(
 
   if (f === "monthly") {
     const y = payUtc.getUTCFullYear();
-    const m = payUtc.getUTCMonth(); // 0..11
+    const m = payUtc.getUTCMonth();
     const start = new Date(Date.UTC(y, m, 1));
-    const end = new Date(Date.UTC(y, m + 1, 0)); // day 0 = last day of previous month
+    const end = new Date(Date.UTC(y, m + 1, 0));
     return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
   }
 
@@ -150,7 +144,7 @@ function getUkTaxYearBounds(taxYearStartParam?: string | null) {
 
   const today = new Date();
   const year = today.getFullYear();
-  const candidateStart = new Date(Date.UTC(year, 3, 6)); // 6 April
+  const candidateStart = new Date(Date.UTC(year, 3, 6));
   const start = today >= candidateStart ? candidateStart : new Date(Date.UTC(year - 1, 3, 6));
 
   const end = new Date(start);
@@ -174,8 +168,7 @@ function makeRunNumberFromPayDate(frequency: string, payDateIso: string | null, 
   if (diff < 0) return null;
 
   if (f === "monthly") {
-    // Tax-year month label: Apr=1 ... Mar=12
-    const m = payUtc.getUTCMonth(); // 0..11
+    const m = payUtc.getUTCMonth();
     const mth = m >= 3 ? m - 3 + 1 : m + 9 + 1;
     return `Mth ${mth}`;
   }
@@ -207,6 +200,60 @@ function isMissingColumnError(err: any, columnNames: string[]) {
   if (!looksLikeMissingColumn) return false;
 
   return columnNames.some((c) => msg.includes(c));
+}
+
+function isUniqueViolation(err: any) {
+  const code = String(err?.code ?? "").trim();
+  const msg = String(err?.message ?? err ?? "").toLowerCase();
+
+  if (code === "23505") return true;
+
+  if (msg.includes("duplicate key value violates unique constraint")) return true;
+  if (msg.includes("uq_payroll_runs_company_run_number")) return true;
+
+  return false;
+}
+
+function clearWizardCookie(res: NextResponse) {
+  res.cookies.set("wf_payroll_run_wizard", "", {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 0,
+  });
+}
+
+async function findExistingRunByRunNumber(
+  client: any,
+  companyId: string,
+  runNumber: string
+): Promise<{ row: any | null; error: any | null }> {
+  const tryWithKind = await client
+    .from("payroll_runs")
+    .select("id, pay_date, frequency, status, run_kind")
+    .eq("company_id", companyId)
+    .eq("run_number", runNumber)
+    .eq("run_kind", "primary")
+    .limit(1);
+
+  let existing = Array.isArray(tryWithKind.data) ? tryWithKind.data[0] : null;
+  let existingErr: any = tryWithKind.error;
+
+  if (existingErr && isMissingColumnError(existingErr, ["run_kind"])) {
+    const tryWithoutKind = await client
+      .from("payroll_runs")
+      .select("id, pay_date, frequency, status")
+      .eq("company_id", companyId)
+      .eq("run_number", runNumber)
+      .limit(1);
+
+    existing = Array.isArray(tryWithoutKind.data) ? tryWithoutKind.data[0] : null;
+    existingErr = tryWithoutKind.error;
+  }
+
+  if (existingErr) return { row: null, error: existingErr };
+  return { row: existing, error: null };
 }
 
 /* -----------------------
@@ -306,10 +353,7 @@ export async function GET(req: Request) {
       .order("created_at", { ascending: false });
 
     if (listRes.error) {
-      return NextResponse.json(
-        { ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v6_schema_safe" },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v10" }, { status: 500 });
     }
 
     const rows = Array.isArray(listRes.data) ? listRes.data : [];
@@ -327,7 +371,6 @@ export async function GET(req: Request) {
         id: row.id,
         company_id: row.company_id,
 
-        // Keep the payload shape stable for the UI, even if the DB does not store these fields.
         run_number: computedRunNumber,
         run_name: computedRunName,
         period_start: derivedPeriod.startIso,
@@ -350,36 +393,24 @@ export async function GET(req: Request) {
       };
     });
 
-    const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "");
-    const supabaseHost = supabaseUrl.replace("https://", "").replace("http://", "").split("/")[0] || null;
-
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_runs_list_debug_v6_schema_safe",
+      debugSource: "payroll_runs_list_debug_v10",
       query,
       taxYear: { start: taxYearStartIso, end: taxYearEndIso },
       activeCompanyId: companyIdTrim,
       filterMode: "pay_date_in_tax_year",
       frequencyApplied: frequency,
-      supabaseHost,
       debugCounts,
       runs,
     });
   } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v6_schema_safe" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v10" }, { status: 500 });
   }
 }
 
 /* -----------------------
    POST (create run)
-   Wizard-compatible:
-   - Requires pay_schedule_id, period_start, period_end, pay_date
-   - Looks up company_pay_schedules to derive frequency
-   - Inserts only known-safe columns, with a best-effort attempt to store schedule/period if the schema supports it
-   - Wizard token gate stays in place
 ------------------------ */
 
 export async function POST(req: Request) {
@@ -418,6 +449,7 @@ export async function POST(req: Request) {
     const allowedFrequencies = ["weekly", "fortnightly", "four_weekly", "monthly"];
 
     const pay_schedule_id_input = typeof body?.pay_schedule_id === "string" ? body.pay_schedule_id.trim() : "";
+
     const period_start_input = typeof body?.period_start === "string" ? body.period_start.trim() : "";
     const period_end_input = typeof body?.period_end === "string" ? body.period_end.trim() : "";
 
@@ -425,43 +457,32 @@ export async function POST(req: Request) {
     const pay_date_raw_2 = typeof body?.payment_date === "string" ? body.payment_date.trim() : "";
     const pay_date_input = (pay_date_raw_1 || pay_date_raw_2 || "").trim();
 
+    const run_name_input = typeof body?.run_name === "string" ? body.run_name.trim() : "";
+
     if (!pay_schedule_id_input) {
-      return NextResponse.json(
-        { ok: false, error: "Missing pay_schedule_id.", code: "MISSING_PAY_SCHEDULE_ID" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Missing pay_schedule_id.", code: "MISSING_PAY_SCHEDULE_ID" }, { status: 400 });
     }
 
     if (!isIsoDateOnly(period_start_input) || !isIsoDateOnly(period_end_input)) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid period_start or period_end. Expected YYYY-MM-DD.", code: "BAD_PERIOD" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Invalid period_start or period_end. Expected YYYY-MM-DD.", code: "BAD_PERIOD" }, { status: 400 });
     }
 
     if (!isIsoDateOnly(pay_date_input)) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid pay_date. Expected YYYY-MM-DD.", code: "BAD_PAY_DATE" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "Invalid pay_date. Expected YYYY-MM-DD.", code: "BAD_PAY_DATE" }, { status: 400 });
     }
 
-    // Look up the schedule row for this company to derive frequency
+    const companyIdStr = String(companyId || "").trim();
+
     const scheduleRes = (await client
       .from("company_pay_schedules")
       .select("id, company_id, frequency")
       .eq("id", pay_schedule_id_input)
-      .eq("company_id", String(companyId))
+      .eq("company_id", companyIdStr)
       .single()) as PostgrestSingleResponse<CompanyPayScheduleRow>;
 
     if (scheduleRes.error || !scheduleRes.data) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Invalid pay_schedule_id for this company.",
-          code: "BAD_PAY_SCHEDULE_ID",
-          debug: scheduleRes.error ?? null,
-        },
+        { ok: false, error: "Invalid pay_schedule_id for this company.", code: "BAD_PAY_SCHEDULE_ID", debug: scheduleRes.error ?? null },
         { status: 400 }
       );
     }
@@ -470,141 +491,240 @@ export async function POST(req: Request) {
 
     if (!allowedFrequencies.includes(derivedFrequency)) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Invalid derived frequency from schedule. Expected weekly, fortnightly, four_weekly, monthly.",
-          code: "BAD_DERIVED_FREQUENCY",
-          derivedFrequency,
-        },
+        { ok: false, error: "Invalid derived frequency from schedule. Expected weekly, fortnightly, four_weekly, monthly.", code: "BAD_DERIVED_FREQUENCY", derivedFrequency },
         { status: 400 }
       );
     }
 
-    const overrideReason =
-      typeof body?.pay_date_override_reason === "string" ? body.pay_date_override_reason.trim() : "";
+    const { taxYearStartIso } = getUkTaxYearBounds(null);
+    const computedRunNumber = makeRunNumberFromPayDate(derivedFrequency, pay_date_input, taxYearStartIso);
+    const safeRunName = run_name_input || defaultRunNameFromPayDate(derivedFrequency, pay_date_input);
+
+    // Get-or-create (pre-check): if this run number already exists for this company, return it.
+    if (computedRunNumber) {
+      const existingRes = await findExistingRunByRunNumber(client, companyIdStr, computedRunNumber);
+      if (existingRes.error) {
+        return NextResponse.json(
+          { ok: false, error: existingRes.error, debugSource: "payroll_runs_create_debug_v10_existing_check" },
+          { status: 500 }
+        );
+      }
+
+      if (existingRes.row?.id) {
+        const res = NextResponse.json(
+          {
+            ok: true,
+            id: existingRes.row.id,
+            run_id: existingRes.row.id,
+            reusedExisting: true,
+            run: {
+              id: existingRes.row.id,
+              company_id: companyIdStr,
+              frequency: existingRes.row.frequency ?? derivedFrequency,
+              status: existingRes.row.status ?? "draft",
+              pay_date: existingRes.row.pay_date ?? pay_date_input,
+              run_number: computedRunNumber,
+              run_name: safeRunName,
+              period_start: period_start_input,
+              period_end: period_end_input,
+              pay_schedule_id: pay_schedule_id_input,
+              run_kind: "primary",
+              parent_run_id: null,
+            },
+            debugSource: "payroll_runs_create_debug_v10_existing_check",
+          },
+          { status: 200 }
+        );
+
+        clearWizardCookie(res);
+        return res;
+      }
+    }
+
+    const overrideReason = typeof body?.pay_date_override_reason === "string" ? body.pay_date_override_reason.trim() : "";
     const pay_date_overridden_input = typeof body?.pay_date_overridden === "boolean" ? body.pay_date_overridden : null;
 
     let pay_date_overridden = pay_date_overridden_input !== null ? !!pay_date_overridden_input : false;
     if (overrideReason) pay_date_overridden = true;
 
+    const create_request_id = randomUUID();
+
+    // Always set run_kind + parent_run_id to satisfy payroll_runs constraints.
     const insertRowBase: any = {
-      company_id: companyId,
+      company_id: companyIdStr,
       frequency: derivedFrequency,
       status: "draft",
       pay_date: pay_date_input,
       pay_date_overridden,
       pay_date_override_reason: pay_date_overridden && overrideReason ? overrideReason : null,
       attached_all_due_employees: false,
+
+      run_kind: "primary",
+      parent_run_id: null,
+
+      create_request_id,
+      run_name: safeRunName,
     };
 
-    // Best-effort: if payroll_runs supports these columns, we store them.
-    const insertRowWithWizardFields: any = {
-      ...insertRowBase,
-      pay_schedule_id: pay_schedule_id_input,
-      period_start: period_start_input,
-      period_end: period_end_input,
-    };
-
-    let createdRes = (await client
-      .from("payroll_runs")
-      .insert(insertRowWithWizardFields)
-      .select(
-        [
-          "id",
-          "company_id",
-          "frequency",
-          "status",
-          "pay_date",
-          "pay_date_overridden",
-          "pay_date_override_reason",
-          "attached_all_due_employees",
-          "created_at",
-          "total_gross_pay",
-          "total_tax",
-          "total_ni",
-          "total_net_pay",
-        ].join(", ")
-      )
-      .single()) as PostgrestSingleResponse<PayrollRunRow>;
-
-    // Fallback for schemas that do not have pay_schedule_id / period_* columns
-    if (createdRes.error && isMissingColumnError(createdRes.error, ["pay_schedule_id", "period_start", "period_end"])) {
-      createdRes = (await client
-        .from("payroll_runs")
-        .insert(insertRowBase)
-        .select(
-          [
-            "id",
-            "company_id",
-            "frequency",
-            "status",
-            "pay_date",
-            "pay_date_overridden",
-            "pay_date_override_reason",
-            "attached_all_due_employees",
-            "created_at",
-            "total_gross_pay",
-            "total_tax",
-            "total_ni",
-            "total_net_pay",
-          ].join(", ")
-        )
-        .single()) as PostgrestSingleResponse<PayrollRunRow>;
+    if (computedRunNumber) {
+      insertRowBase.run_number = computedRunNumber;
     }
 
-    if (createdRes.error || !createdRes.data) {
+    const rowVariants: any[] = [
+      {
+        ...insertRowBase,
+        pay_schedule_id: pay_schedule_id_input,
+        pay_period_start: period_start_input,
+        pay_period_end: period_end_input,
+        period_start: period_start_input,
+        period_end: period_end_input,
+      },
+      {
+        ...insertRowBase,
+        pay_schedule_id: pay_schedule_id_input,
+        pay_period_start: period_start_input,
+        pay_period_end: period_end_input,
+      },
+      {
+        ...insertRowBase,
+        pay_schedule_id: pay_schedule_id_input,
+        period_start: period_start_input,
+        period_end: period_end_input,
+      },
+      {
+        ...insertRowBase,
+      },
+    ];
+
+    const selectCols = [
+      "id",
+      "company_id",
+      "frequency",
+      "status",
+      "pay_date",
+      "pay_date_overridden",
+      "pay_date_override_reason",
+      "attached_all_due_employees",
+      "created_at",
+      "total_gross_pay",
+      "total_tax",
+      "total_ni",
+      "total_net_pay",
+    ].join(", ");
+
+    let createdRes: PostgrestSingleResponse<PayrollRunRow> | null = null;
+    let lastErr: any = null;
+
+    for (const row of rowVariants) {
+      const attempt = (await client.from("payroll_runs").insert(row).select(selectCols).single()) as PostgrestSingleResponse<PayrollRunRow>;
+
+      if (!attempt.error && attempt.data) {
+        createdRes = attempt;
+        lastErr = null;
+        break;
+      }
+
+      lastErr = attempt.error;
+
+      // If a unique collision happens (race or seeded data), reuse the existing run.
+      if (computedRunNumber && isUniqueViolation(attempt.error)) {
+        const existingRes = await findExistingRunByRunNumber(client, companyIdStr, computedRunNumber);
+
+        if (existingRes.error) {
+          return NextResponse.json(
+            { ok: false, error: existingRes.error, debugSource: "payroll_runs_create_debug_v10_dupe_reuse_lookup" },
+            { status: 500 }
+          );
+        }
+
+        if (existingRes.row?.id) {
+          const res = NextResponse.json(
+            {
+              ok: true,
+              id: existingRes.row.id,
+              run_id: existingRes.row.id,
+              reusedExisting: true,
+              run: {
+                id: existingRes.row.id,
+                company_id: companyIdStr,
+                frequency: existingRes.row.frequency ?? derivedFrequency,
+                status: existingRes.row.status ?? "draft",
+                pay_date: existingRes.row.pay_date ?? pay_date_input,
+                run_number: computedRunNumber,
+                run_name: safeRunName,
+                period_start: period_start_input,
+                period_end: period_end_input,
+                pay_schedule_id: pay_schedule_id_input,
+                run_kind: "primary",
+                parent_run_id: null,
+                create_request_id: null,
+              },
+              debugSource: "payroll_runs_create_debug_v10_dupe_reuse",
+            },
+            { status: 200 }
+          );
+
+          clearWizardCookie(res);
+          return res;
+        }
+      }
+
+      const missingCols = [
+        "pay_schedule_id",
+        "pay_period_start",
+        "pay_period_end",
+        "period_start",
+        "period_end",
+        "run_number",
+        "run_name",
+        "run_kind",
+        "parent_run_id",
+        "create_request_id",
+      ];
+
+      if (!isMissingColumnError(attempt.error, missingCols)) {
+        break;
+      }
+    }
+
+    if (!createdRes || createdRes.error || !createdRes.data) {
       return NextResponse.json(
-        { ok: false, error: createdRes.error, debugSource: "payroll_runs_create_debug_v7_wizard_contract" },
+        { ok: false, error: lastErr, debugSource: "payroll_runs_create_debug_v10" },
         { status: 500 }
       );
     }
 
     const run = createdRes.data;
 
-    const { taxYearStartIso } = getUkTaxYearBounds(null);
-    const computedRunNumber = makeRunNumberFromPayDate(String(run.frequency || ""), run.pay_date ?? null, taxYearStartIso);
-    const computedRunName = defaultRunNameFromPayDate(String(run.frequency || ""), run.pay_date ?? null);
-
-    // Prefer wizard-provided period values for the create response.
-    // If you later store period_start/period_end in payroll_runs, GET can be upgraded to use them.
-    const derivedPeriod = {
-      startIso: period_start_input,
-      endIso: period_end_input,
-    };
-
     const res = NextResponse.json(
       {
         ok: true,
         id: run.id,
         run_id: run.id,
-
-        // Keep stable shape for the UI
+        reusedExisting: false,
         run: {
           ...run,
           run_number: computedRunNumber,
-          run_name: computedRunName,
-          period_start: derivedPeriod.startIso,
-          period_end: derivedPeriod.endIso,
+          run_name: safeRunName,
+          period_start: period_start_input,
+          period_end: period_end_input,
           pay_schedule_id: pay_schedule_id_input,
+          pay_period_start: period_start_input,
+          pay_period_end: period_end_input,
+          run_kind: "primary",
+          parent_run_id: null,
+          create_request_id,
         },
-
-        debugSource: "payroll_runs_create_debug_v7_wizard_contract",
+        debugSource: "payroll_runs_create_debug_v10",
       },
       { status: 201 }
     );
 
-    res.cookies.set("wf_payroll_run_wizard", "", {
-      path: "/",
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 0,
-    });
-
+    clearWizardCookie(res);
     return res;
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_create_debug_v7_wizard_contract" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_create_debug_v10" },
       { status: 500 }
     );
   }
