@@ -1,5 +1,4 @@
 // C:\Users\adamm\Projects\wageflow01\app\api\payroll\runs\route.ts
-
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { randomUUID } from "crypto";
@@ -17,14 +16,26 @@ type PostgrestSingleResponse<T> = {
   error: any | null;
 };
 
+type PostgrestCountResponse = {
+  data: any[] | null;
+  error: any | null;
+  count: number | null;
+};
+
 type PayrollRunRow = {
   id: string;
   company_id: string;
+
   frequency: string | null;
   status: string | null;
+
   pay_date: string | null;
   pay_date_overridden: boolean | null;
   pay_date_override_reason: string | null;
+
+  pay_period_start?: string | null;
+  pay_period_end?: string | null;
+
   attached_all_due_employees: boolean | null;
   created_at?: string | null;
 
@@ -34,16 +45,24 @@ type PayrollRunRow = {
   total_net_pay?: number | null;
 };
 
-type CompanyPayScheduleRow = {
+type PayScheduleRow = {
   id: string;
   company_id: string;
-  frequency: string | null;
-};
 
-type PostgrestCountResponse = {
-  data: any[] | null;
-  error: any | null;
-  count: number | null;
+  name: string | null;
+  frequency: string | null;
+
+  pay_day_of_week: number | null; // 1=Mon..7=Sun
+  pay_day_of_month: number | null; // 1..28
+  cycle_anchor_pay_date: string | null;
+
+  pay_timing: string | null; // arrears/current/advance/flexible
+  pay_date_adjustment: string | null; // previous_working_day/next_working_day/none
+  pay_date_offset_days: number | null;
+
+  is_template: boolean | null;
+  is_active: boolean | null;
+  is_flexible: boolean | null;
 };
 
 function normalizeQueryParam(v: string | null) {
@@ -102,27 +121,191 @@ function dateOnlyIsoUtc(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-function derivePeriodFromPayDate(
-  frequency: string,
-  payDateIso: string | null
-): { startIso: string | null; endIso: string | null } {
-  if (!payDateIso || !isIsoDateOnly(payDateIso)) return { startIso: null, endIso: null };
+function mondayOfWeekUtc(d: Date) {
+  const out = new Date(d.getTime());
+  const jsDow = out.getUTCDay(); // 0=Sun..6=Sat
+  const daysSinceMonday = (jsDow + 6) % 7; // Mon=0..Sun=6
+  out.setUTCDate(out.getUTCDate() - daysSinceMonday);
+  return out;
+}
 
-  const f = String(frequency || "").trim();
-  const payUtc = parseIsoDateOnlyToUtc(payDateIso);
+function adjustWorkingDayUtc(d: Date, modeRaw: string | null) {
+  const mode = String(modeRaw || "previous_working_day").trim().toLowerCase();
+  if (mode === "none") return d;
 
-  if (f === "monthly") {
-    const y = payUtc.getUTCFullYear();
-    const m = payUtc.getUTCMonth();
+  const out = new Date(d.getTime());
+
+  const isWeekend = () => {
+    const js = out.getUTCDay();
+    return js === 0 || js === 6;
+  };
+
+  if (!isWeekend()) return out;
+
+  if (mode === "next_working_day") {
+    while (isWeekend()) out.setUTCDate(out.getUTCDate() + 1);
+    return out;
+  }
+
+  while (isWeekend()) out.setUTCDate(out.getUTCDate() - 1);
+  return out;
+}
+
+function computeWeekPaydayUtc(weekAnyDay: Date, scheduleDow: number) {
+  const mon = mondayOfWeekUtc(weekAnyDay);
+  const target = addDaysUtc(mon, Math.max(0, Math.min(6, (scheduleDow || 1) - 1)));
+  return target;
+}
+
+function computeMonthlyPayDateUtc(monthAnyDay: Date, payDayOfMonth: number | null) {
+  const y = monthAnyDay.getUTCFullYear();
+  const m = monthAnyDay.getUTCMonth();
+
+  if (payDayOfMonth && payDayOfMonth >= 1 && payDayOfMonth <= 28) {
+    return new Date(Date.UTC(y, m, payDayOfMonth));
+  }
+
+  // If day-of-month not set, treat as "last day of month"
+  return new Date(Date.UTC(y, m + 1, 0));
+}
+
+function normalizeTiming(v: any) {
+  const s = String(v || "arrears").trim().toLowerCase();
+  if (s === "arrears" || s === "current" || s === "advance" || s === "flexible") return s;
+  return "arrears";
+}
+
+function normalizeAdjustment(v: any) {
+  const s = String(v || "previous_working_day").trim().toLowerCase();
+  if (s === "previous_working_day" || s === "next_working_day" || s === "none") return s;
+  return "previous_working_day";
+}
+
+function computeCanonicalPayDateOrError(args: {
+  schedule: PayScheduleRow;
+  inputPayDateIso: string;
+}): { ok: true; payDateIso: string } | { ok: false; code: string; error: string; details?: any } {
+  const s = args.schedule;
+  const inputIso = args.inputPayDateIso;
+
+  if (!isIsoDateOnly(inputIso)) {
+    return { ok: false, code: "BAD_PAY_DATE", error: "Invalid pay_date. Expected YYYY-MM-DD." };
+  }
+
+  const frequency = String(s.frequency || "").trim();
+  const timing = normalizeTiming(s.pay_timing);
+  const adjustment = normalizeAdjustment(s.pay_date_adjustment);
+  const offsetDays = Number.isFinite(Number(s.pay_date_offset_days)) ? Number(s.pay_date_offset_days) : 0;
+
+  const inputUtc = parseIsoDateOnlyToUtc(inputIso);
+
+  // Monthly: compute pay date for that month (or last day if day-of-month not set)
+  if (frequency === "monthly") {
+    const base = computeMonthlyPayDateUtc(inputUtc, s.pay_day_of_month);
+    const withOffset = addDaysUtc(base, offsetDays);
+    const adjusted = adjustWorkingDayUtc(withOffset, adjustment);
+    return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
+  }
+
+  // Weekly-like: compute payday for week containing the provided date
+  const scheduleDow = s.pay_day_of_week || 5;
+  let weekPayday = computeWeekPaydayUtc(inputUtc, scheduleDow);
+
+  // Enforce pay cycle for fortnightly/four_weekly when not flexible
+  if ((frequency === "fortnightly" || frequency === "four_weekly") && !(s.is_flexible === true)) {
+    const period = frequency === "fortnightly" ? 14 : 28;
+
+    const anchorIso = String(s.cycle_anchor_pay_date || "").trim();
+    if (!anchorIso || !isIsoDateOnly(anchorIso)) {
+      return {
+        ok: false,
+        code: "MISSING_CYCLE_ANCHOR",
+        error: "Pay schedule is missing cycle_anchor_pay_date (required for fortnightly/four_weekly).",
+      };
+    }
+
+    const anchorUtc = parseIsoDateOnlyToUtc(anchorIso);
+    const anchorPayday = computeWeekPaydayUtc(anchorUtc, scheduleDow);
+
+    const diff = diffDaysUtc(weekPayday, anchorPayday);
+    const rem = ((diff % period) + period) % period;
+
+    if (rem !== 0) {
+      const prev = addDaysUtc(weekPayday, -rem);
+      const next = addDaysUtc(weekPayday, period - rem);
+
+      return {
+        ok: false,
+        code: "NOT_A_PAY_WEEK",
+        error: "Selected week is not a pay week for this schedule cycle.",
+        details: {
+          requested_week_payday: dateOnlyIsoUtc(weekPayday),
+          previous_valid_payday: dateOnlyIsoUtc(prev),
+          next_valid_payday: dateOnlyIsoUtc(next),
+          schedule_frequency: frequency,
+          cycle_anchor_pay_date: anchorIso,
+          schedule_pay_day_of_week: scheduleDow,
+          schedule_pay_date_adjustment: adjustment,
+          schedule_pay_date_offset_days: offsetDays,
+          pay_timing: timing,
+        },
+      };
+    }
+  }
+
+  const withOffset = addDaysUtc(weekPayday, offsetDays);
+  const adjusted = adjustWorkingDayUtc(withOffset, adjustment);
+  return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
+}
+
+function computePayPeriodFromSchedule(args: {
+  schedule: PayScheduleRow;
+  canonicalPayDateIso: string;
+}): { startIso: string; endIso: string } {
+  const s = args.schedule;
+  const frequency = String(s.frequency || "").trim();
+  const timing = normalizeTiming(s.pay_timing);
+
+  const payUtc = parseIsoDateOnlyToUtc(args.canonicalPayDateIso);
+
+  if (frequency === "monthly") {
+    let base = payUtc;
+
+    if (timing === "arrears") {
+      const y = payUtc.getUTCFullYear();
+      const m = payUtc.getUTCMonth();
+      base = new Date(Date.UTC(y, m - 1, 1));
+    } else if (timing === "advance") {
+      const y = payUtc.getUTCFullYear();
+      const m = payUtc.getUTCMonth();
+      base = new Date(Date.UTC(y, m + 1, 1));
+    }
+
+    const y = base.getUTCFullYear();
+    const m = base.getUTCMonth();
     const start = new Date(Date.UTC(y, m, 1));
     const end = new Date(Date.UTC(y, m + 1, 0));
     return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
   }
 
-  const periodDays = f === "weekly" ? 7 : f === "fortnightly" ? 14 : f === "four_weekly" ? 28 : null;
-  if (!periodDays) return { startIso: null, endIso: null };
+  const periodDays = frequency === "weekly" ? 7 : frequency === "fortnightly" ? 14 : frequency === "four_weekly" ? 28 : 7;
+  const payWeekMon = mondayOfWeekUtc(payUtc);
 
-  const end = payUtc;
+  if (timing === "advance") {
+    const start = payWeekMon;
+    const end = addDaysUtc(start, periodDays - 1);
+    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+  }
+
+  if (timing === "current") {
+    const payWeekSun = addDaysUtc(payWeekMon, 6);
+    const end = payWeekSun;
+    const start = addDaysUtc(end, -(periodDays - 1));
+    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+  }
+
+  // default arrears
+  const end = addDaysUtc(payWeekMon, -1); // Sunday before pay week
   const start = addDaysUtc(end, -(periodDays - 1));
   return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
 }
@@ -256,6 +439,26 @@ async function findExistingRunByRunNumber(
   return { row: existing, error: null };
 }
 
+function payDateMismatchResponse(args: {
+  existingId: string;
+  existingPayDate: string | null;
+  requestedPayDate: string;
+  runNumber: string;
+}) {
+  return NextResponse.json(
+    {
+      ok: false,
+      code: "PAY_DATE_MISMATCH",
+      error: "A payroll run already exists for this run_number, but with a different pay_date. Refusing to reuse the wrong run.",
+      run_number: args.runNumber,
+      requestedPayDate: args.requestedPayDate,
+      existing: { id: args.existingId, pay_date: args.existingPayDate },
+      debugSource: "payroll_runs_create_debug_v12_paydate_guard",
+    },
+    { status: 409 }
+  );
+}
+
 /* -----------------------
    GET (list runs)
 ------------------------ */
@@ -340,6 +543,8 @@ export async function GET(req: Request) {
           "total_tax",
           "total_ni",
           "total_net_pay",
+          "pay_period_start",
+          "pay_period_end",
         ].join(", ")
       )
       .eq("company_id", companyIdTrim)
@@ -353,7 +558,7 @@ export async function GET(req: Request) {
       .order("created_at", { ascending: false });
 
     if (listRes.error) {
-      return NextResponse.json({ ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v10" }, { status: 500 });
+      return NextResponse.json({ ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v12" }, { status: 500 });
     }
 
     const rows = Array.isArray(listRes.data) ? listRes.data : [];
@@ -365,7 +570,8 @@ export async function GET(req: Request) {
       const computedRunNumber = makeRunNumberFromPayDate(f, payDateIso, taxYearStartIso);
       const computedRunName = defaultRunNameFromPayDate(f, payDateIso);
 
-      const derivedPeriod = derivePeriodFromPayDate(f, payDateIso);
+      const startIso = row.pay_period_start ?? null;
+      const endIso = row.pay_period_end ?? null;
 
       return {
         id: row.id,
@@ -373,8 +579,8 @@ export async function GET(req: Request) {
 
         run_number: computedRunNumber,
         run_name: computedRunName,
-        period_start: derivedPeriod.startIso,
-        period_end: derivedPeriod.endIso,
+        period_start: startIso,
+        period_end: endIso,
         pay_schedule_id: null,
 
         frequency: row.frequency,
@@ -395,7 +601,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_runs_list_debug_v10",
+      debugSource: "payroll_runs_list_debug_v12",
       query,
       taxYear: { start: taxYearStartIso, end: taxYearEndIso },
       activeCompanyId: companyIdTrim,
@@ -405,7 +611,7 @@ export async function GET(req: Request) {
       runs,
     });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v10" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v12" }, { status: 500 });
   }
 }
 
@@ -450,9 +656,6 @@ export async function POST(req: Request) {
 
     const pay_schedule_id_input = typeof body?.pay_schedule_id === "string" ? body.pay_schedule_id.trim() : "";
 
-    const period_start_input = typeof body?.period_start === "string" ? body.period_start.trim() : "";
-    const period_end_input = typeof body?.period_end === "string" ? body.period_end.trim() : "";
-
     const pay_date_raw_1 = typeof body?.pay_date === "string" ? body.pay_date.trim() : "";
     const pay_date_raw_2 = typeof body?.payment_date === "string" ? body.payment_date.trim() : "";
     const pay_date_input = (pay_date_raw_1 || pay_date_raw_2 || "").trim();
@@ -463,10 +666,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Missing pay_schedule_id.", code: "MISSING_PAY_SCHEDULE_ID" }, { status: 400 });
     }
 
-    if (!isIsoDateOnly(period_start_input) || !isIsoDateOnly(period_end_input)) {
-      return NextResponse.json({ ok: false, error: "Invalid period_start or period_end. Expected YYYY-MM-DD.", code: "BAD_PERIOD" }, { status: 400 });
-    }
-
     if (!isIsoDateOnly(pay_date_input)) {
       return NextResponse.json({ ok: false, error: "Invalid pay_date. Expected YYYY-MM-DD.", code: "BAD_PAY_DATE" }, { status: 400 });
     }
@@ -474,11 +673,27 @@ export async function POST(req: Request) {
     const companyIdStr = String(companyId || "").trim();
 
     const scheduleRes = (await client
-      .from("company_pay_schedules")
-      .select("id, company_id, frequency")
+      .from("pay_schedules")
+      .select(
+        [
+          "id",
+          "company_id",
+          "name",
+          "frequency",
+          "pay_day_of_week",
+          "pay_day_of_month",
+          "cycle_anchor_pay_date",
+          "pay_timing",
+          "pay_date_adjustment",
+          "pay_date_offset_days",
+          "is_template",
+          "is_active",
+          "is_flexible",
+        ].join(", ")
+      )
       .eq("id", pay_schedule_id_input)
       .eq("company_id", companyIdStr)
-      .single()) as PostgrestSingleResponse<CompanyPayScheduleRow>;
+      .single()) as PostgrestSingleResponse<PayScheduleRow>;
 
     if (scheduleRes.error || !scheduleRes.data) {
       return NextResponse.json(
@@ -487,7 +702,23 @@ export async function POST(req: Request) {
       );
     }
 
-    const derivedFrequency = String(scheduleRes.data.frequency || "").trim();
+    const schedule = scheduleRes.data;
+
+    if (schedule.is_template === true) {
+      return NextResponse.json(
+        { ok: false, error: "Pay schedule is a template and cannot be used for payroll runs.", code: "SCHEDULE_IS_TEMPLATE" },
+        { status: 400 }
+      );
+    }
+
+    if (schedule.is_active === false) {
+      return NextResponse.json(
+        { ok: false, error: "Pay schedule is not active.", code: "SCHEDULE_INACTIVE" },
+        { status: 400 }
+      );
+    }
+
+    const derivedFrequency = String(schedule.frequency || "").trim();
 
     if (!allowedFrequencies.includes(derivedFrequency)) {
       return NextResponse.json(
@@ -496,20 +727,52 @@ export async function POST(req: Request) {
       );
     }
 
+    const canonicalPay = computeCanonicalPayDateOrError({
+      schedule,
+      inputPayDateIso: pay_date_input,
+    });
+
+    if (!canonicalPay.ok) {
+      return NextResponse.json(
+        { ok: false, code: canonicalPay.code, error: canonicalPay.error, details: canonicalPay.details ?? null, debugSource: "payroll_runs_create_debug_v12_paydate" },
+        { status: 400 }
+      );
+    }
+
+    const canonicalPayDateIso = canonicalPay.payDateIso;
+
+    const period = computePayPeriodFromSchedule({
+      schedule,
+      canonicalPayDateIso,
+    });
+
     const { taxYearStartIso } = getUkTaxYearBounds(null);
-    const computedRunNumber = makeRunNumberFromPayDate(derivedFrequency, pay_date_input, taxYearStartIso);
-    const safeRunName = run_name_input || defaultRunNameFromPayDate(derivedFrequency, pay_date_input);
+    const computedRunNumber = makeRunNumberFromPayDate(derivedFrequency, canonicalPayDateIso, taxYearStartIso);
+
+    const scheduleName = String(schedule.name || "").trim();
+    const safeRunName = run_name_input || (scheduleName ? `${scheduleName} payroll (pay date ${isoToUkDate(canonicalPayDateIso)})` : defaultRunNameFromPayDate(derivedFrequency, canonicalPayDateIso));
 
     if (computedRunNumber) {
       const existingRes = await findExistingRunByRunNumber(client, companyIdStr, computedRunNumber);
       if (existingRes.error) {
         return NextResponse.json(
-          { ok: false, error: existingRes.error, debugSource: "payroll_runs_create_debug_v10_existing_check" },
+          { ok: false, error: existingRes.error, debugSource: "payroll_runs_create_debug_v12_existing_check" },
           { status: 500 }
         );
       }
 
       if (existingRes.row?.id) {
+        const existingPayDate = existingRes.row.pay_date ?? null;
+
+        if (existingPayDate && isIsoDateOnly(existingPayDate) && existingPayDate !== canonicalPayDateIso) {
+          return payDateMismatchResponse({
+            existingId: existingRes.row.id,
+            existingPayDate,
+            requestedPayDate: canonicalPayDateIso,
+            runNumber: computedRunNumber,
+          });
+        }
+
         const res = NextResponse.json(
           {
             ok: true,
@@ -521,16 +784,18 @@ export async function POST(req: Request) {
               company_id: companyIdStr,
               frequency: existingRes.row.frequency ?? derivedFrequency,
               status: existingRes.row.status ?? "draft",
-              pay_date: existingRes.row.pay_date ?? pay_date_input,
+              pay_date: existingPayDate ?? canonicalPayDateIso,
               run_number: computedRunNumber,
               run_name: safeRunName,
-              period_start: period_start_input,
-              period_end: period_end_input,
+              period_start: period.startIso,
+              period_end: period.endIso,
+              pay_period_start: period.startIso,
+              pay_period_end: period.endIso,
               pay_schedule_id: pay_schedule_id_input,
               run_kind: "primary",
               parent_run_id: null,
             },
-            debugSource: "payroll_runs_create_debug_v10_existing_check",
+            debugSource: "payroll_runs_create_debug_v12_existing_check",
           },
           { status: 200 }
         );
@@ -552,7 +817,7 @@ export async function POST(req: Request) {
       company_id: companyIdStr,
       frequency: derivedFrequency,
       status: "draft",
-      pay_date: pay_date_input,
+      pay_date: canonicalPayDateIso,
       pay_date_overridden,
       pay_date_override_reason: pay_date_overridden && overrideReason ? overrideReason : null,
       attached_all_due_employees: false,
@@ -572,22 +837,22 @@ export async function POST(req: Request) {
       {
         ...insertRowBase,
         pay_schedule_id: pay_schedule_id_input,
-        pay_period_start: period_start_input,
-        pay_period_end: period_end_input,
-        period_start: period_start_input,
-        period_end: period_end_input,
+        pay_period_start: period.startIso,
+        pay_period_end: period.endIso,
+        period_start: period.startIso,
+        period_end: period.endIso,
       },
       {
         ...insertRowBase,
         pay_schedule_id: pay_schedule_id_input,
-        pay_period_start: period_start_input,
-        pay_period_end: period_end_input,
+        pay_period_start: period.startIso,
+        pay_period_end: period.endIso,
       },
       {
         ...insertRowBase,
         pay_schedule_id: pay_schedule_id_input,
-        period_start: period_start_input,
-        period_end: period_end_input,
+        period_start: period.startIso,
+        period_end: period.endIso,
       },
       {
         ...insertRowBase,
@@ -608,6 +873,8 @@ export async function POST(req: Request) {
       "total_tax",
       "total_ni",
       "total_net_pay",
+      "pay_period_start",
+      "pay_period_end",
     ].join(", ");
 
     let createdRes: PostgrestSingleResponse<PayrollRunRow> | null = null;
@@ -629,12 +896,23 @@ export async function POST(req: Request) {
 
         if (existingRes.error) {
           return NextResponse.json(
-            { ok: false, error: existingRes.error, debugSource: "payroll_runs_create_debug_v10_dupe_reuse_lookup" },
+            { ok: false, error: existingRes.error, debugSource: "payroll_runs_create_debug_v12_dupe_reuse_lookup" },
             { status: 500 }
           );
         }
 
         if (existingRes.row?.id) {
+          const existingPayDate = existingRes.row.pay_date ?? null;
+
+          if (existingPayDate && isIsoDateOnly(existingPayDate) && existingPayDate !== canonicalPayDateIso) {
+            return payDateMismatchResponse({
+              existingId: existingRes.row.id,
+              existingPayDate,
+              requestedPayDate: canonicalPayDateIso,
+              runNumber: computedRunNumber,
+            });
+          }
+
           const res = NextResponse.json(
             {
               ok: true,
@@ -646,17 +924,19 @@ export async function POST(req: Request) {
                 company_id: companyIdStr,
                 frequency: existingRes.row.frequency ?? derivedFrequency,
                 status: existingRes.row.status ?? "draft",
-                pay_date: existingRes.row.pay_date ?? pay_date_input,
+                pay_date: existingPayDate ?? canonicalPayDateIso,
                 run_number: computedRunNumber,
                 run_name: safeRunName,
-                period_start: period_start_input,
-                period_end: period_end_input,
+                period_start: period.startIso,
+                period_end: period.endIso,
+                pay_period_start: period.startIso,
+                pay_period_end: period.endIso,
                 pay_schedule_id: pay_schedule_id_input,
                 run_kind: "primary",
                 parent_run_id: null,
                 create_request_id: null,
               },
-              debugSource: "payroll_runs_create_debug_v10_dupe_reuse",
+              debugSource: "payroll_runs_create_debug_v12_dupe_reuse",
             },
             { status: 200 }
           );
@@ -686,7 +966,7 @@ export async function POST(req: Request) {
 
     if (!createdRes || createdRes.error || !createdRes.data) {
       return NextResponse.json(
-        { ok: false, error: lastErr, debugSource: "payroll_runs_create_debug_v10" },
+        { ok: false, error: lastErr, debugSource: "payroll_runs_create_debug_v12" },
         { status: 500 }
       );
     }
@@ -703,16 +983,16 @@ export async function POST(req: Request) {
           ...run,
           run_number: computedRunNumber,
           run_name: safeRunName,
-          period_start: period_start_input,
-          period_end: period_end_input,
+          period_start: run.pay_period_start ?? period.startIso,
+          period_end: run.pay_period_end ?? period.endIso,
+          pay_period_start: run.pay_period_start ?? period.startIso,
+          pay_period_end: run.pay_period_end ?? period.endIso,
           pay_schedule_id: pay_schedule_id_input,
-          pay_period_start: period_start_input,
-          pay_period_end: period_end_input,
           run_kind: "primary",
           parent_run_id: null,
           create_request_id,
         },
-        debugSource: "payroll_runs_create_debug_v10",
+        debugSource: "payroll_runs_create_debug_v12",
       },
       { status: 201 }
     );
@@ -721,7 +1001,7 @@ export async function POST(req: Request) {
     return res;
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_create_debug_v10" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_create_debug_v12" },
       { status: 500 }
     );
   }
