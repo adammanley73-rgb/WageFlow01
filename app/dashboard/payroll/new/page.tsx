@@ -1,417 +1,664 @@
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\payroll\new\page.tsx
-"use client";
+// C:\Users\adamm\Projects\wageflow01\app\api\payroll\runs\route.ts
 
-import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Inter } from "next/font/google";
-import { createClient } from "@/lib/supabase/client";
+import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { randomUUID } from "crypto";
+import { getAdmin } from "@lib/admin";
 
-const inter = Inter({ subsets: ["latin"], display: "swap" });
+export const dynamic = "force-dynamic";
 
-type Frequency = "weekly" | "fortnightly" | "four_weekly" | "monthly";
+type RunsQuery = {
+  frequency?: string | null;
+  taxYearStart?: string | null;
+};
+
+type PostgrestSingleResponse<T> = {
+  data: T | null;
+  error: any | null;
+};
+
+type PayrollRunRow = {
+  id: string;
+  company_id: string;
+  frequency: string | null;
+  status: string | null;
+  pay_date: string | null;
+  pay_date_overridden: boolean | null;
+  pay_date_override_reason: string | null;
+  attached_all_due_employees: boolean | null;
+  created_at?: string | null;
+
+  total_gross_pay?: number | null;
+  total_tax?: number | null;
+  total_ni?: number | null;
+  total_net_pay?: number | null;
+};
 
 type CompanyPayScheduleRow = {
   id: string;
-  frequency: Frequency;
-  pay_date_mode: string;
-  pay_date_param_int: number | null;
-  allow_override: boolean;
+  company_id: string;
+  frequency: string | null;
 };
 
-function normalizeMsg(v: any): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "string") return v.trim();
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
-  if (typeof v === "object") {
-    const m = (v as any)?.message;
-    if (typeof m === "string" && m.trim()) return m.trim();
-    try {
-      return JSON.stringify(v);
-    } catch {
-      return "Unexpected error object";
-    }
-  }
-  return String(v);
+type PostgrestCountResponse = {
+  data: any[] | null;
+  error: any | null;
+  count: number | null;
+};
+
+function normalizeQueryParam(v: string | null) {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  const lower = s.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "all") return null;
+  return s;
 }
 
 function isIsoDateOnly(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
 }
 
-function normalizeFrequency(v: any): Frequency {
-  const raw = String(v ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/-/g, "_");
-
-  if (raw === "weekly") return "weekly";
-  if (raw === "fortnightly") return "fortnightly";
-  if (raw === "four_weekly" || raw === "fourweekly" || raw === "4_weekly" || raw === "four_week") return "four_weekly";
-  if (raw === "monthly") return "monthly";
-  return "monthly";
+function isoToUkDate(iso: string) {
+  const s = String(iso || "").trim();
+  if (!isIsoDateOnly(s)) return s;
+  const parts = s.split("-");
+  const y = parts[0] || "";
+  const m = parts[1] || "";
+  const d = parts[2] || "";
+  return d + "-" + m + "-" + y;
 }
 
-function labelFreq(v: Frequency) {
-  switch (v) {
-    case "weekly":
-      return "Weekly";
-    case "fortnightly":
-      return "Fortnightly";
-    case "four_weekly":
-      return "Four-weekly";
-    case "monthly":
-      return "Monthly";
-  }
+function frequencyLabel(frequency: string) {
+  const f = String(frequency || "").trim();
+  if (f === "weekly") return "Weekly";
+  if (f === "fortnightly") return "Fortnightly";
+  if (f === "four_weekly") return "4-weekly";
+  if (f === "monthly") return "Monthly";
+  return f || "Payroll";
 }
 
-function freqSortKey(v: Frequency): number {
-  switch (v) {
-    case "weekly":
-      return 1;
-    case "fortnightly":
-      return 2;
-    case "four_weekly":
-      return 3;
-    case "monthly":
-      return 4;
-  }
+/* -----------------------
+   Date helpers (UTC, date-only)
+------------------------ */
+
+function parseIsoDateOnlyToUtc(iso: string) {
+  const s = String(iso || "").trim();
+  if (!isIsoDateOnly(s)) throw new Error("Bad date: " + s);
+  const [y, m, d] = s.split("-").map((p) => parseInt(p, 10));
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
 }
 
-function dayNameFromIdx(idx: number): string {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const i = Number.isFinite(idx) ? idx : -1;
-  if (i >= 0 && i <= 6) return days[i];
-  return `Day ${idx}`;
+function diffDaysUtc(a: Date, b: Date) {
+  return Math.round((a.getTime() - b.getTime()) / 86400000);
 }
 
-function payModeLabel(modeRaw: string, param: number | null): string {
-  const mode = String(modeRaw || "").trim().toLowerCase();
+function addDaysUtc(d: Date, days: number) {
+  const out = new Date(d.getTime());
+  out.setUTCDate(out.getUTCDate() + days);
+  return out;
+}
 
-  if (!mode) return "Pay date rule: not set";
+function dateOnlyIsoUtc(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
 
-  if (mode.includes("day_of_week") || mode.includes("dow") || mode.includes("weekday")) {
-    return param === null ? "Pay date rule: weekday" : `Pay date rule: ${dayNameFromIdx(param)}`;
-  }
+function derivePeriodFromPayDate(
+  frequency: string,
+  payDateIso: string | null
+): { startIso: string | null; endIso: string | null } {
+  if (!payDateIso || !isIsoDateOnly(payDateIso)) return { startIso: null, endIso: null };
 
-  if (mode.includes("day_of_month") || mode.includes("dom") || mode.includes("month_day")) {
-    return param === null ? "Pay date rule: day of month" : `Pay date rule: day ${param}`;
-  }
+  const f = String(frequency || "").trim();
+  const payUtc = parseIsoDateOnlyToUtc(payDateIso);
 
-  if (mode.includes("period_end") || mode.includes("end") || mode.includes("offset")) {
-    return param === null ? "Pay date rule: offset" : `Pay date rule: offset ${param} day(s)`;
+  if (f === "monthly") {
+    const y = payUtc.getUTCFullYear();
+    const m = payUtc.getUTCMonth();
+    const start = new Date(Date.UTC(y, m, 1));
+    const end = new Date(Date.UTC(y, m + 1, 0));
+    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
   }
 
-  return param === null ? `Pay date rule: ${mode}` : `Pay date rule: ${mode} (${param})`;
+  const periodDays = f === "weekly" ? 7 : f === "fortnightly" ? 14 : f === "four_weekly" ? 28 : null;
+  if (!periodDays) return { startIso: null, endIso: null };
+
+  const end = payUtc;
+  const start = addDaysUtc(end, -(periodDays - 1));
+  return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
 }
 
-function scheduleLabel(s: CompanyPayScheduleRow) {
-  const freq = labelFreq(s.frequency);
-  const mode = payModeLabel(s.pay_date_mode, s.pay_date_param_int);
-  const override = s.allow_override ? "Override allowed" : "Fixed";
-  return `${freq} (${mode}, ${override})`;
+function getUkTaxYearBounds(taxYearStartParam?: string | null) {
+  if (taxYearStartParam) {
+    const start = new Date(taxYearStartParam);
+    if (Number.isNaN(start.getTime())) {
+      throw new Error("Invalid taxYearStart format, expected YYYY-MM-DD");
+    }
+    const end = new Date(start);
+    end.setFullYear(end.getFullYear() + 1);
+    end.setDate(end.getDate() - 1);
+    return {
+      taxYearStartIso: start.toISOString().slice(0, 10),
+      taxYearEndIso: end.toISOString().slice(0, 10),
+    };
+  }
+
+  const today = new Date();
+  const year = today.getFullYear();
+  const candidateStart = new Date(Date.UTC(year, 3, 6));
+  const start = today >= candidateStart ? candidateStart : new Date(Date.UTC(year - 1, 3, 6));
+
+  const end = new Date(start);
+  end.setFullYear(end.getFullYear() + 1);
+  end.setDate(end.getDate() - 1);
+
+  return {
+    taxYearStartIso: start.toISOString().slice(0, 10),
+    taxYearEndIso: end.toISOString().slice(0, 10),
+  };
 }
 
-type WizardTokenResponse = {
-  ok?: boolean;
-  wizardToken?: string;
-  error?: any;
-  message?: any;
-};
+function makeRunNumberFromPayDate(frequency: string, payDateIso: string | null, taxYearStartIso: string) {
+  if (!payDateIso || !isIsoDateOnly(payDateIso)) return null;
 
-type CreateRunResponse = {
-  ok?: boolean;
-  id?: string;
-  run_id?: string;
-  run?: any;
-  error?: any;
-  message?: any;
-  code?: string;
-  debugSource?: string;
-};
+  const f = String(frequency || "").trim();
+  const payUtc = parseIsoDateOnlyToUtc(payDateIso);
+  const startUtc = parseIsoDateOnlyToUtc(taxYearStartIso);
 
-export default function PayrollNewPage() {
-  const router = useRouter();
+  const diff = diffDaysUtc(payUtc, startUtc);
+  if (diff < 0) return null;
 
-  const [schedules, setSchedules] = useState<CompanyPayScheduleRow[]>([]);
-  const [scheduleId, setScheduleId] = useState<string>("");
+  if (f === "monthly") {
+    const m = payUtc.getUTCMonth();
+    const mth = m >= 3 ? m - 3 + 1 : m + 9 + 1;
+    return `Mth ${mth}`;
+  }
 
-  const [startDate, setStartDate] = useState<string>("");
-  const [endDate, setEndDate] = useState<string>("");
-  const [payDate, setPayDate] = useState<string>("");
+  const period = f === "weekly" ? 7 : f === "fortnightly" ? 14 : f === "four_weekly" ? 28 : null;
+  if (!period) return null;
 
-  const [wizardToken, setWizardToken] = useState<string>("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const n = Math.floor(diff / period) + 1;
 
-  const selectedSchedule = useMemo(() => {
-    if (!scheduleId) return null;
-    return schedules.find((s) => s.id === scheduleId) || null;
-  }, [scheduleId, schedules]);
+  if (f === "weekly") return `wk ${n}`;
+  if (f === "fortnightly") return `fn ${n}`;
+  if (f === "four_weekly") return `4wk ${n}`;
 
-  const derivedFrequency: Frequency | null = useMemo(() => {
-    if (!selectedSchedule) return null;
-    return selectedSchedule.frequency;
-  }, [selectedSchedule]);
+  return null;
+}
 
-  useEffect(() => {
-    let cancelled = false;
+function defaultRunNameFromPayDate(frequency: string, payDateIso: string | null) {
+  const pay = payDateIso ? isoToUkDate(payDateIso) : "unscheduled";
+  return frequencyLabel(frequency) + " payroll (pay date " + pay + ")";
+}
 
-    async function loadSchedules() {
-      try {
-        const supabase = createClient();
+function isMissingColumnError(err: any, columnNames: string[]) {
+  const msg = String(err?.message ?? err ?? "");
+  if (!msg) return false;
 
-        const res = await supabase
-          .from("company_pay_schedules")
-          .select("id, frequency, pay_date_mode, pay_date_param_int, allow_override")
-          .order("updated_at", { ascending: false });
+  const looksLikeMissingColumn =
+    msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column");
 
-        if (cancelled) return;
+  if (!looksLikeMissingColumn) return false;
 
-        if (res.error) {
-          setErr(normalizeMsg(res.error));
-          setSchedules([]);
-          return;
-        }
+  return columnNames.some((c) => msg.includes(c));
+}
 
-        const rows = Array.isArray(res.data) ? (res.data as any[]) : [];
+/* -----------------------
+   GET (list runs)
+------------------------ */
 
-        const cleaned: CompanyPayScheduleRow[] = rows
-          .filter((r) => r && typeof r.id === "string")
-          .map((r) => ({
-            id: String(r.id),
-            frequency: normalizeFrequency(r.frequency),
-            pay_date_mode: String(r.pay_date_mode ?? ""),
-            pay_date_param_int: r.pay_date_param_int === null || r.pay_date_param_int === undefined ? null : Number(r.pay_date_param_int),
-            allow_override: Boolean(r.allow_override),
-          }))
-          .sort((a, b) => {
-            const ak = freqSortKey(a.frequency);
-            const bk = freqSortKey(b.frequency);
-            if (ak !== bk) return ak - bk;
-
-            const am = String(a.pay_date_mode || "").toLowerCase();
-            const bm = String(b.pay_date_mode || "").toLowerCase();
-            if (am !== bm) return am.localeCompare(bm);
-
-            const ap = a.pay_date_param_int === null ? 9999 : a.pay_date_param_int;
-            const bp = b.pay_date_param_int === null ? 9999 : b.pay_date_param_int;
-            if (ap !== bp) return ap - bp;
-
-            if (a.allow_override !== b.allow_override) return a.allow_override ? -1 : 1;
-            return 0;
-          });
-
-        setSchedules(cleaned);
-
-        if (!scheduleId && cleaned.length === 1) {
-          setScheduleId(cleaned[0].id);
-        }
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message ? String(e.message) : "Failed to load company pay schedules");
-      }
+export async function GET(req: Request) {
+  try {
+    const admin = await getAdmin();
+    if (!admin) {
+      return NextResponse.json({ ok: false, error: "Admin client not available" }, { status: 503 });
     }
 
-    loadSchedules();
+    const { client, companyId } = admin;
 
-    return () => {
-      cancelled = true;
+    if (!companyId) {
+      return NextResponse.json(
+        { ok: false, error: "Active company not set. Expected active_company_id or company_id cookie." },
+        { status: 400 }
+      );
+    }
+
+    const { searchParams } = new URL(req.url);
+    const debugMode = normalizeQueryParam(searchParams.get("debug")) === "1";
+
+    const query: RunsQuery = {
+      frequency: normalizeQueryParam(searchParams.get("frequency")),
+      taxYearStart: normalizeQueryParam(searchParams.get("taxYearStart")),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+    const allowedFrequencies = ["weekly", "fortnightly", "four_weekly", "monthly"];
+    const frequency = query.frequency ?? null;
 
-    async function getToken() {
-      try {
-        setErr(null);
+    if (frequency && !allowedFrequencies.includes(frequency)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid frequency, expected one of weekly, fortnightly, four_weekly, monthly" },
+        { status: 400 }
+      );
+    }
 
-        const res = await fetch("/api/payroll/runs/wizard-token", {
-          method: "GET",
-          headers: { "Cache-Control": "no-store" },
+    const { taxYearStartIso, taxYearEndIso } = getUkTaxYearBounds(query.taxYearStart ?? null);
+    const companyIdTrim = String(companyId || "").trim();
+
+    const debugCounts: any = debugMode ? {} : null;
+
+    if (debugMode) {
+      const companyOnlyRes = (await client
+        .from("payroll_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyIdTrim)) as unknown as PostgrestCountResponse;
+
+      const inTaxYearRes = (await client
+        .from("payroll_runs")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyIdTrim)
+        .gte("pay_date", taxYearStartIso)
+        .lte("pay_date", taxYearEndIso)) as unknown as PostgrestCountResponse;
+
+      debugCounts.companyOnly = {
+        count: (companyOnlyRes as any)?.count ?? null,
+        error: (companyOnlyRes as any)?.error ?? null,
+      };
+
+      debugCounts.inTaxYearByPayDate = {
+        count: (inTaxYearRes as any)?.count ?? null,
+        error: (inTaxYearRes as any)?.error ?? null,
+      };
+    }
+
+    let supaQuery = client
+      .from("payroll_runs")
+      .select(
+        [
+          "id",
+          "company_id",
+          "frequency",
+          "status",
+          "pay_date",
+          "pay_date_overridden",
+          "pay_date_override_reason",
+          "attached_all_due_employees",
+          "created_at",
+          "total_gross_pay",
+          "total_tax",
+          "total_ni",
+          "total_net_pay",
+        ].join(", ")
+      )
+      .eq("company_id", companyIdTrim)
+      .gte("pay_date", taxYearStartIso)
+      .lte("pay_date", taxYearEndIso);
+
+    if (frequency) supaQuery = supaQuery.eq("frequency", frequency);
+
+    const listRes = await supaQuery
+      .order("pay_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
+
+    if (listRes.error) {
+      return NextResponse.json({ ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v8" }, { status: 500 });
+    }
+
+    const rows = Array.isArray(listRes.data) ? listRes.data : [];
+
+    const runs = rows.map((row: any) => {
+      const f = String(row.frequency || "").trim();
+      const payDateIso = row.pay_date ?? null;
+
+      const computedRunNumber = makeRunNumberFromPayDate(f, payDateIso, taxYearStartIso);
+      const computedRunName = defaultRunNameFromPayDate(f, payDateIso);
+
+      const derivedPeriod = derivePeriodFromPayDate(f, payDateIso);
+
+      return {
+        id: row.id,
+        company_id: row.company_id,
+
+        run_number: computedRunNumber,
+        run_name: computedRunName,
+        period_start: derivedPeriod.startIso,
+        period_end: derivedPeriod.endIso,
+        pay_schedule_id: null,
+
+        frequency: row.frequency,
+        status: row.status,
+        pay_date: row.pay_date,
+        pay_date_overridden: row.pay_date_overridden,
+        pay_date_override_reason: row.pay_date_override_reason ?? null,
+        attached_all_due_employees: row.attached_all_due_employees,
+
+        totals: {
+          gross: row.total_gross_pay ?? 0,
+          tax: row.total_tax ?? 0,
+          ni: row.total_ni ?? 0,
+          net: row.total_net_pay ?? 0,
+        },
+      };
+    });
+
+    return NextResponse.json({
+      ok: true,
+      debugSource: "payroll_runs_list_debug_v8",
+      query,
+      taxYear: { start: taxYearStartIso, end: taxYearEndIso },
+      activeCompanyId: companyIdTrim,
+      filterMode: "pay_date_in_tax_year",
+      frequencyApplied: frequency,
+      debugCounts,
+      runs,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v8" }, { status: 500 });
+  }
+}
+
+/* -----------------------
+   POST (create run)
+------------------------ */
+
+export async function POST(req: Request) {
+  try {
+    const admin = await getAdmin();
+    if (!admin) {
+      return NextResponse.json({ ok: false, error: "Admin client not available" }, { status: 503 });
+    }
+
+    const { client, companyId } = admin;
+
+    if (!companyId) {
+      return NextResponse.json(
+        { ok: false, error: "Active company not set. Expected active_company_id or company_id cookie." },
+        { status: 400 }
+      );
+    }
+
+    const jar = cookies();
+    const cookieToken = jar.get("wf_payroll_run_wizard")?.value ?? null;
+
+    const body = await req.json().catch(() => null);
+    const wizardToken = typeof body?.wizardToken === "string" ? body.wizardToken.trim() : "";
+
+    if (!cookieToken || !wizardToken || wizardToken !== cookieToken) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Payroll run creation is restricted. Use the Payroll Run Wizard on the Dashboard.",
+          code: "WIZARD_ONLY",
+        },
+        { status: 403 }
+      );
+    }
+
+    const allowedFrequencies = ["weekly", "fortnightly", "four_weekly", "monthly"];
+
+    const pay_schedule_id_input = typeof body?.pay_schedule_id === "string" ? body.pay_schedule_id.trim() : "";
+
+    const period_start_input = typeof body?.period_start === "string" ? body.period_start.trim() : "";
+    const period_end_input = typeof body?.period_end === "string" ? body.period_end.trim() : "";
+
+    const pay_date_raw_1 = typeof body?.pay_date === "string" ? body.pay_date.trim() : "";
+    const pay_date_raw_2 = typeof body?.payment_date === "string" ? body.payment_date.trim() : "";
+    const pay_date_input = (pay_date_raw_1 || pay_date_raw_2 || "").trim();
+
+    const run_name_input = typeof body?.run_name === "string" ? body.run_name.trim() : "";
+
+    if (!pay_schedule_id_input) {
+      return NextResponse.json({ ok: false, error: "Missing pay_schedule_id.", code: "MISSING_PAY_SCHEDULE_ID" }, { status: 400 });
+    }
+
+    if (!isIsoDateOnly(period_start_input) || !isIsoDateOnly(period_end_input)) {
+      return NextResponse.json({ ok: false, error: "Invalid period_start or period_end. Expected YYYY-MM-DD.", code: "BAD_PERIOD" }, { status: 400 });
+    }
+
+    if (!isIsoDateOnly(pay_date_input)) {
+      return NextResponse.json({ ok: false, error: "Invalid pay_date. Expected YYYY-MM-DD.", code: "BAD_PAY_DATE" }, { status: 400 });
+    }
+
+    const scheduleRes = (await client
+      .from("company_pay_schedules")
+      .select("id, company_id, frequency")
+      .eq("id", pay_schedule_id_input)
+      .eq("company_id", String(companyId))
+      .single()) as PostgrestSingleResponse<CompanyPayScheduleRow>;
+
+    if (scheduleRes.error || !scheduleRes.data) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid pay_schedule_id for this company.", code: "BAD_PAY_SCHEDULE_ID", debug: scheduleRes.error ?? null },
+        { status: 400 }
+      );
+    }
+
+    const derivedFrequency = String(scheduleRes.data.frequency || "").trim();
+
+    if (!allowedFrequencies.includes(derivedFrequency)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid derived frequency from schedule. Expected weekly, fortnightly, four_weekly, monthly.", code: "BAD_DERIVED_FREQUENCY", derivedFrequency },
+        { status: 400 }
+      );
+    }
+
+    const { taxYearStartIso } = getUkTaxYearBounds(null);
+    const computedRunNumber = makeRunNumberFromPayDate(derivedFrequency, pay_date_input, taxYearStartIso);
+    const safeRunName = run_name_input || defaultRunNameFromPayDate(derivedFrequency, pay_date_input);
+
+    // If this run number already exists for this company, do not create a duplicate.
+    // Just return the existing run id so the UI can open it.
+    if (computedRunNumber) {
+      const tryWithKind = await client
+        .from("payroll_runs")
+        .select("id, pay_date, frequency, status")
+        .eq("company_id", String(companyId))
+        .eq("run_number", computedRunNumber)
+        .eq("run_kind", "primary")
+        .limit(1);
+
+      let existing = Array.isArray(tryWithKind.data) ? tryWithKind.data[0] : null;
+      let existingErr: any = tryWithKind.error;
+
+      if (existingErr && isMissingColumnError(existingErr, ["run_kind"])) {
+        const tryWithoutKind = await client
+          .from("payroll_runs")
+          .select("id, pay_date, frequency, status")
+          .eq("company_id", String(companyId))
+          .eq("run_number", computedRunNumber)
+          .limit(1);
+
+        existing = Array.isArray(tryWithoutKind.data) ? tryWithoutKind.data[0] : null;
+        existingErr = tryWithoutKind.error;
+      }
+
+      if (existingErr) {
+        return NextResponse.json(
+          { ok: false, error: existingErr, debugSource: "payroll_runs_create_debug_v9_existing_check" },
+          { status: 500 }
+        );
+      }
+
+      if (existing?.id) {
+        const res = NextResponse.json(
+          {
+            ok: true,
+            id: existing.id,
+            run_id: existing.id,
+            reusedExisting: true,
+            run: {
+              id: existing.id,
+              company_id: String(companyId),
+              frequency: existing.frequency ?? derivedFrequency,
+              status: existing.status ?? "draft",
+              pay_date: existing.pay_date ?? pay_date_input,
+              run_number: computedRunNumber,
+              run_name: safeRunName,
+              period_start: period_start_input,
+              period_end: period_end_input,
+              pay_schedule_id: pay_schedule_id_input,
+            },
+            debugSource: "payroll_runs_create_debug_v9_existing_check",
+          },
+          { status: 200 }
+        );
+
+        res.cookies.set("wf_payroll_run_wizard", "", {
+          path: "/",
+          httpOnly: true,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          maxAge: 0,
         });
 
-        const data: WizardTokenResponse | null = await res.json().catch(() => null);
-
-        if (!res.ok) {
-          const msg = normalizeMsg(data?.error || data?.message || `Failed to get wizard token (${res.status})`);
-          if (!cancelled) setErr(msg || `Failed to get wizard token (${res.status})`);
-          return;
-        }
-
-        const token = typeof data?.wizardToken === "string" ? data.wizardToken.trim() : "";
-        if (!token) {
-          if (!cancelled) setErr("Wizard token endpoint returned no token.");
-          return;
-        }
-
-        if (!cancelled) setWizardToken(token);
-      } catch (e: any) {
-        if (!cancelled) setErr(e?.message ? String(e.message) : "Failed to get wizard token");
+        return res;
       }
     }
 
-    getToken();
+    const overrideReason = typeof body?.pay_date_override_reason === "string" ? body.pay_date_override_reason.trim() : "";
+    const pay_date_overridden_input = typeof body?.pay_date_overridden === "boolean" ? body.pay_date_overridden : null;
 
-    return () => {
-      cancelled = true;
+    let pay_date_overridden = pay_date_overridden_input !== null ? !!pay_date_overridden_input : false;
+    if (overrideReason) pay_date_overridden = true;
+
+    const create_request_id = randomUUID();
+
+    const insertRowBase: any = {
+      company_id: companyId,
+      frequency: derivedFrequency,
+      status: "draft",
+      pay_date: pay_date_input,
+      pay_date_overridden,
+      pay_date_override_reason: pay_date_overridden && overrideReason ? overrideReason : null,
+      attached_all_due_employees: false,
+
+      run_kind: "primary",
+      parent_run_id: null,
+      create_request_id,
+      run_name: safeRunName,
     };
-  }, []);
 
-  const dateRangeBad = useMemo(() => {
-    if (!startDate || !endDate) return false;
-    return startDate > endDate;
-  }, [startDate, endDate]);
-
-  const canSubmit = useMemo(() => {
-    if (!wizardToken) return false;
-    if (!scheduleId) return false;
-    if (!startDate || !endDate || !payDate) return false;
-    if (!isIsoDateOnly(startDate) || !isIsoDateOnly(endDate) || !isIsoDateOnly(payDate)) return false;
-    if (startDate > endDate) return false;
-    return true;
-  }, [wizardToken, scheduleId, startDate, endDate, payDate]);
-
-  async function onStart() {
-    if (!canSubmit || busy) return;
-
-    setBusy(true);
-    setErr(null);
-
-    try {
-      const res = await fetch("/api/payroll/runs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          wizardToken,
-          pay_schedule_id: scheduleId,
-          period_start: startDate,
-          period_end: endDate,
-          pay_date: payDate,
-        }),
-      });
-
-      const data: CreateRunResponse | null = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        const msg = normalizeMsg(data?.error || data?.message || `Failed to create payroll run (${res.status})`);
-        setErr(msg || `Failed to create payroll run (${res.status})`);
-        setBusy(false);
-        return;
-      }
-
-      if (!data?.ok) {
-        const msg = normalizeMsg(data?.error || data?.message || "Failed to create payroll run");
-        setErr(msg || "Failed to create payroll run");
-        setBusy(false);
-        return;
-      }
-
-      const runId =
-        (typeof data?.id === "string" && data.id.trim()) ||
-        (typeof data?.run_id === "string" && data.run_id.trim()) ||
-        "";
-
-      if (!runId) {
-        setErr("Payroll run created, but API returned no id. Expected id/run_id.");
-        setBusy(false);
-        return;
-      }
-
-      router.push(`/dashboard/payroll/${runId}`);
-    } catch (e: any) {
-      setErr(e?.message ? String(e.message) : "Failed to create payroll run");
-      setBusy(false);
+    if (computedRunNumber) {
+      insertRowBase.run_number = computedRunNumber;
     }
+
+    const rowVariants: any[] = [
+      {
+        ...insertRowBase,
+        pay_schedule_id: pay_schedule_id_input,
+        pay_period_start: period_start_input,
+        pay_period_end: period_end_input,
+        period_start: period_start_input,
+        period_end: period_end_input,
+      },
+      {
+        ...insertRowBase,
+        pay_schedule_id: pay_schedule_id_input,
+        pay_period_start: period_start_input,
+        pay_period_end: period_end_input,
+      },
+      {
+        ...insertRowBase,
+        pay_schedule_id: pay_schedule_id_input,
+        period_start: period_start_input,
+        period_end: period_end_input,
+      },
+      {
+        ...insertRowBase,
+      },
+    ];
+
+    const selectCols = [
+      "id",
+      "company_id",
+      "frequency",
+      "status",
+      "pay_date",
+      "pay_date_overridden",
+      "pay_date_override_reason",
+      "attached_all_due_employees",
+      "created_at",
+      "total_gross_pay",
+      "total_tax",
+      "total_ni",
+      "total_net_pay",
+    ].join(", ");
+
+    let createdRes: PostgrestSingleResponse<PayrollRunRow> | null = null;
+    let lastErr: any = null;
+
+    for (const row of rowVariants) {
+      const attempt = (await client.from("payroll_runs").insert(row).select(selectCols).single()) as PostgrestSingleResponse<PayrollRunRow>;
+
+      if (!attempt.error && attempt.data) {
+        createdRes = attempt;
+        lastErr = null;
+        break;
+      }
+
+      lastErr = attempt.error;
+
+      const missingCols = [
+        "pay_schedule_id",
+        "pay_period_start",
+        "pay_period_end",
+        "period_start",
+        "period_end",
+        "run_number",
+        "run_name",
+        "run_kind",
+        "parent_run_id",
+        "create_request_id",
+      ];
+
+      if (!isMissingColumnError(attempt.error, missingCols)) {
+        break;
+      }
+    }
+
+    if (!createdRes || createdRes.error || !createdRes.data) {
+      return NextResponse.json(
+        { ok: false, error: lastErr, debugSource: "payroll_runs_create_debug_v9_existing_check" },
+        { status: 500 }
+      );
+    }
+
+    const run = createdRes.data;
+
+    const res = NextResponse.json(
+      {
+        ok: true,
+        id: run.id,
+        run_id: run.id,
+        run: {
+          ...run,
+          run_number: computedRunNumber,
+          run_name: safeRunName,
+          period_start: period_start_input,
+          period_end: period_end_input,
+          pay_schedule_id: pay_schedule_id_input,
+          pay_period_start: period_start_input,
+          pay_period_end: period_end_input,
+          run_kind: "primary",
+          parent_run_id: null,
+          create_request_id,
+        },
+        debugSource: "payroll_runs_create_debug_v9_existing_check",
+      },
+      { status: 201 }
+    );
+
+    res.cookies.set("wf_payroll_run_wizard", "", {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 0,
+    });
+
+    return res;
+  } catch (err: any) {
+    return NextResponse.json(
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_create_debug_v9_existing_check" },
+      { status: 500 }
+    );
   }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <h2 className="text-xl font-semibold text-neutral-900">Payroll Run Wizard</h2>
-      <p className="text-sm text-neutral-700">Choose a company pay schedule, enter your dates, then start the run.</p>
-
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <label className="block sm:col-span-2">
-          <span className="text-xs text-neutral-600">Pay schedule</span>
-          <select
-            className="mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm"
-            value={scheduleId}
-            onChange={(e) => setScheduleId(e.target.value)}
-          >
-            <option value="">Select a pay schedule</option>
-            {schedules.map((s) => (
-              <option key={s.id} value={s.id}>
-                {scheduleLabel(s)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="block">
-          <span className="text-xs text-neutral-600">Pay period start</span>
-          <input
-            type="date"
-            className="mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-xs text-neutral-600">Pay period end</span>
-          <input
-            type="date"
-            className="mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-xs text-neutral-600">Pay date</span>
-          <input
-            type="date"
-            className="mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm"
-            value={payDate}
-            onChange={(e) => setPayDate(e.target.value)}
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-xs text-neutral-600">Frequency (from schedule)</span>
-          <input
-            type="text"
-            readOnly
-            className={`${inter.className} mt-1 w-full rounded border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm font-extrabold text-neutral-900`}
-            value={derivedFrequency ? labelFreq(derivedFrequency) : ""}
-            placeholder={scheduleId ? "Loading..." : "Select a schedule"}
-          />
-        </label>
-      </div>
-
-      {!wizardToken ? <div className="mt-3 text-sm text-neutral-600">Loading wizard token...</div> : null}
-
-      {dateRangeBad ? (
-        <div className="mt-3 text-sm text-red-700">Pay period start must be on or before pay period end.</div>
-      ) : null}
-
-      {err ? (
-        <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>
-      ) : null}
-
-      <div className="pt-6">
-        <button
-          className={
-            "inline-flex items-center rounded-full bg-[#0f3c85] px-5 py-2 text-sm font-semibold text-white " +
-            (canSubmit && !busy ? "hover:opacity-95" : "opacity-60 cursor-not-allowed")
-          }
-          disabled={!canSubmit || busy}
-          onClick={onStart}
-        >
-          {busy ? "Starting..." : "Start payroll run"}
-        </button>
-      </div>
-    </div>
-  );
 }
