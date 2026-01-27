@@ -12,6 +12,7 @@ type Frequency = "weekly" | "fortnightly" | "four_weekly" | "monthly";
 
 type CompanyPayScheduleRow = {
   id: string;
+  company_id?: string | null;
   frequency: Frequency;
   pay_date_mode: string;
   pay_date_param_int: number | null;
@@ -78,30 +79,9 @@ function freqSortKey(v: Frequency): number {
   }
 }
 
-function dayNameFromIdx(idx: number): string {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const i = Number.isFinite(idx) ? idx : -1;
-  if (i >= 0 && i <= 6) return days[i];
-  return `Day ${idx}`;
-}
-
 function payModeLabel(modeRaw: string, param: number | null): string {
   const mode = String(modeRaw || "").trim().toLowerCase();
-
   if (!mode) return "Pay date rule: not set";
-
-  if (mode.includes("day_of_week") || mode.includes("dow") || mode.includes("weekday")) {
-    return param === null ? "Pay date rule: weekday" : `Pay date rule: ${dayNameFromIdx(param)}`;
-  }
-
-  if (mode.includes("day_of_month") || mode.includes("dom") || mode.includes("month_day")) {
-    return param === null ? "Pay date rule: day of month" : `Pay date rule: day ${param}`;
-  }
-
-  if (mode.includes("period_end") || mode.includes("end") || mode.includes("offset")) {
-    return param === null ? "Pay date rule: offset" : `Pay date rule: offset ${param} day(s)`;
-  }
-
   return param === null ? `Pay date rule: ${mode}` : `Pay date rule: ${mode} (${param})`;
 }
 
@@ -119,20 +99,54 @@ type WizardTokenResponse = {
   message?: any;
 };
 
+type ActiveCompanyResponse = {
+  ok?: boolean;
+  companyId?: string;
+  company_id?: string;
+  id?: string;
+  error?: any;
+  message?: any;
+};
+
 type CreateRunResponse = {
   ok?: boolean;
   id?: string;
   run_id?: string;
   run?: any;
+  reusedExisting?: boolean;
   error?: any;
   message?: any;
   code?: string;
   debugSource?: string;
 };
 
+async function fetchActiveCompanyId(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/active-company", {
+      method: "GET",
+      headers: { "Cache-Control": "no-store" },
+    });
+
+    const data: ActiveCompanyResponse | null = await res.json().catch(() => null);
+
+    if (!res.ok) return null;
+
+    const raw =
+      (typeof data?.companyId === "string" && data.companyId.trim()) ||
+      (typeof data?.company_id === "string" && data.company_id.trim()) ||
+      (typeof data?.id === "string" && data.id.trim()) ||
+      "";
+
+    return raw || null;
+  } catch {
+    return null;
+  }
+}
+
 export default function PayrollNewPage() {
   const router = useRouter();
 
+  const [activeCompanyId, setActiveCompanyId] = useState<string>("");
   const [schedules, setSchedules] = useState<CompanyPayScheduleRow[]>([]);
   const [scheduleId, setScheduleId] = useState<string>("");
 
@@ -143,6 +157,7 @@ export default function PayrollNewPage() {
   const [wizardToken, setWizardToken] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const selectedSchedule = useMemo(() => {
     if (!scheduleId) return null;
@@ -157,13 +172,30 @@ export default function PayrollNewPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadSchedules() {
+    async function initCompanyAndSchedules() {
       try {
+        setErr(null);
+        setInfo(null);
+
+        const cid = await fetchActiveCompanyId();
+
+        if (cancelled) return;
+
+        if (!cid) {
+          setErr("Active company not set. Go to Dashboard and select a company.");
+          setSchedules([]);
+          setActiveCompanyId("");
+          return;
+        }
+
+        setActiveCompanyId(cid);
+
         const supabase = createClient();
 
         const res = await supabase
           .from("company_pay_schedules")
-          .select("id, frequency, pay_date_mode, pay_date_param_int, allow_override")
+          .select("id, company_id, frequency, pay_date_mode, pay_date_param_int, allow_override")
+          .eq("company_id", cid)
           .order("updated_at", { ascending: false });
 
         if (cancelled) return;
@@ -180,6 +212,7 @@ export default function PayrollNewPage() {
           .filter((r) => r && typeof r.id === "string")
           .map((r) => ({
             id: String(r.id),
+            company_id: typeof r.company_id === "string" ? r.company_id : null,
             frequency: normalizeFrequency(r.frequency),
             pay_date_mode: String(r.pay_date_mode ?? ""),
             pay_date_param_int: r.pay_date_param_int === null || r.pay_date_param_int === undefined ? null : Number(r.pay_date_param_int),
@@ -189,22 +222,12 @@ export default function PayrollNewPage() {
             const ak = freqSortKey(a.frequency);
             const bk = freqSortKey(b.frequency);
             if (ak !== bk) return ak - bk;
-
-            const am = String(a.pay_date_mode || "").toLowerCase();
-            const bm = String(b.pay_date_mode || "").toLowerCase();
-            if (am !== bm) return am.localeCompare(bm);
-
-            const ap = a.pay_date_param_int === null ? 9999 : a.pay_date_param_int;
-            const bp = b.pay_date_param_int === null ? 9999 : b.pay_date_param_int;
-            if (ap !== bp) return ap - bp;
-
-            if (a.allow_override !== b.allow_override) return a.allow_override ? -1 : 1;
             return 0;
           });
 
         setSchedules(cleaned);
 
-        if (!scheduleId && cleaned.length === 1) {
+        if (!scheduleId && cleaned.length > 0) {
           setScheduleId(cleaned[0].id);
         }
       } catch (e: any) {
@@ -212,7 +235,7 @@ export default function PayrollNewPage() {
       }
     }
 
-    loadSchedules();
+    initCompanyAndSchedules();
 
     return () => {
       cancelled = true;
@@ -266,20 +289,24 @@ export default function PayrollNewPage() {
 
   const canSubmit = useMemo(() => {
     if (!wizardToken) return false;
+    if (!activeCompanyId) return false;
     if (!scheduleId) return false;
     if (!startDate || !endDate || !payDate) return false;
     if (!isIsoDateOnly(startDate) || !isIsoDateOnly(endDate) || !isIsoDateOnly(payDate)) return false;
     if (startDate > endDate) return false;
     return true;
-  }, [wizardToken, scheduleId, startDate, endDate, payDate]);
+  }, [wizardToken, activeCompanyId, scheduleId, startDate, endDate, payDate]);
 
   async function onStart() {
     if (!canSubmit || busy) return;
 
     setBusy(true);
     setErr(null);
+    setInfo(null);
 
     try {
+      const runName = derivedFrequency ? `${labelFreq(derivedFrequency)} run ${payDate}` : `Payroll run ${payDate}`;
+
       const res = await fetch("/api/payroll/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -289,6 +316,7 @@ export default function PayrollNewPage() {
           period_start: startDate,
           period_end: endDate,
           pay_date: payDate,
+          run_name: runName,
         }),
       });
 
@@ -319,7 +347,11 @@ export default function PayrollNewPage() {
         return;
       }
 
-      router.push(`/dashboard/payroll/${runId}`);
+      setInfo(data?.reusedExisting ? "Payroll run already exists. Opening it." : "Payroll run created. Opening it.");
+
+      setTimeout(() => {
+        router.push(`/dashboard/payroll/${runId}`);
+      }, 350);
     } catch (e: any) {
       setErr(e?.message ? String(e.message) : "Failed to create payroll run");
       setBusy(false);
@@ -339,7 +371,7 @@ export default function PayrollNewPage() {
             value={scheduleId}
             onChange={(e) => setScheduleId(e.target.value)}
           >
-            <option value="">Select a pay schedule</option>
+            <option value="">{schedules.length ? "Select a pay schedule" : "No schedules for this company"}</option>
             {schedules.map((s) => (
               <option key={s.id} value={s.id}>
                 {scheduleLabel(s)}
@@ -392,13 +424,11 @@ export default function PayrollNewPage() {
 
       {!wizardToken ? <div className="mt-3 text-sm text-neutral-600">Loading wizard token...</div> : null}
 
-      {dateRangeBad ? (
-        <div className="mt-3 text-sm text-red-700">Pay period start must be on or before pay period end.</div>
-      ) : null}
+      {dateRangeBad ? <div className="mt-3 text-sm text-red-700">Pay period start must be on or before pay period end.</div> : null}
 
-      {err ? (
-        <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div>
-      ) : null}
+      {info ? <div className="mt-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">{info}</div> : null}
+
+      {err ? <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div> : null}
 
       <div className="pt-6">
         <button
