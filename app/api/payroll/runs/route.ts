@@ -214,7 +214,7 @@ function isUniqueViolation(err: any) {
   return false;
 }
 
-function clearWizardCookie(res: NextResponse) {
+function clearWizardCookie(res: any) {
   res.cookies.set("wf_payroll_run_wizard", "", {
     path: "/",
     httpOnly: true,
@@ -500,7 +500,6 @@ export async function POST(req: Request) {
     const computedRunNumber = makeRunNumberFromPayDate(derivedFrequency, pay_date_input, taxYearStartIso);
     const safeRunName = run_name_input || defaultRunNameFromPayDate(derivedFrequency, pay_date_input);
 
-    // Get-or-create (pre-check): if this run number already exists for this company, return it.
     if (computedRunNumber) {
       const existingRes = await findExistingRunByRunNumber(client, companyIdStr, computedRunNumber);
       if (existingRes.error) {
@@ -549,7 +548,6 @@ export async function POST(req: Request) {
 
     const create_request_id = randomUUID();
 
-    // Always set run_kind + parent_run_id to satisfy payroll_runs constraints.
     const insertRowBase: any = {
       company_id: companyIdStr,
       frequency: derivedFrequency,
@@ -626,7 +624,6 @@ export async function POST(req: Request) {
 
       lastErr = attempt.error;
 
-      // If a unique collision happens (race or seeded data), reuse the existing run.
       if (computedRunNumber && isUniqueViolation(attempt.error)) {
         const existingRes = await findExistingRunByRunNumber(client, companyIdStr, computedRunNumber);
 
