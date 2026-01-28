@@ -49,20 +49,12 @@ type PayScheduleRow = {
   id: string;
   company_id: string;
 
-  name: string | null;
   frequency: string | null;
 
-  pay_day_of_week: number | null; // 1=Mon..7=Sun
-  pay_day_of_month: number | null; // 1..28
-  cycle_anchor_pay_date: string | null;
-
-  pay_timing: string | null; // arrears/current/advance/flexible
-  pay_date_adjustment: string | null; // previous_working_day/next_working_day/none
-  pay_date_offset_days: number | null;
-
-  is_template: boolean | null;
-  is_active: boolean | null;
-  is_flexible: boolean | null;
+  // company_pay_schedules model
+  pay_date_mode: string | null; // offset_from_period_end | fixed_calendar_day | fixed_weekday
+  pay_date_param_int: number | null; // mode parameter
+  allow_override: boolean | null;
 };
 
 function normalizeQueryParam(v: string | null) {
@@ -129,7 +121,7 @@ function mondayOfWeekUtc(d: Date) {
   return out;
 }
 
-function adjustWorkingDayUtc(d: Date, modeRaw: string | null) {
+function adjustWorkingDayUtc(d: Date, modeRaw: string) {
   const mode = String(modeRaw || "previous_working_day").trim().toLowerCase();
   if (mode === "none") return d;
 
@@ -165,20 +157,22 @@ function computeMonthlyPayDateUtc(monthAnyDay: Date, payDayOfMonth: number | nul
     return new Date(Date.UTC(y, m, payDayOfMonth));
   }
 
-  // If day-of-month not set, treat as "last day of month"
+  // last day of month
   return new Date(Date.UTC(y, m + 1, 0));
 }
 
-function normalizeTiming(v: any) {
-  const s = String(v || "arrears").trim().toLowerCase();
-  if (s === "arrears" || s === "current" || s === "advance" || s === "flexible") return s;
-  return "arrears";
+function periodDaysForFrequency(frequency: string) {
+  const f = String(frequency || "").trim();
+  if (f === "weekly") return 7;
+  if (f === "fortnightly") return 14;
+  if (f === "four_weekly") return 28;
+  return 7;
 }
 
-function normalizeAdjustment(v: any) {
-  const s = String(v || "previous_working_day").trim().toLowerCase();
-  if (s === "previous_working_day" || s === "next_working_day" || s === "none") return s;
-  return "previous_working_day";
+function normalizePayDateMode(v: any) {
+  const s = String(v || "offset_from_period_end").trim().toLowerCase();
+  if (s === "offset_from_period_end" || s === "fixed_calendar_day" || s === "fixed_weekday") return s;
+  return "offset_from_period_end";
 }
 
 function computeCanonicalPayDateOrError(args: {
@@ -193,68 +187,55 @@ function computeCanonicalPayDateOrError(args: {
   }
 
   const frequency = String(s.frequency || "").trim();
-  const timing = normalizeTiming(s.pay_timing);
-  const adjustment = normalizeAdjustment(s.pay_date_adjustment);
-  const offsetDays = Number.isFinite(Number(s.pay_date_offset_days)) ? Number(s.pay_date_offset_days) : 0;
+  const mode = normalizePayDateMode(s.pay_date_mode);
+  const param = Number.isFinite(Number(s.pay_date_param_int)) ? Number(s.pay_date_param_int) : 0;
 
   const inputUtc = parseIsoDateOnlyToUtc(inputIso);
 
-  // Monthly: compute pay date for that month (or last day if day-of-month not set)
-  if (frequency === "monthly") {
-    const base = computeMonthlyPayDateUtc(inputUtc, s.pay_day_of_month);
-    const withOffset = addDaysUtc(base, offsetDays);
-    const adjusted = adjustWorkingDayUtc(withOffset, adjustment);
+  // Default policy: avoid weekend pay dates unless you explicitly decide otherwise.
+  const workingDayAdjustment = "previous_working_day";
+
+  if (mode === "fixed_calendar_day") {
+    // For monthly schedules, param is 1..28 (else last day of month)
+    const base = computeMonthlyPayDateUtc(inputUtc, param || null);
+    const adjusted = adjustWorkingDayUtc(base, workingDayAdjustment);
     return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
   }
 
-  // Weekly-like: compute payday for week containing the provided date
-  const scheduleDow = s.pay_day_of_week || 5;
-  let weekPayday = computeWeekPaydayUtc(inputUtc, scheduleDow);
-
-  // Enforce pay cycle for fortnightly/four_weekly when not flexible
-  if ((frequency === "fortnightly" || frequency === "four_weekly") && !(s.is_flexible === true)) {
-    const period = frequency === "fortnightly" ? 14 : 28;
-
-    const anchorIso = String(s.cycle_anchor_pay_date || "").trim();
-    if (!anchorIso || !isIsoDateOnly(anchorIso)) {
-      return {
-        ok: false,
-        code: "MISSING_CYCLE_ANCHOR",
-        error: "Pay schedule is missing cycle_anchor_pay_date (required for fortnightly/four_weekly).",
-      };
-    }
-
-    const anchorUtc = parseIsoDateOnlyToUtc(anchorIso);
-    const anchorPayday = computeWeekPaydayUtc(anchorUtc, scheduleDow);
-
-    const diff = diffDaysUtc(weekPayday, anchorPayday);
-    const rem = ((diff % period) + period) % period;
-
-    if (rem !== 0) {
-      const prev = addDaysUtc(weekPayday, -rem);
-      const next = addDaysUtc(weekPayday, period - rem);
-
-      return {
-        ok: false,
-        code: "NOT_A_PAY_WEEK",
-        error: "Selected week is not a pay week for this schedule cycle.",
-        details: {
-          requested_week_payday: dateOnlyIsoUtc(weekPayday),
-          previous_valid_payday: dateOnlyIsoUtc(prev),
-          next_valid_payday: dateOnlyIsoUtc(next),
-          schedule_frequency: frequency,
-          cycle_anchor_pay_date: anchorIso,
-          schedule_pay_day_of_week: scheduleDow,
-          schedule_pay_date_adjustment: adjustment,
-          schedule_pay_date_offset_days: offsetDays,
-          pay_timing: timing,
-        },
-      };
-    }
+  if (mode === "fixed_weekday") {
+    // Param is 1=Mon..7=Sun. Compute payday in the week containing the input date.
+    const dow = param >= 1 && param <= 7 ? param : 5;
+    const base = computeWeekPaydayUtc(inputUtc, dow);
+    const adjusted = adjustWorkingDayUtc(base, workingDayAdjustment);
+    return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
   }
 
-  const withOffset = addDaysUtc(weekPayday, offsetDays);
-  const adjusted = adjustWorkingDayUtc(withOffset, adjustment);
+  // offset_from_period_end (default)
+  const offsetDays = param;
+  const candidateEnd = addDaysUtc(inputUtc, -offsetDays);
+
+  // Monthly: period end is month end, then pay date is offset from it.
+  if (frequency === "monthly") {
+    const periodEnd = computeMonthlyPayDateUtc(candidateEnd, null);
+    const pay = addDaysUtc(periodEnd, offsetDays);
+    const adjusted = adjustWorkingDayUtc(pay, workingDayAdjustment);
+    return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
+  }
+
+  const pd = periodDaysForFrequency(frequency);
+
+  // Weekly: align period end to Sunday of the week containing the candidateEnd.
+  if (frequency === "weekly") {
+    const end = addDaysUtc(mondayOfWeekUtc(candidateEnd), 6);
+    const pay = addDaysUtc(end, offsetDays);
+    const adjusted = adjustWorkingDayUtc(pay, workingDayAdjustment);
+    return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
+  }
+
+  // Fortnightly/four_weekly: treat candidateEnd as the period end and back-calc period start.
+  // This keeps the API deterministic without requiring an anchor column in company_pay_schedules.
+  const pay = addDaysUtc(candidateEnd, offsetDays);
+  const adjusted = adjustWorkingDayUtc(pay, workingDayAdjustment);
   return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
 }
 
@@ -264,49 +245,49 @@ function computePayPeriodFromSchedule(args: {
 }): { startIso: string; endIso: string } {
   const s = args.schedule;
   const frequency = String(s.frequency || "").trim();
-  const timing = normalizeTiming(s.pay_timing);
+  const mode = normalizePayDateMode(s.pay_date_mode);
+  const param = Number.isFinite(Number(s.pay_date_param_int)) ? Number(s.pay_date_param_int) : 0;
 
   const payUtc = parseIsoDateOnlyToUtc(args.canonicalPayDateIso);
 
-  if (frequency === "monthly") {
-    let base = payUtc;
+  if (mode === "offset_from_period_end") {
+    const offsetDays = param;
+    const candidateEnd = addDaysUtc(payUtc, -offsetDays);
 
-    if (timing === "arrears") {
-      const y = payUtc.getUTCFullYear();
-      const m = payUtc.getUTCMonth();
-      base = new Date(Date.UTC(y, m - 1, 1));
-    } else if (timing === "advance") {
-      const y = payUtc.getUTCFullYear();
-      const m = payUtc.getUTCMonth();
-      base = new Date(Date.UTC(y, m + 1, 1));
+    if (frequency === "monthly") {
+      const y = candidateEnd.getUTCFullYear();
+      const m = candidateEnd.getUTCMonth();
+      const start = new Date(Date.UTC(y, m, 1));
+      const end = new Date(Date.UTC(y, m + 1, 0));
+      return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
     }
 
-    const y = base.getUTCFullYear();
-    const m = base.getUTCMonth();
+    const pd = periodDaysForFrequency(frequency);
+
+    if (frequency === "weekly") {
+      const end = addDaysUtc(mondayOfWeekUtc(candidateEnd), 6);
+      const start = mondayOfWeekUtc(end);
+      return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+    }
+
+    const end = candidateEnd;
+    const start = addDaysUtc(end, -(pd - 1));
+    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+  }
+
+  // fixed_calendar_day or fixed_weekday:
+  // Default to period being the calendar month for monthly, otherwise a simple back-calc window.
+  if (frequency === "monthly") {
+    const y = payUtc.getUTCFullYear();
+    const m = payUtc.getUTCMonth();
     const start = new Date(Date.UTC(y, m, 1));
     const end = new Date(Date.UTC(y, m + 1, 0));
     return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
   }
 
-  const periodDays = frequency === "weekly" ? 7 : frequency === "fortnightly" ? 14 : frequency === "four_weekly" ? 28 : 7;
-  const payWeekMon = mondayOfWeekUtc(payUtc);
-
-  if (timing === "advance") {
-    const start = payWeekMon;
-    const end = addDaysUtc(start, periodDays - 1);
-    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
-  }
-
-  if (timing === "current") {
-    const payWeekSun = addDaysUtc(payWeekMon, 6);
-    const end = payWeekSun;
-    const start = addDaysUtc(end, -(periodDays - 1));
-    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
-  }
-
-  // default arrears
-  const end = addDaysUtc(payWeekMon, -1); // Sunday before pay week
-  const start = addDaysUtc(end, -(periodDays - 1));
+  const pd = periodDaysForFrequency(frequency);
+  const end = addDaysUtc(mondayOfWeekUtc(payUtc), -1);
+  const start = addDaysUtc(end, -(pd - 1));
   return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
 }
 
@@ -377,8 +358,7 @@ function isMissingColumnError(err: any, columnNames: string[]) {
   const msg = String(err?.message ?? err ?? "");
   if (!msg) return false;
 
-  const looksLikeMissingColumn =
-    msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column");
+  const looksLikeMissingColumn = msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("column");
 
   if (!looksLikeMissingColumn) return false;
 
@@ -553,9 +533,7 @@ export async function GET(req: Request) {
 
     if (frequency) supaQuery = supaQuery.eq("frequency", frequency);
 
-    const listRes = await supaQuery
-      .order("pay_date", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
+    const listRes = await supaQuery.order("pay_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
 
     if (listRes.error) {
       return NextResponse.json({ ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v12" }, { status: 500 });
@@ -673,24 +651,8 @@ export async function POST(req: Request) {
     const companyIdStr = String(companyId || "").trim();
 
     const scheduleRes = (await client
-      .from("pay_schedules")
-      .select(
-        [
-          "id",
-          "company_id",
-          "name",
-          "frequency",
-          "pay_day_of_week",
-          "pay_day_of_month",
-          "cycle_anchor_pay_date",
-          "pay_timing",
-          "pay_date_adjustment",
-          "pay_date_offset_days",
-          "is_template",
-          "is_active",
-          "is_flexible",
-        ].join(", ")
-      )
+      .from("company_pay_schedules")
+      .select(["id", "company_id", "frequency", "pay_date_mode", "pay_date_param_int", "allow_override"].join(", "))
       .eq("id", pay_schedule_id_input)
       .eq("company_id", companyIdStr)
       .single()) as PostgrestSingleResponse<PayScheduleRow>;
@@ -703,20 +665,6 @@ export async function POST(req: Request) {
     }
 
     const schedule = scheduleRes.data;
-
-    if (schedule.is_template === true) {
-      return NextResponse.json(
-        { ok: false, error: "Pay schedule is a template and cannot be used for payroll runs.", code: "SCHEDULE_IS_TEMPLATE" },
-        { status: 400 }
-      );
-    }
-
-    if (schedule.is_active === false) {
-      return NextResponse.json(
-        { ok: false, error: "Pay schedule is not active.", code: "SCHEDULE_INACTIVE" },
-        { status: 400 }
-      );
-    }
 
     const derivedFrequency = String(schedule.frequency || "").trim();
 
@@ -749,8 +697,7 @@ export async function POST(req: Request) {
     const { taxYearStartIso } = getUkTaxYearBounds(null);
     const computedRunNumber = makeRunNumberFromPayDate(derivedFrequency, canonicalPayDateIso, taxYearStartIso);
 
-    const scheduleName = String(schedule.name || "").trim();
-    const safeRunName = run_name_input || (scheduleName ? `${scheduleName} payroll (pay date ${isoToUkDate(canonicalPayDateIso)})` : defaultRunNameFromPayDate(derivedFrequency, canonicalPayDateIso));
+    const safeRunName = run_name_input || defaultRunNameFromPayDate(derivedFrequency, canonicalPayDateIso);
 
     if (computedRunNumber) {
       const existingRes = await findExistingRunByRunNumber(client, companyIdStr, computedRunNumber);
