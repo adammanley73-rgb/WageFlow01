@@ -1,3 +1,5 @@
+﻿/* C:\Users\adamm\Projects\wageflow01\app\lib\data\employees.ts */
+
 export interface Employee {
   id: string;
   employeeNumber: string;
@@ -10,8 +12,8 @@ export interface Employee {
   annualSalary: number;
   hireDate: string;
   status: string;
-  employmentType: 'full_time' | 'part_time' | 'contract' | 'temporary' | 'apprentice';
-  autoEnrollmentStatus: 'eligible' | 'entitled' | 'non_eligible';
+  employmentType: "full_time" | "part_time" | "contract" | "temporary" | "apprentice";
+  autoEnrollmentStatus: "eligible" | "entitled" | "non_eligible";
   payScheduleId?: string;
   address?: {
     line1: string;
@@ -25,154 +27,148 @@ export interface Employee {
 export interface PaySchedule {
   id: string;
   name: string;
-  // include common aliases so pages using 'fortnightly' or 'four_weekly' still type-check
-  frequency: 'weekly' | 'bi_weekly' | 'fortnightly' | 'four_weekly' | 'monthly';
-  // 1-7 (Monday-Sunday)
+  frequency: "weekly" | "bi_weekly" | "fortnightly" | "four_weekly" | "monthly";
   payDayOfWeek?: number;
-  // 1-31
   payDayOfMonth?: number;
   description?: string;
   isActive: boolean;
 }
 
-// PAY SCHEDULES DATA - Exported
 export const PAY_SCHEDULES: PaySchedule[] = [
   {
-    id: '11111111-1111-1111-1111-111111111111',
-    name: 'Monthly Salary',
-    frequency: 'monthly',
+    id: "demo-monthly-25th",
+    name: "Monthly - 25th",
+    frequency: "monthly",
     payDayOfMonth: 25,
-    description: 'Salaried staff paid monthly on 25th',
+    description: "Demo schedule paid monthly on the 25th",
     isActive: true,
   },
   {
-    id: '22222222-2222-2222-2222-222222222222',
-    name: 'Weekly Operations',
-    frequency: 'weekly',
-    payDayOfWeek: 5, // Friday
-    description: 'Operations staff paid weekly on Friday',
+    id: "demo-weekly-friday",
+    name: "Weekly - Friday",
+    frequency: "weekly",
+    payDayOfWeek: 5,
+    description: "Demo schedule paid weekly on Friday",
     isActive: true,
   },
   {
-    id: '33333333-3333-3333-3333-333333333333',
-    name: 'Bi-Weekly Mixed',
-    frequency: 'bi_weekly', // keep canonical value; UI can show "Fortnightly"
-    payDayOfWeek: 5, // Every other Friday (handled by schedule logic)
-    description: 'Mixed departments paid every other Friday',
+    id: "demo-fortnightly-friday",
+    name: "Fortnightly - Friday",
+    frequency: "fortnightly",
+    payDayOfWeek: 5,
+    description: "Demo schedule paid every other Friday",
     isActive: true,
   },
 ];
 
-// UPDATED EMPLOYEE DATA WITH PAY SCHEDULES
 export const DEMO_EMPLOYEES: Employee[] = [
   {
-    id: 'EMP001',
-    employeeNumber: 'EMP001',
-    firstName: 'Sarah',
-    lastName: 'Johnson',
-    email: 'sarah.johnson@company.co.uk',
-    phone: '07700 900123',
-    dateOfBirth: '1990-03-15',
-    nationalInsurance: 'AB123456C',
+    id: "EMP001",
+    employeeNumber: "EMP001",
+    firstName: "Sarah",
+    lastName: "Johnson",
+    email: "sarah.johnson@company.co.uk",
+    phone: "07700 900123",
+    dateOfBirth: "1990-03-15",
+    nationalInsurance: "AB123456C",
     annualSalary: 35000,
-    hireDate: '2023-01-15',
-    status: 'active',
-    employmentType: 'full_time',
-    autoEnrollmentStatus: 'eligible',
-    payScheduleId: '11111111-1111-1111-1111-111111111111', // Monthly
+    hireDate: "2023-01-15",
+    status: "active",
+    employmentType: "full_time",
+    autoEnrollmentStatus: "eligible",
+    payScheduleId: "demo-monthly-25th",
     address: {
-      line1: '123 Main Street',
-      city: 'London',
-      postcode: 'SW1A 1AA',
+      line1: "123 Main Street",
+      city: "London",
+      postcode: "SW1A 1AA",
     },
   },
   {
-    id: 'EMP002',
-    employeeNumber: 'EMP002',
-    firstName: 'James',
-    lastName: 'Wilson',
-    email: 'james.wilson@company.co.uk',
-    phone: '07700 900124',
-    dateOfBirth: '1988-07-22',
-    nationalInsurance: 'CD234567D',
+    id: "EMP002",
+    employeeNumber: "EMP002",
+    firstName: "James",
+    lastName: "Wilson",
+    email: "james.wilson@company.co.uk",
+    phone: "07700 900124",
+    dateOfBirth: "1988-07-22",
+    nationalInsurance: "CD234567D",
     annualSalary: 28000,
-    hireDate: '2023-02-01',
-    status: 'active',
-    employmentType: 'full_time',
-    autoEnrollmentStatus: 'eligible',
-    payScheduleId: '22222222-2222-2222-2222-222222222222', // Weekly
+    hireDate: "2023-02-01",
+    status: "active",
+    employmentType: "full_time",
+    autoEnrollmentStatus: "eligible",
+    payScheduleId: "demo-weekly-friday",
     address: {
-      line1: '456 Oak Road',
-      city: 'Manchester',
-      postcode: 'M1 2AB',
+      line1: "456 Oak Road",
+      city: "Manchester",
+      postcode: "M1 2AB",
     },
   },
   {
-    id: 'EMP003',
-    employeeNumber: 'EMP003',
-    firstName: 'Emma',
-    lastName: 'Brown',
-    email: 'emma.brown@company.co.uk',
-    phone: '07700 900125',
-    dateOfBirth: '1992-11-08',
-    nationalInsurance: 'EF345678E',
+    id: "EMP003",
+    employeeNumber: "EMP003",
+    firstName: "Emma",
+    lastName: "Brown",
+    email: "emma.brown@company.co.uk",
+    phone: "07700 900125",
+    dateOfBirth: "1992-11-08",
+    nationalInsurance: "EF345678E",
     annualSalary: 22000,
-    hireDate: '2023-03-10',
-    status: 'active',
-    employmentType: 'part_time',
-    autoEnrollmentStatus: 'entitled',
-    payScheduleId: '22222222-2222-2222-2222-222222222222', // Weekly
+    hireDate: "2023-03-10",
+    status: "active",
+    employmentType: "part_time",
+    autoEnrollmentStatus: "entitled",
+    payScheduleId: "demo-weekly-friday",
     address: {
-      line1: '789 Pine Avenue',
-      city: 'Birmingham',
-      postcode: 'B1 3CD',
+      line1: "789 Pine Avenue",
+      city: "Birmingham",
+      postcode: "B1 3CD",
     },
   },
   {
-    id: 'EMP004',
-    employeeNumber: 'EMP004',
-    firstName: 'Michael',
-    lastName: 'Davis',
-    email: 'michael.davis@company.co.uk',
-    phone: '07700 900126',
-    dateOfBirth: '1985-05-20',
-    nationalInsurance: 'GH456789F',
+    id: "EMP004",
+    employeeNumber: "EMP004",
+    firstName: "Michael",
+    lastName: "Davis",
+    email: "michael.davis@company.co.uk",
+    phone: "07700 900126",
+    dateOfBirth: "1985-05-20",
+    nationalInsurance: "GH456789F",
     annualSalary: 42000,
-    hireDate: '2022-11-01',
-    status: 'active',
-    employmentType: 'full_time',
-    autoEnrollmentStatus: 'eligible',
-    payScheduleId: '11111111-1111-1111-1111-111111111111', // Monthly
+    hireDate: "2022-11-01",
+    status: "active",
+    employmentType: "full_time",
+    autoEnrollmentStatus: "eligible",
+    payScheduleId: "demo-monthly-25th",
     address: {
-      line1: '321 Elm Street',
-      city: 'Leeds',
-      postcode: 'LS1 4EF',
+      line1: "321 Elm Street",
+      city: "Leeds",
+      postcode: "LS1 4EF",
     },
   },
   {
-    id: 'EMP005',
-    employeeNumber: 'EMP005',
-    firstName: 'Lisa',
-    lastName: 'Taylor',
-    email: 'lisa.taylor@company.co.uk',
-    phone: '07700 900127',
-    dateOfBirth: '1991-09-12',
-    nationalInsurance: 'IJ567890G',
+    id: "EMP005",
+    employeeNumber: "EMP005",
+    firstName: "Lisa",
+    lastName: "Taylor",
+    email: "lisa.taylor@company.co.uk",
+    phone: "07700 900127",
+    dateOfBirth: "1991-09-12",
+    nationalInsurance: "IJ567890G",
     annualSalary: 38000,
-    hireDate: '2023-01-20',
-    status: 'active',
-    employmentType: 'full_time',
-    autoEnrollmentStatus: 'eligible',
-    payScheduleId: '33333333-3333-3333-3333-333333333333', // Bi-weekly
+    hireDate: "2023-01-20",
+    status: "active",
+    employmentType: "full_time",
+    autoEnrollmentStatus: "eligible",
+    payScheduleId: "demo-fortnightly-friday",
     address: {
-      line1: '654 Birch Close',
-      city: 'Bristol',
-      postcode: 'BS1 5GH',
+      line1: "654 Birch Close",
+      city: "Bristol",
+      postcode: "BS1 5GH",
     },
   },
 ];
 
-// Utility functions - Exported
 export const getEmployeeById = (id: string): Employee | undefined =>
   DEMO_EMPLOYEES.find((emp) => emp.id === id);
 
@@ -184,7 +180,7 @@ export const getPayScheduleById = (id: string): PaySchedule | undefined =>
 
 export const getPayScheduleName = (scheduleId: string): string => {
   const schedule = getPayScheduleById(scheduleId);
-  return schedule ? schedule.name : 'No Schedule Assigned';
+  return schedule ? schedule.name : "No Schedule Assigned";
 };
 
 export const calculateAge = (dateOfBirth: string): number => {
