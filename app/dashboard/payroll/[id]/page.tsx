@@ -1,5 +1,5 @@
 /* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\payroll\[id]\page.tsx
+/* C:\Users\adamm\Projects\wageflow01\app\dashboard\payroll\[id]\page.tsx */
 
 "use client";
 
@@ -12,6 +12,8 @@ import PageTemplate, { StatTile } from "@/components/ui/PageTemplate";
 import { formatUkDate } from "@/lib/formatUkDate";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
+
+const MISSING = "—";
 
 type Row = {
   id: string;
@@ -164,17 +166,17 @@ function derivePeriodFromPayDate(frequency: Frequency, payDateIso: string | null
 
 function cleanEmail(v: any) {
   const raw = pickFirst(v, null);
-  if (raw === null || raw === undefined) return "—";
+  if (raw === null || raw === undefined) return MISSING;
 
   let s = String(raw).trim();
-  if (!s) return "—";
+  if (!s) return MISSING;
 
   const lower = s.toLowerCase();
-  if (lower === "null" || lower === "undefined" || lower === "n/a") return "—";
+  if (lower === "null" || lower === "undefined" || lower === "n/a") return MISSING;
 
-  if (s.includes("â") || s.includes("â€”") || s.includes("â€“") || s.includes("\uFFFD")) return "—";
+  if (s.includes("\uFFFD")) return MISSING;
 
-  if (s === "-" || s === "—" || s === "–") return "—";
+  if (s === "-" || s === MISSING) return MISSING;
 
   return s;
 }
@@ -190,9 +192,9 @@ function mapEmployees(raw: any[]): Row[] {
     return {
       id: String(pickFirst(r.id, r.pay_run_employee_id, "") || ""),
       employeeId: String(pickFirst(r.employeeId, r.employee_id, "") || ""),
-      employeeName: String(pickFirst(r.employeeName, r.employee_name, r.full_name, "—") || "—"),
-      employeeNumber: String(pickFirst(r.employeeNumber, r.employee_number, r.payroll_number, "—") || "—"),
-      email: cleanEmail(pickFirst(r.email, r.employee_email, "—")),
+      employeeName: String(pickFirst(r.employeeName, r.employee_name, r.full_name, MISSING) || MISSING),
+      employeeNumber: String(pickFirst(r.employeeNumber, r.employee_number, r.payroll_number, MISSING) || MISSING),
+      email: cleanEmail(pickFirst(r.email, r.employee_email, MISSING)),
       gross: Number.isFinite(gross) ? Number(gross.toFixed(2)) : 0,
       deductions: Number.isFinite(deductions) ? Number(deductions.toFixed(2)) : 0,
       net: Number.isFinite(net) ? Number(net.toFixed(2)) : 0,
@@ -245,6 +247,10 @@ function extractCodes(x: any): string[] {
   return Array.from(new Set(clean));
 }
 
+function isUuid(s: any) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || "").trim());
+}
+
 export default function PayrollRunDetailPage() {
   const params = useParams();
   const runId = String((params as any)?.id || "");
@@ -254,7 +260,7 @@ export default function PayrollRunDetailPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const [actionBusy, setActionBusy] = useState<null | "save" | "approve" | "recalc">(null);
+  const [actionBusy, setActionBusy] = useState<null | "save" | "approve" | "recalc" | "supp">(null);
 
   const [dirty, setDirty] = useState<boolean>(false);
   const [validation, setValidation] = useState<Record<string, string>>({});
@@ -338,6 +344,12 @@ export default function PayrollRunDetailPage() {
   const runObj: any = (data as any)?.run || {};
   const employeesRaw: any[] = Array.isArray((data as any)?.employees) ? (data as any).employees : [];
 
+  const runKindRaw = String(pickFirst(runObj.run_kind, runObj.runKind, "primary") || "primary").trim().toLowerCase();
+  const isSupplementary = runKindRaw === "supplementary";
+
+  const parentRunId = String(pickFirst(runObj.parent_run_id, runObj.parentRunId, "") || "").trim();
+  const hasParent = isUuid(parentRunId);
+
   const exceptionsObj: any = (data as any)?.exceptions;
   const exceptionItems = useMemo(() => {
     const items = exceptionsObj?.items;
@@ -384,7 +396,7 @@ export default function PayrollRunDetailPage() {
       const x = exceptionItems[i];
       const sev = isBlock(x) ? "block" : "warn";
       const empId = String(pickFirst(x?.employee_id, x?.employeeId, "") || "");
-      const name = String(pickFirst(x?.employee_name, x?.employeeName, "—") || "—");
+      const name = String(pickFirst(x?.employee_name, x?.employeeName, MISSING) || MISSING);
       const gross = toNumberSafe(pickFirst(x?.gross, x?.gross_pay, 0) as any);
 
       const keyBase = empId || name || `idx_${i}`;
@@ -566,6 +578,36 @@ export default function PayrollRunDetailPage() {
     }
   };
 
+  const createSupplementaryRun = async () => {
+    try {
+      if (!runId) throw new Error("Missing run id.");
+      setActionBusy("supp");
+      setErr(null);
+      setApprovedMsg(null);
+
+      const res = await fetch(`/api/payroll/runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create_supplementary", parent_run_id: runId }),
+      });
+
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || "Failed to create supplementary run");
+      }
+
+      const j: any = await res.json().catch(() => ({}));
+      const newId = String(pickFirst(j?.run_id, j?.id, j?.new_run_id, "") || "").trim();
+
+      if (!isUuid(newId)) throw new Error("Supplementary run was created but no valid run_id was returned.");
+
+      window.location.href = `/dashboard/payroll/${newId}`;
+    } catch (e: any) {
+      setErr(e?.message || "Failed to create supplementary run");
+      setActionBusy(null);
+    }
+  };
+
   const exportCsv = () => {
     window.location.href = `/api/payroll/${runId}/export`;
   };
@@ -573,9 +615,11 @@ export default function PayrollRunDetailPage() {
   const payDateIso = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
   const frequencyRaw = String(pickFirst(runObj.frequency, runObj.pay_frequency, runObj.payFrequency, "") || "").trim();
 
+  const runNameFromApi = String(pickFirst(runObj.runName, runObj.run_name, "") || "").trim();
+
   const runNumberFromApi = pickFirst(runObj.runNumber, runObj.run_number, null) as any;
   const runNumberDerived = makeRunNumberFromPayDate(frequencyRaw, payDateIso ? String(payDateIso) : null);
-  const runNumber = String(pickFirst(runNumberFromApi, runNumberDerived, "—") || "—");
+  const runNumber = String(pickFirst(runNumberFromApi, runNumberDerived, MISSING) || MISSING);
 
   const periodDerived = derivePeriodFromPayDate(frequencyRaw, payDateIso ? String(payDateIso) : null);
 
@@ -585,12 +629,12 @@ export default function PayrollRunDetailPage() {
   const payDate = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
 
   const statusRaw = pickFirst(runObj.status, runObj.run_status, null) as any;
-  const statusText = statusRaw ? statusLabel(statusRaw) : "—";
+  const statusText = statusRaw ? statusLabel(statusRaw) : MISSING;
 
   const periodText =
-    periodStart && periodEnd ? `${formatUkDate(String(periodStart))} to ${formatUkDate(String(periodEnd))}` : "—";
+    periodStart && periodEnd ? `${formatUkDate(String(periodStart))} to ${formatUkDate(String(periodEnd))}` : MISSING;
 
-  const payDateText = payDate ? formatUkDate(String(payDate)) : "—";
+  const payDateText = payDate ? formatUkDate(String(payDate)) : MISSING;
 
   const canApproveBase =
     (String(statusRaw || "") === "draft" || String(statusRaw || "") === "processing") &&
@@ -625,6 +669,9 @@ export default function PayrollRunDetailPage() {
     }, 0);
   };
 
+  const headline = runNameFromApi ? runNameFromApi : runNumber !== MISSING ? `Run ${runNumber}` : "Run";
+  const kindChip = isSupplementary ? "SUPPLEMENTARY" : "PRIMARY";
+
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
       <div className="flex flex-col gap-4">
@@ -632,7 +679,7 @@ export default function PayrollRunDetailPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-lg font-extrabold text-slate-900">{runNumber !== "—" ? `Run ${runNumber}` : "Run"}</div>
+                <div className="text-lg font-extrabold text-slate-900">{headline}</div>
 
                 <span
                   className="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold"
@@ -642,6 +689,18 @@ export default function PayrollRunDetailPage() {
                   }}
                 >
                   {statusText}
+                </span>
+
+                <span
+                  className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
+                  style={{
+                    backgroundColor: "rgba(148,163,184,0.14)",
+                    borderColor: "#cbd5e1",
+                    color: "#334155",
+                  }}
+                  title="Run type"
+                >
+                  {kindChip}
                 </span>
 
                 {!loading && hasAnyExceptions ? (
@@ -673,6 +732,19 @@ export default function PayrollRunDetailPage() {
                 ) : null}
               </div>
 
+              {isSupplementary && hasParent ? (
+                <div className="text-sm text-slate-700">
+                  Parent run:{" "}
+                  <Link
+                    href={`/dashboard/payroll/${parentRunId}`}
+                    className="font-extrabold underline"
+                    style={{ color: "var(--wf-blue)" }}
+                  >
+                    Open parent run
+                  </Link>
+                </div>
+              ) : null}
+
               <div className="flex flex-col gap-1 text-sm text-slate-700">
                 <div>
                   <span className="font-semibold">Period:</span>{" "}
@@ -697,6 +769,23 @@ export default function PayrollRunDetailPage() {
               >
                 Back to Runs
               </Link>
+
+              {!loading && !isSupplementary ? (
+                <button
+                  type="button"
+                  onClick={createSupplementaryRun}
+                  disabled={saving || !runId}
+                  className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{
+                    backgroundColor: "#334155",
+                    opacity: saving || !runId ? 0.6 : 1,
+                    cursor: saving || !runId ? "not-allowed" : "pointer",
+                  }}
+                  title="Create a supplementary run for this same pay period (no auto-attach)"
+                >
+                  {actionBusy === "supp" ? "Creating..." : "Create supplementary run"}
+                </button>
+              ) : null}
 
               <button
                 type="button"
@@ -793,7 +882,10 @@ export default function PayrollRunDetailPage() {
           ) : null}
         </div>
 
-        <div ref={exceptionsAnchorRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
+        <div
+          ref={exceptionsAnchorRef}
+          className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden"
+        >
           <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col">
               <div className="text-base font-extrabold text-slate-900">Exceptions</div>
@@ -850,7 +942,10 @@ export default function PayrollRunDetailPage() {
                         <div key={`blk-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
+                            <span
+                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
+                              style={chip.style}
+                            >
                               {chip.label}
                             </span>
                           </div>
@@ -876,7 +971,9 @@ export default function PayrollRunDetailPage() {
                                 Fix on employee file
                               </Link>
                             ) : (
-                              <span className="text-xs font-semibold text-slate-600">Missing employee_id in exception payload.</span>
+                              <span className="text-xs font-semibold text-slate-600">
+                                Missing employee_id in exception payload.
+                              </span>
                             )}
                           </div>
                         </div>
@@ -902,7 +999,10 @@ export default function PayrollRunDetailPage() {
                         <div key={`wrn-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
+                            <span
+                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
+                              style={chip.style}
+                            >
                               {chip.label}
                             </span>
                           </div>
@@ -1014,13 +1114,13 @@ export default function PayrollRunDetailPage() {
                     return (
                       <tr key={r.id} className="bg-white">
                         <td className="sticky left-0 z-0 bg-white px-4 py-3 text-sm text-slate-900 border-b border-neutral-200">
-                          {r.employeeName || "—"}
+                          {r.employeeName || MISSING}
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
-                          {r.employeeNumber || "—"}
+                          {r.employeeNumber || MISSING}
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
-                          {r.email || "—"}
+                          {r.email || MISSING}
                         </td>
 
                         <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">

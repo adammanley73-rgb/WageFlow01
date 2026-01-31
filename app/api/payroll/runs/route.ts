@@ -1,4 +1,5 @@
-// C:\Users\adamm\Projects\wageflow01\app\api\payroll\runs\route.ts
+/* C:\Users\adamm\Projects\wageflow01\app\api\payroll\runs\route.ts */
+
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { randomUUID } from "crypto";
@@ -29,12 +30,23 @@ type PayrollRunRow = {
   frequency: string | null;
   status: string | null;
 
+  run_name?: string | null;
+  run_number?: string | null;
+
+  run_kind?: string | null;
+  parent_run_id?: string | null;
+
   pay_date: string | null;
   pay_date_overridden: boolean | null;
   pay_date_override_reason: string | null;
 
+  pay_schedule_id?: string | null;
+
   pay_period_start?: string | null;
   pay_period_end?: string | null;
+
+  period_start?: string | null;
+  period_end?: string | null;
 
   attached_all_due_employees: boolean | null;
   created_at?: string | null;
@@ -86,6 +98,10 @@ function frequencyLabel(frequency: string) {
   if (f === "four_weekly") return "4-weekly";
   if (f === "monthly") return "Monthly";
   return f || "Payroll";
+}
+
+function isUuid(s: any) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || "").trim());
 }
 
 /* -----------------------
@@ -429,7 +445,8 @@ function payDateMismatchResponse(args: {
     {
       ok: false,
       code: "PAY_DATE_MISMATCH",
-      error: "A payroll run already exists for this run_number, but with a different pay_date. Refusing to reuse the wrong run.",
+      error:
+        "A payroll run already exists for this run_number, but with a different pay_date. Refusing to reuse the wrong run.",
       run_number: args.runNumber,
       requestedPayDate: args.requestedPayDate,
       existing: { id: args.existingId, pay_date: args.existingPayDate },
@@ -525,6 +542,11 @@ export async function GET(req: Request) {
           "total_net_pay",
           "pay_period_start",
           "pay_period_end",
+          "pay_schedule_id",
+          "run_kind",
+          "parent_run_id",
+          "run_name",
+          "run_number",
         ].join(", ")
       )
       .eq("company_id", companyIdTrim)
@@ -533,10 +555,15 @@ export async function GET(req: Request) {
 
     if (frequency) supaQuery = supaQuery.eq("frequency", frequency);
 
-    const listRes = await supaQuery.order("pay_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
+    const listRes = await supaQuery
+      .order("pay_date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
 
     if (listRes.error) {
-      return NextResponse.json({ ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v12" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v13" },
+        { status: 500 }
+      );
     }
 
     const rows = Array.isArray(listRes.data) ? listRes.data : [];
@@ -548,18 +575,31 @@ export async function GET(req: Request) {
       const computedRunNumber = makeRunNumberFromPayDate(f, payDateIso, taxYearStartIso);
       const computedRunName = defaultRunNameFromPayDate(f, payDateIso);
 
-      const startIso = row.pay_period_start ?? null;
-      const endIso = row.pay_period_end ?? null;
+      const kind = String(row.run_kind || "primary").trim().toLowerCase();
+      const parent = row.parent_run_id ?? null;
+
+      const startIso = row.pay_period_start ?? row.period_start ?? null;
+      const endIso = row.pay_period_end ?? row.period_end ?? null;
+
+      const baseNumber = row.run_number ?? computedRunNumber ?? null;
+      const runNumberOut =
+        kind === "supplementary" ? (baseNumber ? String(baseNumber) + " SUPP" : "SUPP") : baseNumber;
+
+      const runNameOut = row.run_name ?? computedRunName;
 
       return {
         id: row.id,
         company_id: row.company_id,
 
-        run_number: computedRunNumber,
-        run_name: computedRunName,
+        run_number: runNumberOut,
+        run_name: runNameOut,
+
+        run_kind: kind,
+        parent_run_id: parent,
+
         period_start: startIso,
         period_end: endIso,
-        pay_schedule_id: null,
+        pay_schedule_id: row.pay_schedule_id ?? null,
 
         frequency: row.frequency,
         status: row.status,
@@ -579,7 +619,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_runs_list_debug_v12",
+      debugSource: "payroll_runs_list_debug_v13",
       query,
       taxYear: { start: taxYearStartIso, end: taxYearEndIso },
       activeCompanyId: companyIdTrim,
@@ -589,13 +629,35 @@ export async function GET(req: Request) {
       runs,
     });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v12" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v13" },
+      { status: 500 }
+    );
   }
 }
 
 /* -----------------------
-   POST (create run)
+   POST
+   - Primary run creation is wizard-only.
+   - Supplementary run creation is allowed from inside a run detail page.
 ------------------------ */
+
+async function createSupplementaryRunRpc(client: any, parentRunId: string) {
+  const attempt1 = await client.rpc("create_supplementary_run", { parent_run_id: parentRunId });
+  if (!attempt1?.error) return attempt1;
+
+  const msg = String(attempt1?.error?.message ?? attempt1?.error ?? "");
+  const looksLikeParamMismatch =
+    msg.toLowerCase().includes("parameter") || msg.toLowerCase().includes("named") || msg.toLowerCase().includes("argument");
+
+  if (looksLikeParamMismatch) {
+    const attempt2 = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
+    if (!attempt2?.error) return attempt2;
+    return attempt2;
+  }
+
+  return attempt1;
+}
 
 export async function POST(req: Request) {
   try {
@@ -613,10 +675,112 @@ export async function POST(req: Request) {
       );
     }
 
+    const body = await req.json().catch(() => null);
+    const action = String(body?.action || "").trim().toLowerCase();
+
+    const companyIdStr = String(companyId || "").trim();
+
+    if (action === "create_supplementary" || action === "create_supplementary_run") {
+      const parentRunId = String(body?.parent_run_id || body?.parentRunId || "").trim();
+
+      if (!isUuid(parentRunId)) {
+        return NextResponse.json({ ok: false, error: "Missing or invalid parent_run_id.", code: "BAD_PARENT_RUN_ID" }, { status: 400 });
+      }
+
+      const parentRes = (await client
+        .from("payroll_runs")
+        .select("id, company_id, run_kind, frequency, pay_schedule_id, pay_date, pay_period_start, pay_period_end")
+        .eq("id", parentRunId)
+        .single()) as PostgrestSingleResponse<PayrollRunRow>;
+
+      if (parentRes.error || !parentRes.data) {
+        return NextResponse.json(
+          { ok: false, error: "Parent run not found.", code: "PARENT_NOT_FOUND", debug: parentRes.error ?? null },
+          { status: 404 }
+        );
+      }
+
+      const parent = parentRes.data;
+
+      if (String(parent.company_id || "").trim() !== companyIdStr) {
+        return NextResponse.json({ ok: false, error: "Parent run does not belong to the active company.", code: "PARENT_COMPANY_MISMATCH" }, { status: 403 });
+      }
+
+      const parentKind = String(parent.run_kind || "primary").trim().toLowerCase();
+      if (parentKind === "supplementary") {
+        return NextResponse.json({ ok: false, error: "Cannot create a supplementary run from a supplementary run.", code: "BAD_PARENT_KIND" }, { status: 400 });
+      }
+
+      if (!parent.pay_schedule_id) {
+        return NextResponse.json(
+          { ok: false, error: "Parent run is missing pay_schedule_id. Fix the parent run first.", code: "PARENT_MISSING_SCHEDULE" },
+          { status: 400 }
+        );
+      }
+
+      const rpcRes = await createSupplementaryRunRpc(client, parentRunId);
+
+      if (rpcRes?.error) {
+        return NextResponse.json(
+          { ok: false, error: rpcRes.error, code: "SUPPLEMENTARY_CREATE_FAILED", debugSource: "create_supplementary_run_rpc" },
+          { status: 500 }
+        );
+      }
+
+      let newId: string | null = null;
+      if (typeof rpcRes?.data === "string") newId = rpcRes.data;
+      else if (rpcRes?.data && typeof rpcRes.data === "object") newId = String((rpcRes.data as any)?.id || "");
+      else if (Array.isArray(rpcRes?.data) && rpcRes.data.length > 0) newId = String(rpcRes.data[0]);
+
+      newId = String(newId || "").trim();
+
+      if (!isUuid(newId)) {
+        return NextResponse.json(
+          { ok: false, error: "Supplementary run RPC returned no valid id.", code: "SUPPLEMENTARY_NO_ID" },
+          { status: 500 }
+        );
+      }
+
+      const newRes = (await client
+        .from("payroll_runs")
+        .select(
+          [
+            "id",
+            "company_id",
+            "frequency",
+            "status",
+            "pay_date",
+            "pay_date_overridden",
+            "pay_date_override_reason",
+            "pay_period_start",
+            "pay_period_end",
+            "pay_schedule_id",
+            "run_kind",
+            "parent_run_id",
+            "run_name",
+            "run_number",
+            "created_at",
+          ].join(", ")
+        )
+        .eq("id", newId)
+        .single()) as PostgrestSingleResponse<PayrollRunRow>;
+
+      if (newRes.error || !newRes.data) {
+        return NextResponse.json(
+          { ok: true, run_id: newId, created: true, run: null, warning: "Created but could not fetch run row.", debug: newRes.error ?? null },
+          { status: 201 }
+        );
+      }
+
+      return NextResponse.json(
+        { ok: true, run_id: newId, created: true, run: newRes.data, debugSource: "supplementary_create_v1" },
+        { status: 201 }
+      );
+    }
+
+    // Primary run creation remains wizard-only.
     const jar = cookies();
     const cookieToken = jar.get("wf_payroll_run_wizard")?.value ?? null;
-
-    const body = await req.json().catch(() => null);
     const wizardToken = typeof body?.wizardToken === "string" ? body.wizardToken.trim() : "";
 
     if (!cookieToken || !wizardToken || wizardToken !== cookieToken) {
@@ -647,8 +811,6 @@ export async function POST(req: Request) {
     if (!isIsoDateOnly(pay_date_input)) {
       return NextResponse.json({ ok: false, error: "Invalid pay_date. Expected YYYY-MM-DD.", code: "BAD_PAY_DATE" }, { status: 400 });
     }
-
-    const companyIdStr = String(companyId || "").trim();
 
     const scheduleRes = (await client
       .from("company_pay_schedules")
@@ -822,13 +984,22 @@ export async function POST(req: Request) {
       "total_net_pay",
       "pay_period_start",
       "pay_period_end",
+      "pay_schedule_id",
+      "run_kind",
+      "parent_run_id",
+      "run_name",
+      "run_number",
     ].join(", ");
 
     let createdRes: PostgrestSingleResponse<PayrollRunRow> | null = null;
     let lastErr: any = null;
 
     for (const row of rowVariants) {
-      const attempt = (await client.from("payroll_runs").insert(row).select(selectCols).single()) as PostgrestSingleResponse<PayrollRunRow>;
+      const attempt = (await client
+        .from("payroll_runs")
+        .insert(row)
+        .select(selectCols)
+        .single()) as PostgrestSingleResponse<PayrollRunRow>;
 
       if (!attempt.error && attempt.data) {
         createdRes = attempt;
@@ -912,10 +1083,7 @@ export async function POST(req: Request) {
     }
 
     if (!createdRes || createdRes.error || !createdRes.data) {
-      return NextResponse.json(
-        { ok: false, error: lastErr, debugSource: "payroll_runs_create_debug_v12" },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, error: lastErr, debugSource: "payroll_runs_create_debug_v12" }, { status: 500 });
     }
 
     const run = createdRes.data;
@@ -948,7 +1116,7 @@ export async function POST(req: Request) {
     return res;
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_create_debug_v12" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_post_debug_v13" },
       { status: 500 }
     );
   }
