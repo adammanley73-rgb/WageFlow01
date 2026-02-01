@@ -156,7 +156,7 @@ function adjustWorkingDayUtc(d: Date, modeRaw: string) {
     return out;
   }
 
-  while (isWeekend()) out.setUTCDate(out.getUTCDate() - 1);
+  while (isWeekend()) out.setUTCDate(out.getUTCDay() - 1);
   return out;
 }
 
@@ -594,6 +594,8 @@ function payDateMismatchResponse(args: {
 
 /* -----------------------
    GET (list runs)
+   Default: exclude archived runs.
+   Use ?includeArchived=1 to include archived rows.
 ------------------------ */
 
 export async function GET(req: Request) {
@@ -614,6 +616,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const debugMode = normalizeQueryParam(searchParams.get("debug")) === "1";
+    const includeArchived = normalizeQueryParam(searchParams.get("includeArchived")) === "1";
 
     const query: RunsQuery = {
       frequency: normalizeQueryParam(searchParams.get("frequency")),
@@ -636,17 +639,25 @@ export async function GET(req: Request) {
     const debugCounts: any = debugMode ? {} : null;
 
     if (debugMode) {
-      const companyOnlyRes = (await client
+      let companyOnlyQ = client
         .from("payroll_runs")
         .select("id", { count: "exact", head: true })
-        .eq("company_id", companyIdTrim)) as unknown as PostgrestCountResponse;
+        .eq("company_id", companyIdTrim);
 
-      const inTaxYearRes = (await client
+      let inTaxYearQ = client
         .from("payroll_runs")
         .select("id", { count: "exact", head: true })
         .eq("company_id", companyIdTrim)
         .gte("pay_date", taxYearStartIso)
-        .lte("pay_date", taxYearEndIso)) as unknown as PostgrestCountResponse;
+        .lte("pay_date", taxYearEndIso);
+
+      if (!includeArchived) {
+        companyOnlyQ = companyOnlyQ.is("archived_at", null);
+        inTaxYearQ = inTaxYearQ.is("archived_at", null);
+      }
+
+      const companyOnlyRes = (await companyOnlyQ) as unknown as PostgrestCountResponse;
+      const inTaxYearRes = (await inTaxYearQ) as unknown as PostgrestCountResponse;
 
       debugCounts.companyOnly = {
         count: (companyOnlyRes as any)?.count ?? null,
@@ -659,45 +670,57 @@ export async function GET(req: Request) {
       };
     }
 
-    let supaQuery = client
-      .from("payroll_runs")
-      .select(
-        [
-          "id",
-          "company_id",
-          "frequency",
-          "status",
-          "pay_date",
-          "pay_date_overridden",
-          "pay_date_override_reason",
-          "attached_all_due_employees",
-          "created_at",
-          "total_gross_pay",
-          "total_tax",
-          "total_ni",
-          "total_net_pay",
-          "pay_period_start",
-          "pay_period_end",
-          "pay_schedule_id",
-          "run_kind",
-          "parent_run_id",
-          "run_name",
-          "run_number",
-        ].join(", ")
-      )
-      .eq("company_id", companyIdTrim)
-      .gte("pay_date", taxYearStartIso)
-      .lte("pay_date", taxYearEndIso);
+    const baseSelectCols = [
+      "id",
+      "company_id",
+      "frequency",
+      "status",
+      "pay_date",
+      "pay_date_overridden",
+      "pay_date_override_reason",
+      "attached_all_due_employees",
+      "created_at",
+      "total_gross_pay",
+      "total_tax",
+      "total_ni",
+      "total_net_pay",
+      "pay_period_start",
+      "pay_period_end",
+      "pay_schedule_id",
+      "run_kind",
+      "parent_run_id",
+      "run_name",
+      "run_number",
+    ];
 
-    if (frequency) supaQuery = supaQuery.eq("frequency", frequency);
+    const selectWithArchived = baseSelectCols.concat(["archived_at"]).join(", ");
+    const selectWithoutArchived = baseSelectCols.join(", ");
 
-    const listRes = await supaQuery
-      .order("pay_date", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
+    const buildListQuery = (selectCols: string, filterArchived: boolean) => {
+      let q = client
+        .from("payroll_runs")
+        .select(selectCols)
+        .eq("company_id", companyIdTrim)
+        .gte("pay_date", taxYearStartIso)
+        .lte("pay_date", taxYearEndIso);
+
+      if (frequency) q = q.eq("frequency", frequency);
+      if (filterArchived) q = q.is("archived_at", null);
+
+      return q
+        .order("pay_date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+    };
+
+    let listRes = await buildListQuery(selectWithArchived, !includeArchived);
+
+    if (listRes.error && isMissingColumnError(listRes.error, ["archived_at"])) {
+      listRes = await buildListQuery(selectWithoutArchived, false);
+    }
 
     if (listRes.error) {
       return NextResponse.json(
-        { ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v13" },
+        { ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v14" },
         { status: 500 }
       );
     }
@@ -744,6 +767,8 @@ export async function GET(req: Request) {
         pay_date_override_reason: row.pay_date_override_reason ?? null,
         attached_all_due_employees: row.attached_all_due_employees,
 
+        archived_at: row.archived_at ?? null,
+
         totals: {
           gross: row.total_gross_pay ?? 0,
           tax: row.total_tax ?? 0,
@@ -755,18 +780,19 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_runs_list_debug_v13",
+      debugSource: "payroll_runs_list_debug_v14",
       query,
       taxYear: { start: taxYearStartIso, end: taxYearEndIso },
       activeCompanyId: companyIdTrim,
       filterMode: "pay_date_in_tax_year",
       frequencyApplied: frequency,
+      includeArchived,
       debugCounts,
       runs,
     });
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v13" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v14" },
       { status: 500 }
     );
   }
@@ -1340,7 +1366,7 @@ export async function POST(req: Request) {
     return res;
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_post_debug_v14" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_post_debug_v15" },
       { status: 500 }
     );
   }
