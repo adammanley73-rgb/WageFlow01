@@ -391,6 +391,82 @@ function clearWizardCookie(res: any) {
   });
 }
 
+function normalizeRpcError(err: any) {
+  const code = String(err?.code ?? "").trim();
+  const message = String(err?.message ?? err ?? "").trim();
+  const details = String(err?.details ?? "").trim();
+  const hint = String(err?.hint ?? "").trim();
+  return { code, message, details, hint };
+}
+
+function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string) {
+  const e = normalizeRpcError(err);
+  const msgLower = e.message.toLowerCase();
+
+  const debug = {
+    pg_code: e.code || null,
+    message: e.message || null,
+    details: e.details || null,
+    hint: e.hint || null,
+  };
+
+  if (e.code === "P0001") {
+    if (msgLower.includes("parent run must be completed")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Supplementary runs are only allowed after the parent run is completed.",
+          code: "PARENT_NOT_COMPLETED",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (msgLower.includes("parent run is missing pay_schedule_id")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Parent run is missing pay_schedule_id. Fix the parent run first.",
+          code: "PARENT_MISSING_SCHEDULE",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (msgLower.includes("parent run not found")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Parent run not found.",
+          code: "PARENT_NOT_FOUND",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 404 }
+      );
+    }
+  }
+
+  return NextResponse.json(
+    {
+      ok: false,
+      error: "Could not create supplementary run.",
+      code: "SUPPLEMENTARY_CREATE_FAILED",
+      parent: { id: parentRunId },
+      debugSource: "create_supplementary_run_rpc",
+      debug,
+    },
+    { status: 500 }
+  );
+}
+
 async function findExistingRunByRunNumber(
   client: any,
   companyId: string,
@@ -735,10 +811,7 @@ export async function POST(req: Request) {
       const rpcRes = await createSupplementaryRunRpc(client, parentRunId);
 
       if (rpcRes?.error) {
-        return NextResponse.json(
-          { ok: false, error: rpcRes.error, code: "SUPPLEMENTARY_CREATE_FAILED", debugSource: "create_supplementary_run_rpc" },
-          { status: 500 }
-        );
+        return mapCreateSupplementaryRpcErrorToResponse(rpcRes.error, parentRunId);
       }
 
       let newId: string | null = null;
