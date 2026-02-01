@@ -55,6 +55,8 @@ type PayrollRunRow = {
   total_tax?: number | null;
   total_ni?: number | null;
   total_net_pay?: number | null;
+
+  archived_at?: string | null;
 };
 
 type PayScheduleRow = {
@@ -154,7 +156,7 @@ function adjustWorkingDayUtc(d: Date, modeRaw: string) {
     return out;
   }
 
-  while (isWeekend()) out.setUTCDate(out.getUTCDate() - 1);
+  while (isWeekend()) out.setUTCDate(out.getUTCDay() - 1);
   return out;
 }
 
@@ -410,6 +412,20 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
     hint: e.hint || null,
   };
 
+  if (e.code === "PGRST202" || msgLower.includes("schema cache") || msgLower.includes("could not find the function")) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Supplementary run RPC is not available to the API right now. This is usually schema cache lag or a missing migration.",
+        code: "SUPPLEMENTARY_RPC_NOT_AVAILABLE",
+        parent: { id: parentRunId },
+        debugSource: "create_supplementary_run_rpc",
+        debug,
+      },
+      { status: 503 }
+    );
+  }
+
   if (e.code === "P0001") {
     if (msgLower.includes("parent run must be completed")) {
       return NextResponse.json(
@@ -450,6 +466,62 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
           debug,
         },
         { status: 404 }
+      );
+    }
+
+    if (msgLower.includes("weekly") && msgLower.includes("not allowed")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Supplementary runs are not allowed for weekly payroll runs.",
+          code: "SUPPLEMENTARY_NOT_ALLOWED_WEEKLY",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (msgLower.includes("only allowed for fortnightly") || msgLower.includes("only allowed for fortnightly, four_weekly, or monthly")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Supplementary runs are only allowed for fortnightly, 4-weekly, or monthly payroll runs.",
+          code: "SUPPLEMENTARY_NOT_ALLOWED_FREQUENCY",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (msgLower.includes("open supplementary") || msgLower.includes("already exists for this parent") || msgLower.includes("complete or archive it first")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "An open supplementary run already exists for this parent. Complete it before creating another.",
+          code: "SUPPLEMENTARY_ALREADY_OPEN",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (msgLower.includes("cannot create a supplementary run from a supplementary run")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Cannot create a supplementary run from a supplementary run.",
+          code: "BAD_PARENT_KIND",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 400 }
       );
     }
   }
@@ -522,6 +594,8 @@ function payDateMismatchResponse(args: {
 
 /* -----------------------
    GET (list runs)
+   Default: exclude archived runs.
+   Use ?includeArchived=1 to include archived rows.
 ------------------------ */
 
 export async function GET(req: Request) {
@@ -542,6 +616,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const debugMode = normalizeQueryParam(searchParams.get("debug")) === "1";
+    const includeArchived = normalizeQueryParam(searchParams.get("includeArchived")) === "1";
 
     const query: RunsQuery = {
       frequency: normalizeQueryParam(searchParams.get("frequency")),
@@ -564,17 +639,25 @@ export async function GET(req: Request) {
     const debugCounts: any = debugMode ? {} : null;
 
     if (debugMode) {
-      const companyOnlyRes = (await client
+      let companyOnlyQ = client
         .from("payroll_runs")
         .select("id", { count: "exact", head: true })
-        .eq("company_id", companyIdTrim)) as unknown as PostgrestCountResponse;
+        .eq("company_id", companyIdTrim);
 
-      const inTaxYearRes = (await client
+      let inTaxYearQ = client
         .from("payroll_runs")
         .select("id", { count: "exact", head: true })
         .eq("company_id", companyIdTrim)
         .gte("pay_date", taxYearStartIso)
-        .lte("pay_date", taxYearEndIso)) as unknown as PostgrestCountResponse;
+        .lte("pay_date", taxYearEndIso);
+
+      if (!includeArchived) {
+        companyOnlyQ = companyOnlyQ.is("archived_at", null);
+        inTaxYearQ = inTaxYearQ.is("archived_at", null);
+      }
+
+      const companyOnlyRes = (await companyOnlyQ) as unknown as PostgrestCountResponse;
+      const inTaxYearRes = (await inTaxYearQ) as unknown as PostgrestCountResponse;
 
       debugCounts.companyOnly = {
         count: (companyOnlyRes as any)?.count ?? null,
@@ -587,45 +670,57 @@ export async function GET(req: Request) {
       };
     }
 
-    let supaQuery = client
-      .from("payroll_runs")
-      .select(
-        [
-          "id",
-          "company_id",
-          "frequency",
-          "status",
-          "pay_date",
-          "pay_date_overridden",
-          "pay_date_override_reason",
-          "attached_all_due_employees",
-          "created_at",
-          "total_gross_pay",
-          "total_tax",
-          "total_ni",
-          "total_net_pay",
-          "pay_period_start",
-          "pay_period_end",
-          "pay_schedule_id",
-          "run_kind",
-          "parent_run_id",
-          "run_name",
-          "run_number",
-        ].join(", ")
-      )
-      .eq("company_id", companyIdTrim)
-      .gte("pay_date", taxYearStartIso)
-      .lte("pay_date", taxYearEndIso);
+    const baseSelectCols = [
+      "id",
+      "company_id",
+      "frequency",
+      "status",
+      "pay_date",
+      "pay_date_overridden",
+      "pay_date_override_reason",
+      "attached_all_due_employees",
+      "created_at",
+      "total_gross_pay",
+      "total_tax",
+      "total_ni",
+      "total_net_pay",
+      "pay_period_start",
+      "pay_period_end",
+      "pay_schedule_id",
+      "run_kind",
+      "parent_run_id",
+      "run_name",
+      "run_number",
+    ];
 
-    if (frequency) supaQuery = supaQuery.eq("frequency", frequency);
+    const selectWithArchived = baseSelectCols.concat(["archived_at"]).join(", ");
+    const selectWithoutArchived = baseSelectCols.join(", ");
 
-    const listRes = await supaQuery
-      .order("pay_date", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
+    const buildListQuery = (selectCols: string, filterArchived: boolean) => {
+      let q = client
+        .from("payroll_runs")
+        .select(selectCols)
+        .eq("company_id", companyIdTrim)
+        .gte("pay_date", taxYearStartIso)
+        .lte("pay_date", taxYearEndIso);
+
+      if (frequency) q = q.eq("frequency", frequency);
+      if (filterArchived) q = q.is("archived_at", null);
+
+      return q
+        .order("pay_date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+    };
+
+    let listRes = await buildListQuery(selectWithArchived, !includeArchived);
+
+    if (listRes.error && isMissingColumnError(listRes.error, ["archived_at"])) {
+      listRes = await buildListQuery(selectWithoutArchived, false);
+    }
 
     if (listRes.error) {
       return NextResponse.json(
-        { ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v13" },
+        { ok: false, error: listRes.error, debugSource: "payroll_runs_list_debug_v14" },
         { status: 500 }
       );
     }
@@ -672,6 +767,8 @@ export async function GET(req: Request) {
         pay_date_override_reason: row.pay_date_override_reason ?? null,
         attached_all_due_employees: row.attached_all_due_employees,
 
+        archived_at: row.archived_at ?? null,
+
         totals: {
           gross: row.total_gross_pay ?? 0,
           tax: row.total_tax ?? 0,
@@ -683,18 +780,19 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_runs_list_debug_v13",
+      debugSource: "payroll_runs_list_debug_v14",
       query,
       taxYear: { start: taxYearStartIso, end: taxYearEndIso },
       activeCompanyId: companyIdTrim,
       filterMode: "pay_date_in_tax_year",
       frequencyApplied: frequency,
+      includeArchived,
       debugCounts,
       runs,
     });
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v13" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_list_debug_v14" },
       { status: 500 }
     );
   }
@@ -708,22 +806,28 @@ export async function GET(req: Request) {
 ------------------------ */
 
 async function createSupplementaryRunRpc(client: any, parentRunId: string) {
-  const attempt1 = await client.rpc("create_supplementary_run", { parent_run_id: parentRunId });
-  if (!attempt1?.error) return attempt1;
+  const preferred = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
+  if (!preferred?.error) return preferred;
 
-  const msg = String(attempt1?.error?.message ?? attempt1?.error ?? "");
-  const looksLikeParamMismatch =
-    msg.toLowerCase().includes("parameter") ||
-    msg.toLowerCase().includes("named") ||
-    msg.toLowerCase().includes("argument");
+  const code = String(preferred?.error?.code ?? "").trim();
+  const msg = String(preferred?.error?.message ?? preferred?.error ?? "");
+  const msgLower = msg.toLowerCase();
 
-  if (looksLikeParamMismatch) {
-    const attempt2 = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
-    if (!attempt2?.error) return attempt2;
-    return attempt2;
+  const looksLikeArgOrCache =
+    code === "PGRST202" ||
+    msgLower.includes("schema cache") ||
+    msgLower.includes("could not find the function") ||
+    msgLower.includes("searched for the function") ||
+    msgLower.includes("parameter") ||
+    msgLower.includes("named") ||
+    msgLower.includes("argument");
+
+  if (looksLikeArgOrCache) {
+    const fallback = await client.rpc("create_supplementary_run", { parent_run_id: parentRunId });
+    return fallback;
   }
 
-  return attempt1;
+  return preferred;
 }
 
 export async function POST(req: Request) {
@@ -788,7 +892,6 @@ export async function POST(req: Request) {
       }
 
       const parentStatus = String(parent.status || "").trim().toLowerCase();
-
       if (parentStatus !== "completed") {
         return NextResponse.json(
           {
@@ -801,10 +904,71 @@ export async function POST(req: Request) {
         );
       }
 
+      const parentFrequency = String(parent.frequency || "").trim().toLowerCase();
+      const allowedSuppFrequencies = ["fortnightly", "four_weekly", "monthly"];
+
+      if (parentFrequency === "weekly") {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Supplementary runs are not allowed for weekly payroll runs.",
+            code: "SUPPLEMENTARY_NOT_ALLOWED_WEEKLY",
+            parent: { id: parentRunId, frequency: parent.frequency ?? null },
+          },
+          { status: 409 }
+        );
+      }
+
+      if (!allowedSuppFrequencies.includes(parentFrequency)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Supplementary runs are only allowed for fortnightly, 4-weekly, or monthly payroll runs.",
+            code: "SUPPLEMENTARY_NOT_ALLOWED_FREQUENCY",
+            parent: { id: parentRunId, frequency: parent.frequency ?? null },
+          },
+          { status: 409 }
+        );
+      }
+
       if (!parent.pay_schedule_id) {
         return NextResponse.json(
           { ok: false, error: "Parent run is missing pay_schedule_id. Fix the parent run first.", code: "PARENT_MISSING_SCHEDULE" },
           { status: 400 }
+        );
+      }
+
+      const openSuppQuery = await client
+        .from("payroll_runs")
+        .select("id, status, archived_at, parent_run_id")
+        .eq("company_id", companyIdStr)
+        .eq("parent_run_id", parentRunId)
+        .is("archived_at", null)
+        .limit(10);
+
+      if (openSuppQuery.error) {
+        return NextResponse.json(
+          { ok: false, error: openSuppQuery.error, code: "SUPPLEMENTARY_OPEN_CHECK_FAILED", debugSource: "supp_open_check_v1" },
+          { status: 500 }
+        );
+      }
+
+      const openSuppRows = Array.isArray(openSuppQuery.data) ? openSuppQuery.data : [];
+      const openSupp = openSuppRows.find((r: any) => {
+        const st = String(r?.status ?? "draft").trim().toLowerCase();
+        return st !== "completed";
+      });
+
+      if (openSupp?.id) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "An open supplementary run already exists for this parent. Complete it before creating another.",
+            code: "SUPPLEMENTARY_ALREADY_OPEN",
+            parent: { id: parentRunId },
+            open: { id: String(openSupp.id), status: openSupp.status ?? null },
+          },
+          { status: 409 }
         );
       }
 
@@ -860,7 +1024,7 @@ export async function POST(req: Request) {
       }
 
       return NextResponse.json(
-        { ok: true, run_id: newId, created: true, run: newRes.data, debugSource: "supplementary_create_v1" },
+        { ok: true, run_id: newId, created: true, run: newRes.data, debugSource: "supplementary_create_v2" },
         { status: 201 }
       );
     }
@@ -1202,7 +1366,7 @@ export async function POST(req: Request) {
     return res;
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_post_debug_v13" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_post_debug_v15" },
       { status: 500 }
     );
   }
