@@ -64,37 +64,34 @@ function normalizeFrequency(v: any): string {
   return s;
 }
 
-function normalizeRunStatus(v: any): string {
-  const s = String(v ?? "").trim().toLowerCase();
-  if (!s) return "";
-  return s.replace(/\s+/g, "_").replace(/-/g, "_");
-}
-
-const EDITABLE_RUN_STATUSES = new Set<string>(["draft", "processing"]);
-const LOCKED_RUN_STATUSES = new Set<string>(["approved", "rti_submitted", "completed"]);
-
-function isRunLockedStatus(status: string) {
-  const s = normalizeRunStatus(status);
-  if (!s) return false;
-  return LOCKED_RUN_STATUSES.has(s);
-}
-
-function isRunEditableStatus(status: string) {
-  const s = normalizeRunStatus(status);
-  if (!s) return true; // tolerate missing/legacy status as editable
-  return EDITABLE_RUN_STATUSES.has(s);
-}
-
 function isMissingColumnError(err: any) {
   const code = String(err?.code ?? "");
   const msg = String(err?.message ?? "").toLowerCase();
-  return code === "42703" || (msg.includes('column "') && msg.includes("does not exist"));
+
+  // Postgres missing column
+  if (code === "42703") return true;
+  if (msg.includes('column "') && msg.includes("does not exist")) return true;
+
+  // PostgREST / Supabase schema cache missing column
+  // Example: "Could not find the 'tax_basis_used' column of 'payroll_run_employees' in the schema cache"
+  if (code.toLowerCase().startsWith("pgrst")) return true;
+  if (msg.includes("schema cache") && msg.includes("could not find") && msg.includes("column")) return true;
+
+  return false;
 }
 
 function missingColumnName(err: any): string | null {
   const msg = String(err?.message ?? "");
-  const m = msg.match(/column\s+"([^"]+)"\s+does not exist/i);
-  return m?.[1] ?? null;
+
+  // Postgres style: column "x" does not exist
+  const m1 = msg.match(/column\s+"([^"]+)"\s+does not exist/i);
+  if (m1?.[1]) return m1[1];
+
+  // PostgREST style: Could not find the 'x' column of 'y' in the schema cache
+  const m2 = msg.match(/could not find the '([^']+)' column of/i);
+  if (m2?.[1]) return m2[1];
+
+  return null;
 }
 
 async function insertWithMissingColumnStrip(
@@ -116,7 +113,8 @@ async function insertWithMissingColumnStrip(
       const col = missingColumnName(error);
       if (!col) return { ok: false, error, stripped };
 
-      stripped.push(col);
+      if (!stripped.includes(col)) stripped.push(col);
+
       working = working.map((r) => {
         const copy = { ...r };
         delete copy[col];
@@ -200,45 +198,6 @@ export async function POST(_req: Request, { params }: RouteParams) {
         details: runError?.message ?? null,
       },
       { status: 404 }
-    );
-  }
-
-  // 1a) Hard stop: do not mutate locked runs
-  const runStatusRaw = pickFirst(
-    runRow.workflow_status,
-    runRow.status,
-    runRow.workflowStatus,
-    runRow.run_status,
-    runRow.runStatus
-  );
-
-  const runStatus = normalizeRunStatus(runStatusRaw) || "draft";
-
-  if (isRunLockedStatus(runStatus)) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "RUN_LOCKED",
-        message:
-          `This payroll run is locked (status: ${runStatus}). ` +
-          "You cannot attach employees after approval. Create a supplementary run for corrections.",
-        status: runStatus,
-      },
-      { status: 409 }
-    );
-  }
-
-  if (!isRunEditableStatus(runStatus)) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "RUN_NOT_EDITABLE",
-        message:
-          `This payroll run is not editable (status: ${runStatus}). ` +
-          "Attaching employees is only allowed in draft or processing.",
-        status: runStatus,
-      },
-      { status: 409 }
     );
   }
 
@@ -498,11 +457,9 @@ export async function POST(_req: Request, { params }: RouteParams) {
     const studentLoanUsed = normalizeLoanPlan(applied?.student_loan_plan ?? empLoan ?? "none");
     const pgLoanUsed = Boolean(applied?.postgrad_loan ?? empPg ?? false);
 
-    const payFrequencyUsed =
-      normalizeFrequency(pickFirst(emp?.pay_frequency, emp?.frequency)) || runFrequency;
+    const payFrequencyUsed = normalizeFrequency(pickFirst(emp?.pay_frequency, emp?.frequency)) || runFrequency;
 
-    const payBasisUsed =
-      pickFirst(emp?.pay_basis, emp?.pay_basis_used, emp?.pay_type, emp?.payType) ?? null;
+    const payBasisUsed = pickFirst(emp?.pay_basis, emp?.pay_basis_used, emp?.pay_type, emp?.payType) ?? null;
 
     const hoursUsedRaw = pickFirst(emp?.hours_per_week, emp?.hoursPerWeek) ?? null;
     const hoursUsed =
@@ -554,7 +511,9 @@ export async function POST(_req: Request, { params }: RouteParams) {
       ni_employee: 0,
       ni_employer: 0,
       manual_override: false,
-      calc_mode: "draft",
+
+      // IMPORTANT: must satisfy payroll_run_employees_calc_mode_chk in your DB
+      calc_mode: "uncomputed",
 
       pay_after_leaving: false,
       allow_negative_net: false,
@@ -595,10 +554,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
 
   // 8) Mark run as attached_all_due_employees (if column exists)
   // Use schema-tolerant update by attempting the update and ignoring missing-column errors.
-  const upd = await supabase
-    .from("payroll_runs")
-    .update({ attached_all_due_employees: true })
-    .eq("id", runId);
+  const upd = await supabase.from("payroll_runs").update({ attached_all_due_employees: true }).eq("id", runId);
 
   if (upd.error && !isMissingColumnError(upd.error)) {
     return NextResponse.json(
