@@ -55,6 +55,8 @@ type PayrollRunRow = {
   total_tax?: number | null;
   total_ni?: number | null;
   total_net_pay?: number | null;
+
+  archived_at?: string | null;
 };
 
 type PayScheduleRow = {
@@ -410,6 +412,20 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
     hint: e.hint || null,
   };
 
+  if (e.code === "PGRST202" || msgLower.includes("schema cache") || msgLower.includes("could not find the function")) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Supplementary run RPC is not available to the API right now. This is usually schema cache lag or a missing migration.",
+        code: "SUPPLEMENTARY_RPC_NOT_AVAILABLE",
+        parent: { id: parentRunId },
+        debugSource: "create_supplementary_run_rpc",
+        debug,
+      },
+      { status: 503 }
+    );
+  }
+
   if (e.code === "P0001") {
     if (msgLower.includes("parent run must be completed")) {
       return NextResponse.json(
@@ -450,6 +466,62 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
           debug,
         },
         { status: 404 }
+      );
+    }
+
+    if (msgLower.includes("weekly") && msgLower.includes("not allowed")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Supplementary runs are not allowed for weekly payroll runs.",
+          code: "SUPPLEMENTARY_NOT_ALLOWED_WEEKLY",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (msgLower.includes("only allowed for fortnightly") || msgLower.includes("only allowed for fortnightly, four_weekly, or monthly")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Supplementary runs are only allowed for fortnightly, 4-weekly, or monthly payroll runs.",
+          code: "SUPPLEMENTARY_NOT_ALLOWED_FREQUENCY",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (msgLower.includes("open supplementary") || msgLower.includes("already exists for this parent") || msgLower.includes("complete or archive it first")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "An open supplementary run already exists for this parent. Complete it before creating another.",
+          code: "SUPPLEMENTARY_ALREADY_OPEN",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (msgLower.includes("cannot create a supplementary run from a supplementary run")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Cannot create a supplementary run from a supplementary run.",
+          code: "BAD_PARENT_KIND",
+          parent: { id: parentRunId },
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 400 }
       );
     }
   }
@@ -707,31 +779,29 @@ export async function GET(req: Request) {
      but only after the parent run is COMPLETED.
 ------------------------ */
 
-async function createSupplementaryRunRpc(args: {
-  client: any;
-  parentRunId: string;
-  payDateOverrideIso: string | null;
-  payDateOverrideReason: string | null;
-}) {
-  const { client, parentRunId, payDateOverrideIso, payDateOverrideReason } = args;
-
-  const preferred = await client.rpc("create_supplementary_run", {
-    p_parent_run_id: parentRunId,
-    p_pay_date_override: payDateOverrideIso ?? null,
-    p_pay_date_override_reason: payDateOverrideReason ?? null,
-  });
+async function createSupplementaryRunRpc(client: any, parentRunId: string) {
+  const preferred = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
   if (!preferred?.error) return preferred;
-  const msg = String(attempt1?.error?.message ?? attempt1?.error ?? "");
-  const looksLikeParamMismatch =
-    msg.toLowerCase().includes("parameter") ||
-    msg.toLowerCase().includes("named") ||
-    msg.toLowerCase().includes("argument");
 
-  const attempt2 = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
-  if (!attempt2?.error) return attempt2;
+  const code = String(preferred?.error?.code ?? "").trim();
+  const msg = String(preferred?.error?.message ?? preferred?.error ?? "");
+  const msgLower = msg.toLowerCase();
 
-  const attempt3 = await client.rpc("create_supplementary_run", { parent_run_id: parentRunId });
-  return attempt3;
+  const looksLikeArgOrCache =
+    code === "PGRST202" ||
+    msgLower.includes("schema cache") ||
+    msgLower.includes("could not find the function") ||
+    msgLower.includes("searched for the function") ||
+    msgLower.includes("parameter") ||
+    msgLower.includes("named") ||
+    msgLower.includes("argument");
+
+  if (looksLikeArgOrCache) {
+    const fallback = await client.rpc("create_supplementary_run", { parent_run_id: parentRunId });
+    return fallback;
+  }
+
+  return preferred;
 }
 
 export async function POST(req: Request) {
@@ -765,23 +835,6 @@ export async function POST(req: Request) {
         );
       }
 
-      const payDateOverrideRaw = String(
-        body?.p_pay_date_override || body?.pay_date_override || body?.payDateOverride || ""
-      ).trim();
-      const payDateOverrideIso = payDateOverrideRaw ? payDateOverrideRaw : null;
-
-      if (payDateOverrideIso && !isIsoDateOnly(payDateOverrideIso)) {
-        return NextResponse.json(
-          { ok: false, error: "Invalid pay_date_override. Expected YYYY-MM-DD.", code: "BAD_PAY_DATE_OVERRIDE" },
-          { status: 400 }
-        );
-      }
-
-      const payDateOverrideReasonRaw = String(
-        body?.p_pay_date_override_reason || body?.pay_date_override_reason || body?.payDateOverrideReason || ""
-      ).trim();
-      const payDateOverrideReason = payDateOverrideReasonRaw ? payDateOverrideReasonRaw : null;
-
       const parentRes = (await client
         .from("payroll_runs")
         .select("id, company_id, run_kind, frequency, pay_schedule_id, pay_date, pay_period_start, pay_period_end, status")
@@ -813,7 +866,6 @@ export async function POST(req: Request) {
       }
 
       const parentStatus = String(parent.status || "").trim().toLowerCase();
-
       if (parentStatus !== "completed") {
         return NextResponse.json(
           {
@@ -826,23 +878,75 @@ export async function POST(req: Request) {
         );
       }
 
-      if (!parent.pay_schedule_id) {
+      const parentFrequency = String(parent.frequency || "").trim().toLowerCase();
+      const allowedSuppFrequencies = ["fortnightly", "four_weekly", "monthly"];
+
+      if (parentFrequency === "weekly") {
         return NextResponse.json(
           {
             ok: false,
-            error: "Parent run is missing pay_schedule_id. Fix the parent run first.",
-            code: "PARENT_MISSING_SCHEDULE",
+            error: "Supplementary runs are not allowed for weekly payroll runs.",
+            code: "SUPPLEMENTARY_NOT_ALLOWED_WEEKLY",
+            parent: { id: parentRunId, frequency: parent.frequency ?? null },
           },
+          { status: 409 }
+        );
+      }
+
+      if (!allowedSuppFrequencies.includes(parentFrequency)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Supplementary runs are only allowed for fortnightly, 4-weekly, or monthly payroll runs.",
+            code: "SUPPLEMENTARY_NOT_ALLOWED_FREQUENCY",
+            parent: { id: parentRunId, frequency: parent.frequency ?? null },
+          },
+          { status: 409 }
+        );
+      }
+
+      if (!parent.pay_schedule_id) {
+        return NextResponse.json(
+          { ok: false, error: "Parent run is missing pay_schedule_id. Fix the parent run first.", code: "PARENT_MISSING_SCHEDULE" },
           { status: 400 }
         );
       }
 
-      const rpcRes = await createSupplementaryRunRpc({
-        client,
-        parentRunId,
-        payDateOverrideIso,
-        payDateOverrideReason,
+      const openSuppQuery = await client
+        .from("payroll_runs")
+        .select("id, status, archived_at, parent_run_id")
+        .eq("company_id", companyIdStr)
+        .eq("parent_run_id", parentRunId)
+        .is("archived_at", null)
+        .limit(10);
+
+      if (openSuppQuery.error) {
+        return NextResponse.json(
+          { ok: false, error: openSuppQuery.error, code: "SUPPLEMENTARY_OPEN_CHECK_FAILED", debugSource: "supp_open_check_v1" },
+          { status: 500 }
+        );
+      }
+
+      const openSuppRows = Array.isArray(openSuppQuery.data) ? openSuppQuery.data : [];
+      const openSupp = openSuppRows.find((r: any) => {
+        const st = String(r?.status ?? "draft").trim().toLowerCase();
+        return st !== "completed";
       });
+
+      if (openSupp?.id) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "An open supplementary run already exists for this parent. Complete it before creating another.",
+            code: "SUPPLEMENTARY_ALREADY_OPEN",
+            parent: { id: parentRunId },
+            open: { id: String(openSupp.id), status: openSupp.status ?? null },
+          },
+          { status: 409 }
+        );
+      }
+
+      const rpcRes = await createSupplementaryRunRpc(client, parentRunId);
 
       if (rpcRes?.error) {
         return mapCreateSupplementaryRpcErrorToResponse(rpcRes.error, parentRunId);
@@ -888,14 +992,7 @@ export async function POST(req: Request) {
 
       if (newRes.error || !newRes.data) {
         return NextResponse.json(
-          {
-            ok: true,
-            run_id: newId,
-            created: true,
-            run: null,
-            warning: "Created but could not fetch run row.",
-            debug: newRes.error ?? null,
-          },
+          { ok: true, run_id: newId, created: true, run: null, warning: "Created but could not fetch run row.", debug: newRes.error ?? null },
           { status: 201 }
         );
       }
@@ -1243,7 +1340,7 @@ export async function POST(req: Request) {
     return res;
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_post_debug_v13" },
+      { ok: false, error: err?.message ?? "Unexpected error", debugSource: "payroll_runs_post_debug_v14" },
       { status: 500 }
     );
   }
