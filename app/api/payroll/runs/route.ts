@@ -727,11 +727,11 @@ async function createSupplementaryRunRpc(args: {
     msg.toLowerCase().includes("named") ||
     msg.toLowerCase().includes("argument");
 
-  const attemptOldNamed = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
-  if (!attemptOldNamed?.error) return attemptOldNamed;
+  const attempt2 = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
+  if (!attempt2?.error) return attempt2;
 
-  const attemptOld = await client.rpc("create_supplementary_run", { parent_run_id: parentRunId });
-  return attemptOld;
+  const attempt3 = await client.rpc("create_supplementary_run", { parent_run_id: parentRunId });
+  return attempt3;
 }
 
 export async function POST(req: Request) {
