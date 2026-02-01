@@ -64,10 +64,31 @@ function normalizeFrequency(v: any): string {
   return s;
 }
 
+function normalizeRunStatus(v: any): string {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return "";
+  return s.replace(/\s+/g, "_").replace(/-/g, "_");
+}
+
+const EDITABLE_RUN_STATUSES = new Set<string>(["draft", "processing"]);
+const LOCKED_RUN_STATUSES = new Set<string>(["approved", "rti_submitted", "completed"]);
+
+function isRunLockedStatus(status: string) {
+  const s = normalizeRunStatus(status);
+  if (!s) return false;
+  return LOCKED_RUN_STATUSES.has(s);
+}
+
+function isRunEditableStatus(status: string) {
+  const s = normalizeRunStatus(status);
+  if (!s) return true; // tolerate missing/legacy status as editable
+  return EDITABLE_RUN_STATUSES.has(s);
+}
+
 function isMissingColumnError(err: any) {
   const code = String(err?.code ?? "");
   const msg = String(err?.message ?? "").toLowerCase();
-  return code === "42703" || msg.includes('column "') && msg.includes("does not exist");
+  return code === "42703" || (msg.includes('column "') && msg.includes("does not exist"));
 }
 
 function missingColumnName(err: any): string | null {
@@ -182,13 +203,51 @@ export async function POST(_req: Request, { params }: RouteParams) {
     );
   }
 
+  // 1a) Hard stop: do not mutate locked runs
+  const runStatusRaw = pickFirst(
+    runRow.workflow_status,
+    runRow.status,
+    runRow.workflowStatus,
+    runRow.run_status,
+    runRow.runStatus
+  );
+
+  const runStatus = normalizeRunStatus(runStatusRaw) || "draft";
+
+  if (isRunLockedStatus(runStatus)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "RUN_LOCKED",
+        message:
+          `This payroll run is locked (status: ${runStatus}). ` +
+          "You cannot attach employees after approval. Create a supplementary run for corrections.",
+        status: runStatus,
+      },
+      { status: 409 }
+    );
+  }
+
+  if (!isRunEditableStatus(runStatus)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "RUN_NOT_EDITABLE",
+        message:
+          `This payroll run is not editable (status: ${runStatus}). ` +
+          "Attaching employees is only allowed in draft or processing.",
+        status: runStatus,
+      },
+      { status: 409 }
+    );
+  }
+
   const companyId = runRow.company_id ?? runRow.companyId ?? null;
   const runFrequencyRaw = runRow.frequency ?? runRow.pay_frequency ?? runRow.payFrequency ?? null;
   const runFrequency = normalizeFrequency(runFrequencyRaw);
 
   const runPeriodStart =
-    pickFirst(runRow.period_start, runRow.pay_period_start, runRow.start_date, runRow.periodStart) ??
-    null;
+    pickFirst(runRow.period_start, runRow.pay_period_start, runRow.start_date, runRow.periodStart) ?? null;
 
   const asOfDate =
     toIsoDateOnly(runPeriodStart) ||
@@ -433,7 +492,8 @@ export async function POST(_req: Request, { params }: RouteParams) {
 
     const taxCodeUsed = String(applied?.tax_code ?? empTaxCode ?? "BR").trim() || "BR";
     const taxBasisUsed = String(applied?.tax_basis ?? empTaxBasis ?? "w1m1").trim() || "w1m1";
-    const niCategoryUsed = String(applied?.ni_category ?? empNiCat ?? defaultNiCategory(emp)).trim() || defaultNiCategory(emp);
+    const niCategoryUsed =
+      String(applied?.ni_category ?? empNiCat ?? defaultNiCategory(emp)).trim() || defaultNiCategory(emp);
 
     const studentLoanUsed = normalizeLoanPlan(applied?.student_loan_plan ?? empLoan ?? "none");
     const pgLoanUsed = Boolean(applied?.postgrad_loan ?? empPg ?? false);
