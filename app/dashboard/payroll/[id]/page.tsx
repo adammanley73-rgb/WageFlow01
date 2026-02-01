@@ -100,7 +100,7 @@ function ukTaxYearStartForPayDate(payDateIso: string) {
 
   const d = parseIsoDateOnlyToUtc(s);
   const y = d.getUTCFullYear();
-  const candidate = new Date(Date.UTC(y, 3, 6)); // 6 April
+  const candidate = new Date(Date.UTC(y, 3, 6));
   const startYear = d.getTime() >= candidate.getTime() ? y : y - 1;
 
   const start = new Date(Date.UTC(startYear, 3, 6));
@@ -121,8 +121,7 @@ function makeRunNumberFromPayDate(frequency: Frequency, payDateIso: string | nul
   if (diffDays < 0) return null;
 
   if (f === "monthly") {
-    // Tax-year month label: Apr=1 ... Mar=12
-    const m = payUtc.getUTCMonth(); // 0..11
+    const m = payUtc.getUTCMonth();
     const mth = m >= 3 ? m - 3 + 1 : m + 9 + 1;
     return `Mth ${mth}`;
   }
@@ -148,12 +147,12 @@ function derivePeriodFromPayDate(frequency: Frequency, payDateIso: string | null
   if (f === "monthly") {
     const [yStr, mStr] = String(payDateIso).split("-");
     const y = parseInt(yStr, 10);
-    const m = parseInt(mStr, 10); // 1..12
+    const m = parseInt(mStr, 10);
 
     if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
 
     const startUtc = new Date(Date.UTC(y, m - 1, 1));
-    const endOfMonthUtc = new Date(Date.UTC(y, m, 0)); // day 0 of next month
+    const endOfMonthUtc = new Date(Date.UTC(y, m, 0));
     return { startIso: isoDateOnlyFromUtc(startUtc), endIso: isoDateOnlyFromUtc(endOfMonthUtc) };
   }
 
@@ -269,6 +268,14 @@ export default function PayrollRunDetailPage() {
   const [exceptionsExpanded, setExceptionsExpanded] = useState<boolean>(false);
   const exceptionsAnchorRef = useRef<HTMLDivElement | null>(null);
 
+  const [suppCheck, setSuppCheck] = useState<{
+    checked: boolean;
+    loading: boolean;
+    open: boolean;
+    openId: string | null;
+    openStatus: string | null;
+  }>({ checked: false, loading: false, open: false, openId: null, openStatus: null });
+
   const load = async () => {
     setApprovedMsg(null);
     setErr(null);
@@ -299,7 +306,6 @@ export default function PayrollRunDetailPage() {
   useEffect(() => {
     if (!runId) return;
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
 
   const rowTotals = useMemo(() => {
@@ -349,6 +355,88 @@ export default function PayrollRunDetailPage() {
 
   const parentRunId = String(pickFirst(runObj.parent_run_id, runObj.parentRunId, "") || "").trim();
   const hasParent = isUuid(parentRunId);
+
+  const payDateIso = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
+  const frequencyRaw = String(pickFirst(runObj.frequency, runObj.pay_frequency, runObj.payFrequency, "") || "").trim();
+
+  const parentFrequency = String(frequencyRaw || "").trim().toLowerCase();
+  const allowedSuppFrequencies = ["fortnightly", "four_weekly", "monthly"];
+  const frequencyAllowsSupp = allowedSuppFrequencies.includes(parentFrequency);
+
+  const statusRaw = pickFirst(runObj.status, runObj.run_status, null) as any;
+  const parentStatus = String(statusRaw || "").trim().toLowerCase();
+  const parentIsCompleted = parentStatus === "completed";
+
+  useEffect(() => {
+    const shouldCheck =
+      !!runId &&
+      !loading &&
+      !!data &&
+      !isSupplementary &&
+      parentIsCompleted &&
+      frequencyAllowsSupp &&
+      isIsoDateOnly(String(payDateIso || "").trim());
+
+    if (!shouldCheck) {
+      setSuppCheck({ checked: false, loading: false, open: false, openId: null, openStatus: null });
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        setSuppCheck((s) => ({ ...s, checked: false, loading: true, open: false, openId: null, openStatus: null }));
+
+        const taxYearStart = ukTaxYearStartForPayDate(String(payDateIso));
+        const url = taxYearStart ? `/api/payroll/runs?taxYearStart=${encodeURIComponent(taxYearStart)}` : `/api/payroll/runs`;
+
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j?.error || "Failed to check supplementary runs");
+        }
+
+        const j: any = await res.json().catch(() => ({}));
+        const runs = Array.isArray(j?.runs) ? j.runs : [];
+
+        const open = runs.find((r: any) => {
+          const kind = String(r?.run_kind || "").trim().toLowerCase();
+          const parent = String(r?.parent_run_id || "").trim();
+          const st = String(r?.status ?? "draft").trim().toLowerCase();
+          const archivedAt = r?.archived_at ?? null;
+
+          if (kind !== "supplementary") return false;
+          if (parent !== runId) return false;
+          if (archivedAt) return false;
+          return st !== "completed";
+        });
+
+        if (cancelled) return;
+
+        if (open?.id) {
+          setSuppCheck({
+            checked: true,
+            loading: false,
+            open: true,
+            openId: String(open.id),
+            openStatus: String(open.status ?? "draft"),
+          });
+        } else {
+          setSuppCheck({ checked: true, loading: false, open: false, openId: null, openStatus: null });
+        }
+      } catch {
+        if (cancelled) return;
+        setSuppCheck({ checked: true, loading: false, open: false, openId: null, openStatus: null });
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, loading, data, isSupplementary, parentIsCompleted, frequencyAllowsSupp, payDateIso]);
 
   const exceptionsObj: any = (data as any)?.exceptions;
   const exceptionItems = useMemo(() => {
@@ -612,9 +700,6 @@ export default function PayrollRunDetailPage() {
     window.location.href = `/api/payroll/${runId}/export`;
   };
 
-  const payDateIso = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
-  const frequencyRaw = String(pickFirst(runObj.frequency, runObj.pay_frequency, runObj.payFrequency, "") || "").trim();
-
   const runNameFromApi = String(pickFirst(runObj.runName, runObj.run_name, "") || "").trim();
 
   const runNumberFromApi = pickFirst(runObj.runNumber, runObj.run_number, null) as any;
@@ -628,7 +713,6 @@ export default function PayrollRunDetailPage() {
 
   const payDate = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
 
-  const statusRaw = pickFirst(runObj.status, runObj.run_status, null) as any;
   const statusText = statusRaw ? statusLabel(statusRaw) : MISSING;
 
   const periodText =
@@ -664,13 +748,21 @@ export default function PayrollRunDetailPage() {
       try {
         exceptionsAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch {
-        // ignore
       }
     }, 0);
   };
 
   const headline = runNameFromApi ? runNameFromApi : runNumber !== MISSING ? `Run ${runNumber}` : "Run";
   const kindChip = isSupplementary ? "SUPPLEMENTARY" : "PRIMARY";
+
+  const showCreateSupplementaryButton =
+    !loading &&
+    !isSupplementary &&
+    !!runId &&
+    parentIsCompleted &&
+    frequencyAllowsSupp &&
+    suppCheck.checked &&
+    !suppCheck.open;
 
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
@@ -770,7 +862,7 @@ export default function PayrollRunDetailPage() {
                 Back to Runs
               </Link>
 
-              {!loading && !isSupplementary ? (
+              {showCreateSupplementaryButton ? (
                 <button
                   type="button"
                   onClick={createSupplementaryRun}
