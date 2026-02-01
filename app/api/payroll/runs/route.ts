@@ -63,9 +63,8 @@ type PayScheduleRow = {
 
   frequency: string | null;
 
-  // company_pay_schedules model
-  pay_date_mode: string | null; // offset_from_period_end | fixed_calendar_day | fixed_weekday
-  pay_date_param_int: number | null; // mode parameter
+  pay_date_mode: string | null;
+  pay_date_param_int: number | null;
   allow_override: boolean | null;
 };
 
@@ -131,8 +130,8 @@ function dateOnlyIsoUtc(d: Date) {
 
 function mondayOfWeekUtc(d: Date) {
   const out = new Date(d.getTime());
-  const jsDow = out.getUTCDay(); // 0=Sun..6=Sat
-  const daysSinceMonday = (jsDow + 6) % 7; // Mon=0..Sun=6
+  const jsDow = out.getUTCDay();
+  const daysSinceMonday = (jsDow + 6) % 7;
   out.setUTCDate(out.getUTCDate() - daysSinceMonday);
   return out;
 }
@@ -173,7 +172,6 @@ function computeMonthlyPayDateUtc(monthAnyDay: Date, payDayOfMonth: number | nul
     return new Date(Date.UTC(y, m, payDayOfMonth));
   }
 
-  // last day of month
   return new Date(Date.UTC(y, m + 1, 0));
 }
 
@@ -208,29 +206,24 @@ function computeCanonicalPayDateOrError(args: {
 
   const inputUtc = parseIsoDateOnlyToUtc(inputIso);
 
-  // Default policy: avoid weekend pay dates unless you explicitly decide otherwise.
   const workingDayAdjustment = "previous_working_day";
 
   if (mode === "fixed_calendar_day") {
-    // For monthly schedules, param is 1..28 (else last day of month)
     const base = computeMonthlyPayDateUtc(inputUtc, param || null);
     const adjusted = adjustWorkingDayUtc(base, workingDayAdjustment);
     return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
   }
 
   if (mode === "fixed_weekday") {
-    // Param is 1=Mon..7=Sun. Compute payday in the week containing the input date.
     const dow = param >= 1 && param <= 7 ? param : 5;
     const base = computeWeekPaydayUtc(inputUtc, dow);
     const adjusted = adjustWorkingDayUtc(base, workingDayAdjustment);
     return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
   }
 
-  // offset_from_period_end (default)
   const offsetDays = param;
   const candidateEnd = addDaysUtc(inputUtc, -offsetDays);
 
-  // Monthly: period end is month end, then pay date is offset from it.
   if (frequency === "monthly") {
     const periodEnd = computeMonthlyPayDateUtc(candidateEnd, null);
     const pay = addDaysUtc(periodEnd, offsetDays);
@@ -240,7 +233,6 @@ function computeCanonicalPayDateOrError(args: {
 
   const pd = periodDaysForFrequency(frequency);
 
-  // Weekly: align period end to Sunday of the week containing the candidateEnd.
   if (frequency === "weekly") {
     const end = addDaysUtc(mondayOfWeekUtc(candidateEnd), 6);
     const pay = addDaysUtc(end, offsetDays);
@@ -248,8 +240,6 @@ function computeCanonicalPayDateOrError(args: {
     return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
   }
 
-  // Fortnightly/four_weekly: treat candidateEnd as the period end and back-calc period start.
-  // This keeps the API deterministic without requiring an anchor column in company_pay_schedules.
   const pay = addDaysUtc(candidateEnd, offsetDays);
   const adjusted = adjustWorkingDayUtc(pay, workingDayAdjustment);
   return { ok: true, payDateIso: dateOnlyIsoUtc(adjusted) };
@@ -291,8 +281,6 @@ function computePayPeriodFromSchedule(args: {
     return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
   }
 
-  // fixed_calendar_day or fixed_weekday:
-  // Default to period being the calendar month for monthly, otherwise a simple back-calc window.
   if (frequency === "monthly") {
     const y = payUtc.getUTCFullYear();
     const m = payUtc.getUTCMonth();
@@ -639,7 +627,8 @@ export async function GET(req: Request) {
 /* -----------------------
    POST
    - Primary run creation is wizard-only.
-   - Supplementary run creation is allowed from inside a run detail page.
+   - Supplementary run creation is allowed from inside a run detail page,
+     but only after the parent run is COMPLETED.
 ------------------------ */
 
 async function createSupplementaryRunRpc(client: any, parentRunId: string) {
@@ -648,7 +637,9 @@ async function createSupplementaryRunRpc(client: any, parentRunId: string) {
 
   const msg = String(attempt1?.error?.message ?? attempt1?.error ?? "");
   const looksLikeParamMismatch =
-    msg.toLowerCase().includes("parameter") || msg.toLowerCase().includes("named") || msg.toLowerCase().includes("argument");
+    msg.toLowerCase().includes("parameter") ||
+    msg.toLowerCase().includes("named") ||
+    msg.toLowerCase().includes("argument");
 
   if (looksLikeParamMismatch) {
     const attempt2 = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
@@ -684,12 +675,15 @@ export async function POST(req: Request) {
       const parentRunId = String(body?.parent_run_id || body?.parentRunId || "").trim();
 
       if (!isUuid(parentRunId)) {
-        return NextResponse.json({ ok: false, error: "Missing or invalid parent_run_id.", code: "BAD_PARENT_RUN_ID" }, { status: 400 });
+        return NextResponse.json(
+          { ok: false, error: "Missing or invalid parent_run_id.", code: "BAD_PARENT_RUN_ID" },
+          { status: 400 }
+        );
       }
 
       const parentRes = (await client
         .from("payroll_runs")
-        .select("id, company_id, run_kind, frequency, pay_schedule_id, pay_date, pay_period_start, pay_period_end")
+        .select("id, company_id, run_kind, frequency, pay_schedule_id, pay_date, pay_period_start, pay_period_end, status")
         .eq("id", parentRunId)
         .single()) as PostgrestSingleResponse<PayrollRunRow>;
 
@@ -703,12 +697,32 @@ export async function POST(req: Request) {
       const parent = parentRes.data;
 
       if (String(parent.company_id || "").trim() !== companyIdStr) {
-        return NextResponse.json({ ok: false, error: "Parent run does not belong to the active company.", code: "PARENT_COMPANY_MISMATCH" }, { status: 403 });
+        return NextResponse.json(
+          { ok: false, error: "Parent run does not belong to the active company.", code: "PARENT_COMPANY_MISMATCH" },
+          { status: 403 }
+        );
       }
 
       const parentKind = String(parent.run_kind || "primary").trim().toLowerCase();
       if (parentKind === "supplementary") {
-        return NextResponse.json({ ok: false, error: "Cannot create a supplementary run from a supplementary run.", code: "BAD_PARENT_KIND" }, { status: 400 });
+        return NextResponse.json(
+          { ok: false, error: "Cannot create a supplementary run from a supplementary run.", code: "BAD_PARENT_KIND" },
+          { status: 400 }
+        );
+      }
+
+      const parentStatus = String(parent.status || "").trim().toLowerCase();
+
+      if (parentStatus !== "completed") {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Supplementary runs are only allowed after the parent run is completed.",
+            code: "PARENT_NOT_COMPLETED",
+            parent: { id: parentRunId, status: parent.status ?? null },
+          },
+          { status: 409 }
+        );
       }
 
       if (!parent.pay_schedule_id) {
@@ -778,7 +792,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Primary run creation remains wizard-only.
     const jar = cookies();
     const cookieToken = jar.get("wf_payroll_run_wizard")?.value ?? null;
     const wizardToken = typeof body?.wizardToken === "string" ? body.wizardToken.trim() : "";
