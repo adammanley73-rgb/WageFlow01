@@ -721,6 +721,11 @@ async function createSupplementaryRunRpc(args: {
     p_pay_date_override_reason: payDateOverrideReason ?? null,
   });
   if (!preferred?.error) return preferred;
+  const msg = String(attempt1?.error?.message ?? attempt1?.error ?? "");
+  const looksLikeParamMismatch =
+    msg.toLowerCase().includes("parameter") ||
+    msg.toLowerCase().includes("named") ||
+    msg.toLowerCase().includes("argument");
 
   const attemptOldNamed = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
   if (!attemptOldNamed?.error) return attemptOldNamed;
