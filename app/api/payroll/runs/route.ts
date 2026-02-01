@@ -707,23 +707,26 @@ export async function GET(req: Request) {
      but only after the parent run is COMPLETED.
 ------------------------ */
 
-async function createSupplementaryRunRpc(client: any, parentRunId: string) {
-  const attempt1 = await client.rpc("create_supplementary_run", { parent_run_id: parentRunId });
-  if (!attempt1?.error) return attempt1;
+async function createSupplementaryRunRpc(args: {
+  client: any;
+  parentRunId: string;
+  payDateOverrideIso: string | null;
+  payDateOverrideReason: string | null;
+}) {
+  const { client, parentRunId, payDateOverrideIso, payDateOverrideReason } = args;
 
-  const msg = String(attempt1?.error?.message ?? attempt1?.error ?? "");
-  const looksLikeParamMismatch =
-    msg.toLowerCase().includes("parameter") ||
-    msg.toLowerCase().includes("named") ||
-    msg.toLowerCase().includes("argument");
+  const preferred = await client.rpc("create_supplementary_run", {
+    p_parent_run_id: parentRunId,
+    p_pay_date_override: payDateOverrideIso ?? null,
+    p_pay_date_override_reason: payDateOverrideReason ?? null,
+  });
+  if (!preferred?.error) return preferred;
 
-  if (looksLikeParamMismatch) {
-    const attempt2 = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
-    if (!attempt2?.error) return attempt2;
-    return attempt2;
-  }
+  const attemptOldNamed = await client.rpc("create_supplementary_run", { p_parent_run_id: parentRunId });
+  if (!attemptOldNamed?.error) return attemptOldNamed;
 
-  return attempt1;
+  const attemptOld = await client.rpc("create_supplementary_run", { parent_run_id: parentRunId });
+  return attemptOld;
 }
 
 export async function POST(req: Request) {
@@ -756,6 +759,23 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
+
+      const payDateOverrideRaw = String(
+        body?.p_pay_date_override || body?.pay_date_override || body?.payDateOverride || ""
+      ).trim();
+      const payDateOverrideIso = payDateOverrideRaw ? payDateOverrideRaw : null;
+
+      if (payDateOverrideIso && !isIsoDateOnly(payDateOverrideIso)) {
+        return NextResponse.json(
+          { ok: false, error: "Invalid pay_date_override. Expected YYYY-MM-DD.", code: "BAD_PAY_DATE_OVERRIDE" },
+          { status: 400 }
+        );
+      }
+
+      const payDateOverrideReasonRaw = String(
+        body?.p_pay_date_override_reason || body?.pay_date_override_reason || body?.payDateOverrideReason || ""
+      ).trim();
+      const payDateOverrideReason = payDateOverrideReasonRaw ? payDateOverrideReasonRaw : null;
 
       const parentRes = (await client
         .from("payroll_runs")
@@ -803,12 +823,21 @@ export async function POST(req: Request) {
 
       if (!parent.pay_schedule_id) {
         return NextResponse.json(
-          { ok: false, error: "Parent run is missing pay_schedule_id. Fix the parent run first.", code: "PARENT_MISSING_SCHEDULE" },
+          {
+            ok: false,
+            error: "Parent run is missing pay_schedule_id. Fix the parent run first.",
+            code: "PARENT_MISSING_SCHEDULE",
+          },
           { status: 400 }
         );
       }
 
-      const rpcRes = await createSupplementaryRunRpc(client, parentRunId);
+      const rpcRes = await createSupplementaryRunRpc({
+        client,
+        parentRunId,
+        payDateOverrideIso,
+        payDateOverrideReason,
+      });
 
       if (rpcRes?.error) {
         return mapCreateSupplementaryRpcErrorToResponse(rpcRes.error, parentRunId);
@@ -854,13 +883,20 @@ export async function POST(req: Request) {
 
       if (newRes.error || !newRes.data) {
         return NextResponse.json(
-          { ok: true, run_id: newId, created: true, run: null, warning: "Created but could not fetch run row.", debug: newRes.error ?? null },
+          {
+            ok: true,
+            run_id: newId,
+            created: true,
+            run: null,
+            warning: "Created but could not fetch run row.",
+            debug: newRes.error ?? null,
+          },
           { status: 201 }
         );
       }
 
       return NextResponse.json(
-        { ok: true, run_id: newId, created: true, run: newRes.data, debugSource: "supplementary_create_v1" },
+        { ok: true, run_id: newId, created: true, run: newRes.data, debugSource: "supplementary_create_v2" },
         { status: 201 }
       );
     }
