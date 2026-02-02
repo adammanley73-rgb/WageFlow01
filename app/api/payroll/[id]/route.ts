@@ -446,7 +446,8 @@ async function fetchRunStatusAndFlag(supabase: any, runId: string) {
 
   const msg = String(a.error?.message || "").toLowerCase();
   const missingCol =
-    a.error?.code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
+    a.error?.code === "42703" ||
+    (msg.includes("column") && msg.includes("does not exist"));
 
   if (missingCol) {
     const b = await trySelect("id,status");
@@ -471,7 +472,13 @@ async function fetchRunStatusAndFlag(supabase: any, runId: string) {
     });
   }
 
-  return { ok: false, run: null, hasAttachedFlag: false, attachedFlag: undefined, attempts };
+  return {
+    ok: false,
+    run: null,
+    hasAttachedFlag: false,
+    attachedFlag: undefined,
+    attempts,
+  };
 }
 
 async function restoreAttachedAllDueEmployeesIfNeeded(
@@ -533,7 +540,12 @@ async function refreshRunTotalsFromAttachments(supabase: any, runId: string) {
     .eq(whereCol, runId);
 
   if (rowsErr) {
-    return { ok: false, status: 500, error: rowsErr.message, debug: { table, whereCol } };
+    return {
+      ok: false,
+      status: 500,
+      error: rowsErr.message,
+      debug: { table, whereCol },
+    };
   }
 
   const rr = Array.isArray(rows) ? rows : [];
@@ -563,7 +575,12 @@ async function refreshRunTotalsFromAttachments(supabase: any, runId: string) {
     .eq("id", runId);
 
   if (runUpErr) {
-    return { ok: false, status: 500, error: runUpErr.message, debug: { table, whereCol } };
+    return {
+      ok: false,
+      status: 500,
+      error: runUpErr.message,
+      debug: { table, whereCol },
+    };
   }
 
   return { ok: true, status: 200, tableUsed: table, whereColumn: whereCol };
@@ -589,7 +606,12 @@ async function setGrossOnlyCalcForRun(supabase: any, runId: string) {
     .eq(whereCol, runId);
 
   if (rowsErr) {
-    return { ok: false, status: 500, error: rowsErr.message, debug: { table, whereCol } };
+    return {
+      ok: false,
+      status: 500,
+      error: rowsErr.message,
+      debug: { table, whereCol },
+    };
   }
 
   const rr = Array.isArray(rows) ? rows : [];
@@ -671,8 +693,6 @@ async function tryComputeFullViaRpc(supabase: any, runId: string) {
         hint: error.hint,
       },
     });
-
-    continue;
   }
 
   return {
@@ -781,16 +801,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
         );
       }
 
-      const rec = await setGrossOnlyCalcForRun(supabase, id);
-      if (!rec.ok) {
+      const rec: any = await setGrossOnlyCalcForRun(supabase, id);
+      if (!rec?.ok) {
         return NextResponse.json(
           {
             ok: false,
             debugSource: "payroll_run_route_admin_v6_full_compute_action",
-            error: rec.error,
-            ...(rec.debug ? { debug: rec.debug } : {}),
+            error: rec?.error || "Recalculate failed",
+            ...(rec?.debug ? { debug: rec.debug } : {}),
           },
-          { status: rec.status || 500 }
+          { status: rec?.status || 500 }
         );
       }
 
@@ -800,7 +820,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         supabase,
         id,
         pre.attachedFlag,
-        post.attachedFlag,
+        post?.attachedFlag,
         Boolean(pre.hasAttachedFlag)
       );
 
@@ -810,12 +830,15 @@ export async function PATCH(req: Request, { params }: Ctx) {
         ok: true,
         debugSource: "payroll_run_route_admin_v6_full_compute_action",
         action: "recalculate",
-        attachments: { tableUsed: rec.tableUsed, whereColumn: rec.whereColumn },
+        attachments: {
+          tableUsed: rec?.tableUsed ?? null,
+          whereColumn: rec?.whereColumn ?? null,
+        },
         sideEffects: pre.hasAttachedFlag
           ? {
               attached_all_due_employees: {
                 before: pre.attachedFlag,
-                after: post.attachedFlag,
+                after: post?.attachedFlag,
                 restored: Boolean(flagFix?.restored),
               },
             }
@@ -885,29 +908,29 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
       const flagPre = await fetchRunStatusAndFlag(supabase, id);
 
-      const rpc = await tryComputeFullViaRpc(supabase, id);
-      if (!rpc.ok) {
+      const rpc: any = await tryComputeFullViaRpc(supabase, id);
+      if (!rpc?.ok) {
         return NextResponse.json(
           {
             ok: false,
             debugSource: "payroll_run_route_admin_v6_full_compute_action",
             action: "compute_full",
-            error: rpc.error,
-            attempts: rpc.attempts || [],
+            error: rpc?.error || "Full compute RPC failed",
+            attempts: rpc?.attempts || [],
           },
-          { status: rpc.status || 501 }
+          { status: rpc?.status || 501 }
         );
       }
 
-      const totalsRefresh = await refreshRunTotalsFromAttachments(supabase, id);
+      const totalsRefresh: any = await refreshRunTotalsFromAttachments(supabase, id);
 
       const flagPost = await fetchRunStatusAndFlag(supabase, id);
       const flagFix = await restoreAttachedAllDueEmployeesIfNeeded(
         supabase,
         id,
-        flagPre.attachedFlag,
-        flagPost.attachedFlag,
-        Boolean(flagPre.hasAttachedFlag)
+        flagPre?.attachedFlag,
+        flagPost?.attachedFlag,
+        Boolean(flagPre?.hasAttachedFlag)
       );
 
       const post = await getRunAndEmployees(supabase, id, false);
@@ -920,8 +943,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
             action: "compute_full",
             error:
               "Full compute attempted, but the run still looks seeded (not all employee rows are calc_mode='full'). Ensure your DB compute function writes tax, NI, net, and calc_mode='full' back to the attachments table.",
-            computeVia: rpc.via,
-            totalsRefreshOk: Boolean(totalsRefresh.ok),
+            computeVia: rpc?.via,
+            totalsRefreshOk: Boolean(totalsRefresh?.ok),
             seededMode: true,
             run: post.run,
             employees: post.employees,
@@ -936,14 +959,14 @@ export async function PATCH(req: Request, { params }: Ctx) {
         ok: true,
         debugSource: "payroll_run_route_admin_v6_full_compute_action",
         action: "compute_full",
-        computeVia: rpc.via,
-        totalsRefreshOk: Boolean(totalsRefresh.ok),
+        computeVia: rpc?.via,
+        totalsRefreshOk: Boolean(totalsRefresh?.ok),
         attachmentsMeta: attachMeta,
-        sideEffects: flagPre.hasAttachedFlag
+        sideEffects: flagPre?.hasAttachedFlag
           ? {
               attached_all_due_employees: {
-                before: flagPre.attachedFlag,
-                after: flagPost.attachedFlag,
+                before: flagPre?.attachedFlag,
+                after: flagPost?.attachedFlag,
                 restored: Boolean(flagFix?.restored),
               },
             }
@@ -1072,16 +1095,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
       results.push({ id: rowId, ok: r.ok, ...(r.ok ? {} : { error: r.error }) });
     }
 
-    const totals = await refreshRunTotalsFromAttachments(supabase, id);
-    if (!totals.ok) {
+    const totals: any = await refreshRunTotalsFromAttachments(supabase, id);
+    if (!totals?.ok) {
       return NextResponse.json(
         {
           ok: false,
           debugSource: "payroll_run_route_admin_v6_full_compute_action",
-          error: `Updated rows, but failed to refresh totals: ${totals.error}`,
+          error: `Updated rows, but failed to refresh totals: ${totals?.error || "unknown error"}`,
           updateResults: results,
         },
-        { status: totals.status || 500 }
+        { status: totals?.status || 500 }
       );
     }
 
