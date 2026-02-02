@@ -1,4 +1,4 @@
-﻿-- C:\Users\adamm\Projects\wageflow01\supabase\migrations\20260202190000_payroll_run_compute_full.sql
+-- C:\Users\adamm\Projects\wageflow01\supabase\migrations\20260202190000_payroll_run_compute_full.sql
 
 -- Purpose:
 -- v1 "compute full" RPC for WageFlow.
