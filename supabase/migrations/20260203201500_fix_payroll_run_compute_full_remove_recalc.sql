@@ -9,7 +9,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
-AS \\$
+AS $function$
 DECLARE
   v_run_exists boolean;
   v_updated int := 0;
@@ -208,6 +208,6 @@ BEGIN
     'employees_updated', v_updated
   );
 END;
-\\$;
+$function$;
 
 COMMIT;
