@@ -1,0 +1,4 @@
+# Keep SQL stable across Windows/macOS/Linux
+*.sql text eol=lf
+supabase/migrations/*.sql text eol=lf
+*.gitattributes text eol=lf
