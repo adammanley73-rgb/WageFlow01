@@ -1,4 +1,4 @@
-﻿-- C:\Users\adamm\Projects\wageflow01\supabase\migrations\20260130132237_fix_block_template_pay_schedules_and_monthly_flexible.sql
+-- C:\Users\adamm\Projects\wageflow01\supabase\migrations\20260130132237_fix_block_template_pay_schedules_and_monthly_flexible.sql
 -- Purpose:
 -- 1) Prevent payroll_runs.pay_schedule_id from ever pointing at a template pay_schedules row.
 -- 2) Ensure Monthly - Flexible (44444444...) is treated as a real schedule (is_template=false).
@@ -12,7 +12,7 @@ BEGIN;
 CREATE OR REPLACE FUNCTION public.block_template_pay_schedules_on_runs()
 RETURNS trigger
 LANGUAGE plpgsql
-AS \$\$
+AS $$
 DECLARE
   is_t boolean;
 BEGIN
@@ -35,7 +35,7 @@ BEGIN
 
   RETURN NEW;
 END;
-\$\$;
+$$;
 
 DROP TRIGGER IF EXISTS trg_block_template_pay_schedules_on_runs ON public.payroll_runs;
 

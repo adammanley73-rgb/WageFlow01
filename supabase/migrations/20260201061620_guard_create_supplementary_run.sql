@@ -1,4 +1,4 @@
-﻿-- Guard supplementary run creation so it only works when the parent run is completed.
+-- Guard supplementary run creation so it only works when the parent run is completed.
 
 CREATE OR REPLACE FUNCTION public.create_supplementary_run(
   p_parent_run_id uuid,
