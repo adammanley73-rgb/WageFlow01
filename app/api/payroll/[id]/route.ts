@@ -115,8 +115,8 @@ function buildEmployeeRow(att: any, emp: any) {
       emp?.name,
       [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
       [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-      "—"
-    ) || "—"
+      "â€”"
+    ) || "â€”"
   );
 
   const employeeNumber = String(
@@ -127,12 +127,12 @@ function buildEmployeeRow(att: any, emp: any) {
       emp?.payrollNumber,
       emp?.payroll_no,
       emp?.payrollNo,
-      "—"
-    ) || "—"
+      "â€”"
+    ) || "â€”"
   );
 
   const email = String(
-    pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "—") || "—"
+    pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "â€”") || "â€”"
   );
 
   const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
@@ -216,8 +216,8 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
         emp?.name,
         [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
         [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-        "—"
-      ) || "—"
+        "â€”"
+      ) || "â€”"
     );
 
     const codes: string[] = [];
@@ -665,7 +665,7 @@ async function tryComputeFullViaRpc(supabase: any, runId: string) {
   const attempts: any[] = [];
 
   const candidates = [
-    { fn: "payroll_run_compute_full", args: { run_id: runId } },
+    { fn: "payroll_run_compute_full", args: { p_run_id: runId } },
     { fn: "compute_payroll_run_full", args: { run_id: runId } },
     { fn: "payroll_run_compute", args: { run_id: runId, mode: "full" } },
     { fn: "compute_payroll_run", args: { run_id: runId, mode: "full" } },
