@@ -27,6 +27,14 @@ type Row = {
   calcMode: string;
 };
 
+type Candidate = {
+  id: string;
+  name: string;
+  employeeNumber: string;
+  email: string;
+  payFrequency?: string;
+};
+
 type ApiResponse = {
   ok?: boolean;
   debugSource?: string;
@@ -259,7 +267,7 @@ export default function PayrollRunDetailPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const [actionBusy, setActionBusy] = useState<null | "save" | "approve" | "recalc" | "supp">(null);
+  const [actionBusy, setActionBusy] = useState<null | "save" | "approve" | "recalc" | "supp" | "attach" | "attachSelected">(null);
 
   const [dirty, setDirty] = useState<boolean>(false);
   const [validation, setValidation] = useState<Record<string, string>>({});
@@ -275,6 +283,13 @@ export default function PayrollRunDetailPage() {
     openId: string | null;
     openStatus: string | null;
   }>({ checked: false, loading: false, open: false, openId: null, openStatus: null });
+
+  const [attachOpen, setAttachOpen] = useState<boolean>(false);
+  const [attachLoading, setAttachLoading] = useState<boolean>(false);
+  const [attachErr, setAttachErr] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [attachSearch, setAttachSearch] = useState<string>("");
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
 
   const load = async () => {
     setApprovedMsg(null);
@@ -364,6 +379,9 @@ export default function PayrollRunDetailPage() {
   const frequencyAllowsSupp = allowedSuppFrequencies.includes(parentFrequency);
 
   const statusRaw = pickFirst(runObj.status, runObj.run_status, null) as any;
+  const statusLower = String(statusRaw || "").trim().toLowerCase();
+  const canEditRun = statusLower === "draft" || statusLower === "processing";
+
   const parentStatus = String(statusRaw || "").trim().toLowerCase();
   const parentIsCompleted = parentStatus === "completed";
 
@@ -700,6 +718,126 @@ export default function PayrollRunDetailPage() {
     window.location.href = `/api/payroll/${runId}/export`;
   };
 
+  const attachDueEmployees = async () => {
+    try {
+      if (!runId) throw new Error("Missing run id.");
+      setActionBusy("attach");
+      setErr(null);
+      setApprovedMsg(null);
+
+      const res = await fetch(`/api/payroll/${runId}/attach-employees`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const j: any = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(j?.message || j?.error || "Failed to attach due employees");
+      }
+
+      setApprovedMsg(j?.message || "Employees attached.");
+      await load();
+    } catch (e: any) {
+      setErr(e?.message || "Attach failed");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const openAttachModal = async () => {
+    try {
+      if (!runId) return;
+      setAttachOpen(true);
+      setAttachErr(null);
+      setAttachSearch("");
+      setCandidates([]);
+      setSelectedIds({});
+      setAttachLoading(true);
+
+      const res = await fetch(`/api/payroll/${runId}/attach-candidates`, { cache: "no-store" });
+      const j: any = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(j?.message || j?.error || "Failed to load attach candidates");
+      }
+
+      const list = Array.isArray(j?.candidates) ? j.candidates : [];
+      setCandidates(list);
+
+      const init: Record<string, boolean> = {};
+      for (const c of list) {
+        const id = String(c?.id ?? "").trim();
+        if (id) init[id] = false;
+      }
+      setSelectedIds(init);
+    } catch (e: any) {
+      setAttachErr(e?.message || "Failed to load employees");
+    } finally {
+      setAttachLoading(false);
+    }
+  };
+
+  const closeAttachModal = () => {
+    if (attachLoading) return;
+    setAttachOpen(false);
+    setAttachErr(null);
+    setAttachSearch("");
+    setCandidates([]);
+    setSelectedIds({});
+  };
+
+  const toggleAllVisible = (value: boolean, visibleIds: string[]) => {
+    setSelectedIds((prev) => {
+      const next = { ...prev };
+      for (const id of visibleIds) next[id] = value;
+      return next;
+    });
+  };
+
+  const attachSelected = async () => {
+    try {
+      if (!runId) throw new Error("Missing run id.");
+
+      const ids = Object.keys(selectedIds).filter((id) => selectedIds[id]);
+      if (ids.length === 0) {
+        setAttachErr("Select at least one employee.");
+        return;
+      }
+
+      setActionBusy("attachSelected");
+      setErr(null);
+      setApprovedMsg(null);
+      setAttachErr(null);
+
+      const payload = {
+        employee_ids: ids,
+        employeeIds: ids,
+        employees: ids,
+      };
+
+      const res = await fetch(`/api/payroll/${runId}/attach-selected`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const j: any = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(j?.message || j?.error || "Failed to attach selected employees");
+      }
+
+      closeAttachModal();
+      setApprovedMsg(j?.message || "Employees attached.");
+      await load();
+    } catch (e: any) {
+      setAttachErr(e?.message || "Attach failed");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   const runNameFromApi = String(pickFirst(runObj.runName, runObj.run_name, "") || "").trim();
 
   const runNumberFromApi = pickFirst(runObj.runNumber, runObj.run_number, null) as any;
@@ -763,6 +901,29 @@ export default function PayrollRunDetailPage() {
     frequencyAllowsSupp &&
     suppCheck.checked &&
     !suppCheck.open;
+
+  const canShowAttachButtons = !loading && !!runId && canEditRun;
+
+  const filteredCandidates = useMemo(() => {
+    const q = String(attachSearch || "").trim().toLowerCase();
+    const list = Array.isArray(candidates) ? candidates : [];
+    if (!q) return list;
+
+    return list.filter((c) => {
+      const name = String(c?.name ?? "").toLowerCase();
+      const num = String(c?.employeeNumber ?? "").toLowerCase();
+      const email = String(c?.email ?? "").toLowerCase();
+      return name.includes(q) || num.includes(q) || email.includes(q);
+    });
+  }, [candidates, attachSearch]);
+
+  const visibleIds = useMemo(() => {
+    return filteredCandidates.map((c) => String(c?.id ?? "").trim()).filter(Boolean);
+  }, [filteredCandidates]);
+
+  const selectedCount = useMemo(() => {
+    return Object.keys(selectedIds).filter((k) => selectedIds[k]).length;
+  }, [selectedIds]);
 
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
@@ -876,6 +1037,40 @@ export default function PayrollRunDetailPage() {
                   title="Create a supplementary run for this same pay period (no auto-attach)"
                 >
                   {actionBusy === "supp" ? "Creating..." : "Create supplementary run"}
+                </button>
+              ) : null}
+
+              {canShowAttachButtons && !isSupplementary ? (
+                <button
+                  type="button"
+                  onClick={attachDueEmployees}
+                  disabled={saving || !runId}
+                  className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{
+                    backgroundColor: "#334155",
+                    opacity: saving || !runId ? 0.6 : 1,
+                    cursor: saving || !runId ? "not-allowed" : "pointer",
+                  }}
+                  title="Attach all due employees for this run (auto attach, skips already attached)"
+                >
+                  {actionBusy === "attach" ? "Attaching..." : "Attach due employees"}
+                </button>
+              ) : null}
+
+              {canShowAttachButtons && isSupplementary ? (
+                <button
+                  type="button"
+                  onClick={openAttachModal}
+                  disabled={saving || !runId}
+                  className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{
+                    backgroundColor: "#334155",
+                    opacity: saving || !runId ? 0.6 : 1,
+                    cursor: saving || !runId ? "not-allowed" : "pointer",
+                  }}
+                  title="Supplementary runs do not auto-attach. Pick the employees to include."
+                >
+                  Attach employees
                 </button>
               ) : null}
 
@@ -1314,6 +1509,162 @@ export default function PayrollRunDetailPage() {
             {actionBusy === "approve" ? "Working..." : "Approve run"}
           </button>
         </div>
+
+        {attachOpen ? (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+            <div className="w-full max-w-3xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
+              <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-200">
+                <div className="flex flex-col">
+                  <div className="text-base font-extrabold text-slate-900">Attach employees to supplementary run</div>
+                  <div className="text-sm text-slate-700">
+                    Pick the employees you want in this supplementary run. It will not auto-attach.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeAttachModal}
+                  disabled={attachLoading}
+                  className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{
+                    backgroundColor: "var(--wf-blue)",
+                    opacity: attachLoading ? 0.6 : 1,
+                    cursor: attachLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="px-5 py-4 flex flex-col gap-3">
+                {attachErr ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                    {attachErr}
+                  </div>
+                ) : null}
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <input
+                    value={attachSearch}
+                    onChange={(e) => setAttachSearch(e.target.value)}
+                    placeholder="Search name, number, email"
+                    className="h-11 w-full sm:w-80 rounded-xl border border-slate-300 px-4 text-sm font-semibold outline-none focus:ring-2 focus:ring-offset-1"
+                  />
+
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => toggleAllVisible(true, visibleIds)}
+                      disabled={attachLoading || visibleIds.length === 0}
+                      className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                      style={{
+                        backgroundColor: "#334155",
+                        opacity: attachLoading || visibleIds.length === 0 ? 0.6 : 1,
+                        cursor: attachLoading || visibleIds.length === 0 ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Select visible
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleAllVisible(false, visibleIds)}
+                      disabled={attachLoading || visibleIds.length === 0}
+                      className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                      style={{
+                        backgroundColor: "#64748b",
+                        opacity: attachLoading || visibleIds.length === 0 ? 0.6 : 1,
+                        cursor: attachLoading || visibleIds.length === 0 ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Clear visible
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={attachSelected}
+                      disabled={attachLoading || saving || selectedCount === 0}
+                      className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                      style={{
+                        backgroundColor: "#059669",
+                        opacity: attachLoading || saving || selectedCount === 0 ? 0.6 : 1,
+                        cursor: attachLoading || saving || selectedCount === 0 ? "not-allowed" : "pointer",
+                      }}
+                      title={selectedCount === 0 ? "Select at least one employee" : "Attach selected employees"}
+                    >
+                      {actionBusy === "attachSelected" ? "Attaching..." : `Attach selected (${selectedCount})`}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-neutral-200 overflow-hidden">
+                  <div className="max-h-[52vh] overflow-y-auto">
+                    {attachLoading ? (
+                      <div className="px-4 py-4 text-sm text-slate-700">Loading...</div>
+                    ) : filteredCandidates.length === 0 ? (
+                      <div className="px-4 py-4 text-sm text-slate-700">
+                        No eligible employees found. This usually means everyone is already attached or no active employees match the run frequency.
+                      </div>
+                    ) : (
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-neutral-100">
+                            <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                              Pick
+                            </th>
+                            <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                              Employee
+                            </th>
+                            <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                              Number
+                            </th>
+                            <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                              Email
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredCandidates.map((c) => {
+                            const id = String(c?.id ?? "").trim();
+                            const checked = Boolean(selectedIds[id]);
+
+                            return (
+                              <tr key={id} className="bg-white">
+                                <td className="px-4 py-3 border-b border-neutral-200">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) =>
+                                      setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))
+                                    }
+                                    className="h-5 w-5"
+                                  />
+                                </td>
+                                <td className="px-4 py-3 text-sm text-slate-900 border-b border-neutral-200">
+                                  {String(c?.name ?? MISSING)}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                                  {String(c?.employeeNumber ?? "") || MISSING}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                                  {String(c?.email ?? "") || MISSING}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-xs font-semibold text-slate-600">
+                  Only active employees with matching pay frequency are listed. Already attached employees are excluded.
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </PageTemplate>
   );
