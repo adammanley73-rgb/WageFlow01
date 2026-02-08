@@ -592,8 +592,8 @@ export default function WageFlowLandingV2() {
                 </h1>
 
                 <p className="text-lg md:text-xl text-gray-700 mt-5 max-w-xl">
-                  Stop spending hours running payroll. WageFlow automates it so you only review the 1 in 50 exceptions.
-                  Approve it, amend it, or delete it. Job done.
+                  WageFlow is your payroll engine and control panel. It processes the run, checks the data, and flags what looks wrong.
+                  You review the exceptions, then approve, amend, or delete. The rest stays automated. Inputs in. Draft run out. Exceptions only.
                 </p>
 
                 <div className="mt-6 bg-gray-50 border border-gray-200 rounded-2xl p-5">
