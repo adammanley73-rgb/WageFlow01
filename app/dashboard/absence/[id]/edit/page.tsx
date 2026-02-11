@@ -241,7 +241,7 @@ export default function EditAbsencePage() {
 
         {loading ? (
           <div className="rounded-2xl bg-white shadow-sm ring-1 ring-neutral-300 px-6 py-6 md:px-8 md:py-8 text-sm text-neutral-600">
-            Loading absenceÃ¢â‚¬Â¦
+            Loading absence…
           </div>
         ) : (
           <form
@@ -335,7 +335,7 @@ export default function EditAbsencePage() {
                   saving ? "opacity-70 cursor-not-allowed" : ""
                 }`}
               >
-                {saving ? "SavingÃ¢â‚¬Â¦" : "Save changes"}
+                {saving ? "Saving…" : "Save changes"}
               </button>
             </div>
           </form>

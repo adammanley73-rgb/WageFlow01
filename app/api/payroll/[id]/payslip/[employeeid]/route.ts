@@ -1,4 +1,4 @@
-// C:\Users\adamm\Projects\wageflow01\app\api\payroll\[id]\payslip\[employeeId]\route.ts
+// E:\Projects\wageflow01\app\api\payroll\[id]\payslip\[employeeId]\route.ts
 /* @ts-nocheck */
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -390,15 +390,16 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
 
     const baseTaxable =
       typeof master?.["taxable_for_paye"] === "boolean" ? master["taxable_for_paye"] : true;
-    const baseNi =
-      typeof master?.["nic_earnings"] === "boolean" ? master["nic_earnings"] : true;
+    const baseNi = typeof master?.["nic_earnings"] === "boolean" ? master["nic_earnings"] : true;
     const basePensionable =
       typeof master?.["pensionable_default"] === "boolean" ? master["pensionable_default"] : true;
     const baseAe =
       typeof master?.["ae_qualifying_default"] === "boolean" ? master["ae_qualifying_default"] : true;
 
     const taxableForPaye =
-      typeof row["taxable_for_paye_override"] === "boolean" ? row["taxable_for_paye_override"] : baseTaxable;
+      typeof row["taxable_for_paye_override"] === "boolean"
+        ? row["taxable_for_paye_override"]
+        : baseTaxable;
     const nicEarnings =
       typeof row["nic_earnings_override"] === "boolean" ? row["nic_earnings_override"] : baseNi;
     const pensionable =
@@ -437,7 +438,9 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     let effectiveDailyRate = safeNumber(sspForEmployee.dailyRate) ?? 0;
     let effectiveAmount = safeNumber(sspForEmployee.sspAmount) ?? 0;
 
-    const warnings: string[] = Array.isArray(sspForEmployee.warnings) ? [...sspForEmployee.warnings] : [];
+    const warnings: string[] = Array.isArray(sspForEmployee.warnings)
+      ? [...sspForEmployee.warnings]
+      : [];
 
     const lowCapEnabled = Boolean(packMeta?.lowEarnerPercentCapEnabled);
     const lowPct = safeNumber(packMeta?.lowEarnerPercent);
@@ -449,7 +452,11 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
 
     if (lowCapEnabled && lowPct !== null && weeklyFlat !== null && lowPct > 0 && lowPct < 1) {
       const firstSick = pickEarliestSicknessStart(sspForEmployee);
-      const referenceEnd = firstSick ? addDaysIso(firstSick, -1) : (isIsoDate(periodEnd) ? periodEnd : null);
+      const referenceEnd = firstSick
+        ? addDaysIso(firstSick, -1)
+        : isIsoDate(periodEnd)
+          ? periodEnd
+          : null;
 
       if (referenceEnd && companyId) {
         try {
@@ -469,13 +476,14 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
             );
           }
         } catch (err) {
-          const msg = err && typeof err === "object" && "message" in err ? (err as any).message : err;
-          warnings.push(`SSP low-earner cap is enabled but AWE calculation failed. Flat rate SSP used. (${String(msg)})`);
+          const msg =
+            err && typeof err === "object" && "message" in err ? (err as any).message : err;
+          warnings.push(
+            `SSP low-earner cap is enabled but AWE calculation failed. Flat rate SSP used. (${String(msg)})`
+          );
         }
       } else {
-        warnings.push(
-          "SSP low-earner cap is enabled but reference date could not be determined. Flat rate SSP used."
-        );
+        warnings.push("SSP low-earner cap is enabled but reference date could not be determined. Flat rate SSP used.");
       }
     }
 
@@ -483,23 +491,17 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
       const code = (e.code || "").toUpperCase();
       const name = (e.name || "").toLowerCase();
       const desc = (e.description || "").toLowerCase();
-      return (
-        code === "SSP" ||
-        code === "SSP1" ||
-        name.includes("statutory sick") ||
-        desc.includes("statutory sick")
-      );
+      return code === "SSP" || code === "SSP1" || name.includes("statutory sick") || desc.includes("statutory sick");
     });
 
     const descBase = `Statutory Sick Pay for ${payable} day${payable === 1 ? "" : "s"} sickness (${qualifying} qualifying day${qualifying === 1 ? "" : "s"} in this period)`;
 
-    const descCap = lowCapEnabled
-      ? capApplied
-        ? `, low-earner cap applied`
-        : `, low-earner cap checked`
-      : "";
+    const descCap = lowCapEnabled ? (capApplied ? `, low-earner cap applied` : `, low-earner cap checked`) : "";
 
-    const descRate = Number.isFinite(effectiveDailyRate) && effectiveDailyRate > 0 ? `, daily rate £${effectiveDailyRate.toFixed(2)}` : "";
+    const descRate =
+      Number.isFinite(effectiveDailyRate) && effectiveDailyRate > 0
+        ? `, daily rate £${effectiveDailyRate.toFixed(2)}`
+        : "";
 
     if (sspElem) {
       sspElem.amount = effectiveAmount;
@@ -577,11 +579,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     net = gross - deductions;
   } else {
     const canAutoCalc =
-      tax === 0 &&
-      Number.isFinite(grossStored) &&
-      grossStored > 0 &&
-      frequency === "monthly" &&
-      !!finalTaxCode;
+      tax === 0 && Number.isFinite(grossStored) && grossStored > 0 && frequency === "monthly" && !!finalTaxCode;
 
     if (canAutoCalc) {
       try {
@@ -627,16 +625,13 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     }
   }
 
-  const payAfterLeaving =
-    typeof preRow["pay_after_leaving"] === "boolean" ? preRow["pay_after_leaving"] : false;
+  const payAfterLeaving = typeof preRow["pay_after_leaving"] === "boolean" ? preRow["pay_after_leaving"] : false;
 
   const firstName = employeeRow["first_name"] ?? "";
   const lastName = employeeRow["last_name"] ?? "";
-  const fullName =
-    firstName && lastName ? `${firstName} ${lastName}` : firstName || lastName || "Unnamed employee";
+  const fullName = firstName && lastName ? `${firstName} ${lastName}` : firstName || lastName || "Unnamed employee";
 
-  const niNumber =
-    employeeRow["ni_number"] ?? employeeRow["national_insurance_number"] ?? null;
+  const niNumber = employeeRow["ni_number"] ?? employeeRow["national_insurance_number"] ?? null;
 
   const companyPayload = {
     id: companyRow["id"],
@@ -684,9 +679,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
   const flagsPayload = {
     payAfterLeaving,
     isLeaver:
-      typeof employeeRow["status"] === "string"
-        ? String(employeeRow["status"]).toLowerCase() === "leaver"
-        : false,
+      typeof employeeRow["status"] === "string" ? String(employeeRow["status"]).toLowerCase() === "leaver" : false,
   };
 
   const payElementsPayload = {

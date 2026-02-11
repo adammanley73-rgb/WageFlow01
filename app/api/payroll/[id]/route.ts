@@ -115,8 +115,8 @@ function buildEmployeeRow(att: any, emp: any) {
       emp?.name,
       [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
       [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-      "â€”"
-    ) || "â€”"
+      "—"
+    ) || "—"
   );
 
   const employeeNumber = String(
@@ -127,12 +127,12 @@ function buildEmployeeRow(att: any, emp: any) {
       emp?.payrollNumber,
       emp?.payroll_no,
       emp?.payrollNo,
-      "â€”"
-    ) || "â€”"
+      "—"
+    ) || "—"
   );
 
   const email = String(
-    pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "â€”") || "â€”"
+    pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "—") || "—"
   );
 
   const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
@@ -216,8 +216,8 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
         emp?.name,
         [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
         [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-        "â€”"
-      ) || "â€”"
+        "—"
+      ) || "—"
     );
 
     const codes: string[] = [];
