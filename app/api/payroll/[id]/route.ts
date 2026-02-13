@@ -1,5 +1,5 @@
 /* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\api\payroll\[id]\route.ts
+/* E:\Projects\wageflow01\app\api\payroll\[id]\route.ts */
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -20,18 +20,14 @@ function pickFirst(...vals: any[]) {
 
 function toNumberSafe(v: any): number {
   const n =
-    typeof v === "number"
-      ? v
-      : parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
+    typeof v === "number" ? v : parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
 
 function isUuid(v: any): boolean {
   const s = String(v ?? "").trim();
   if (!s) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    s
-  );
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
 }
 
 function normalizeAction(v: any): string {
@@ -48,65 +44,43 @@ function getAdminClient() {
     );
   }
 
-  return createClient(url, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
+  return createClient(url, serviceRoleKey, { auth: { persistSession: false } });
 }
 
 async function tryAttachments(supabase: any, runId: string) {
   const attempts: any[] = [];
-  const tables = ["payroll_run_employees", "pay_run_employees"];
-  const cols = ["run_id", "payroll_run_id", "runId", "pay_run_id"];
 
-  for (const table of tables) {
-    for (const col of cols) {
-      const { data, error } = await supabase
-        .from(table)
-        .select("*")
-        .eq(col, runId);
+  const { data, error } = await supabase
+    .from("payroll_run_employees")
+    .select("*")
+    .eq("run_id", runId);
 
-      if (!error) {
-        return {
-          ok: true,
-          tableUsed: table,
-          whereColumn: col,
-          rows: Array.isArray(data) ? data : [],
-          attempts,
-        };
-      }
-
-      attempts.push({
-        table,
-        col,
-        error: {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-        },
-      });
-
-      const msg = String(error?.message || "").toLowerCase();
-      const isMissingTable =
-        error?.code === "42P01" || msg.includes("does not exist");
-      const isMissingColumn =
-        error?.code === "42703" ||
-        (msg.includes("column") && msg.includes("does not exist"));
-
-      if (isMissingTable) break;
-      if (isMissingColumn) continue;
-
-      continue;
-    }
+  if (!error) {
+    return {
+      ok: true,
+      tableUsed: "payroll_run_employees",
+      whereColumn: "run_id",
+      rows: Array.isArray(data) ? data : [],
+      attempts,
+    };
   }
+
+  attempts.push({
+    table: "payroll_run_employees",
+    col: "run_id",
+    error: {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    },
+  });
 
   return { ok: false, tableUsed: null, whereColumn: null, rows: [], attempts };
 }
 
 function buildEmployeeRow(att: any, emp: any) {
-  const employeeId = String(
-    pickFirst(att?.employee_id, att?.employeeId, "") || ""
-  );
+  const employeeId = String(pickFirst(att?.employee_id, att?.employeeId, "") || "");
 
   const employeeName = String(
     pickFirst(
@@ -131,28 +105,19 @@ function buildEmployeeRow(att: any, emp: any) {
     ) || "—"
   );
 
-  const email = String(
-    pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "—") || "—"
-  );
+  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "—") || "—");
 
   const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
   const tax = toNumberSafe(pickFirst(att?.tax, 0));
 
-  const employeeNi = toNumberSafe(
-    pickFirst(att?.ni_employee, att?.employee_ni, att?.employeeNi, 0)
-  );
-
+  const employeeNi = toNumberSafe(pickFirst(att?.ni_employee, att?.employee_ni, att?.employeeNi, 0));
   const pensionEmployee = toNumberSafe(pickFirst(att?.pension_employee, 0));
   const otherDeductions = toNumberSafe(pickFirst(att?.other_deductions, 0));
   const aoe = toNumberSafe(pickFirst(att?.attachment_of_earnings, 0));
 
-  const deductions = Number(
-    (tax + employeeNi + pensionEmployee + otherDeductions + aoe).toFixed(2)
-  );
+  const deductions = Number((tax + employeeNi + pensionEmployee + otherDeductions + aoe).toFixed(2));
 
-  const net = toNumberSafe(
-    pickFirst(att?.net_pay, att?.netPay, gross - deductions)
-  );
+  const net = toNumberSafe(pickFirst(att?.net_pay, att?.netPay, gross - deductions));
 
   const safeId = String(pickFirst(att?.id, "") || "");
   const calcMode = String(pickFirst(att?.calc_mode, "uncomputed") || "uncomputed");
@@ -173,13 +138,9 @@ function buildEmployeeRow(att: any, emp: any) {
 function deriveSeededMode(run: any, attachments: any[]): boolean {
   if (!Array.isArray(attachments) || attachments.length === 0) return true;
 
-  const hasCalcMode = attachments.some(
-    (r: any) => r && typeof r === "object" && "calc_mode" in r
-  );
+  const hasCalcMode = attachments.some((r: any) => r && typeof r === "object" && "calc_mode" in r);
   if (hasCalcMode) {
-    return attachments.some(
-      (r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) !== "full"
-    );
+    return attachments.some((r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) !== "full");
   }
 
   const runTax = toNumberSafe(pickFirst(run?.total_tax, 0));
@@ -232,8 +193,7 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
 
     if (codes.length === 0) continue;
 
-    const blocking =
-      codes.includes("MISSING_TAX_CODE") || codes.includes("MISSING_NI_CATEGORY");
+    const blocking = codes.includes("MISSING_TAX_CODE") || codes.includes("MISSING_NI_CATEGORY");
     if (blocking) blockingCount += 1;
     else warningCount += 1;
 
@@ -249,11 +209,7 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
   return { items, blockingCount, warningCount, total: items.length };
 }
 
-async function getRunAndEmployees(
-  supabase: any,
-  runId: string,
-  includeDebug: boolean
-) {
+async function getRunAndEmployees(supabase: any, runId: string, includeDebug: boolean) {
   const debug: any = { runId, stage: {} };
 
   const { data: run, error: runError } = await supabase
@@ -263,11 +219,7 @@ async function getRunAndEmployees(
     .single();
 
   if (runError) {
-    debug.stage.runFetch = {
-      ok: false,
-      code: runError.code,
-      message: runError.message,
-    };
+    debug.stage.runFetch = { ok: false, code: runError.code, message: runError.message };
     return {
       ok: false,
       status: 404,
@@ -308,10 +260,7 @@ async function getRunAndEmployees(
 
   const invalidEmployeeIds = employeeIds.filter((x) => !isUuid(x));
   if (invalidEmployeeIds.length > 0) {
-    debug.stage.employeeIdsInvalid = {
-      count: invalidEmployeeIds.length,
-      examples: invalidEmployeeIds.slice(0, 10),
-    };
+    debug.stage.employeeIdsInvalid = { count: invalidEmployeeIds.length, examples: invalidEmployeeIds.slice(0, 10) };
 
     return {
       ok: false,
@@ -324,26 +273,14 @@ async function getRunAndEmployees(
 
   let employeesRaw: any[] = [];
   if (employeeIds.length > 0) {
-    const { data: empData, error: empError } = await supabase
-      .from("employees")
-      .select("*")
-      .in("id", employeeIds);
+    const { data: empData, error: empError } = await supabase.from("employees").select("*").in("id", employeeIds);
 
     if (empError) {
       employeesRaw = [];
-      debug.stage.employeesFetch = {
-        ok: false,
-        via: "employees.id",
-        code: empError.code,
-        message: empError.message,
-      };
+      debug.stage.employeesFetch = { ok: false, via: "employees.id", code: empError.code, message: empError.message };
     } else {
       employeesRaw = Array.isArray(empData) ? empData : [];
-      debug.stage.employeesFetch = {
-        ok: true,
-        via: "employees.id",
-        count: employeesRaw.length,
-      };
+      debug.stage.employeesFetch = { ok: true, via: "employees.id", count: employeesRaw.length };
     }
   } else {
     debug.stage.employeesFetch = { ok: true, via: "none", count: 0 };
@@ -374,22 +311,12 @@ async function getRunAndEmployees(
     employees,
     seededMode,
     exceptions,
-    attachmentsMeta: {
-      tableUsed: attachTry.tableUsed,
-      whereColumn: attachTry.whereColumn,
-    },
+    attachmentsMeta: { tableUsed: attachTry.tableUsed, whereColumn: attachTry.whereColumn },
     debug: includeDebug ? debug : undefined,
   };
 }
 
-async function updateRunEmployeeRow(
-  supabase: any,
-  table: string,
-  rowId: string,
-  gross: number,
-  deductions: number,
-  net: number
-) {
+async function updateRunEmployeeRow(supabase: any, rowId: string, gross: number, deductions: number, net: number) {
   const patch = {
     gross_pay: gross,
     net_pay: net,
@@ -397,88 +324,49 @@ async function updateRunEmployeeRow(
     manual_override: true,
   };
 
-  const { error } = await supabase.from(table).update(patch).eq("id", rowId);
+  const { error } = await supabase.from("payroll_run_employees").update(patch).eq("id", rowId);
   if (!error) return { ok: true };
 
   return {
     ok: false,
-    error: {
-      code: error.code,
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-    },
+    error: { code: error.code, message: error.message, details: error.details, hint: error.hint },
   };
 }
 
 async function fetchRunStatusAndFlag(supabase: any, runId: string) {
   const attempts: any[] = [];
 
-  const trySelect = async (cols: string) => {
-    const { data, error } = await supabase
-      .from("payroll_runs")
-      .select(cols)
-      .eq("id", runId)
-      .single();
-    return { data, error, cols };
-  };
+  const { data, error } = await supabase
+    .from("payroll_runs")
+    .select("id,status,attached_all_due_employees")
+    .eq("id", runId)
+    .single();
 
-  const a = await trySelect("id,status,attached_all_due_employees");
-  if (!a.error) {
-    return {
-      ok: true,
-      run: a.data,
-      hasAttachedFlag: true,
-      attachedFlag: a.data?.attached_all_due_employees,
-      attempts,
-    };
+  if (!error) {
+    return { ok: true, run: data, hasAttachedFlag: true, attachedFlag: data?.attached_all_due_employees, attempts };
   }
 
   attempts.push({
-    cols: a.cols,
-    error: {
-      code: a.error?.code,
-      message: a.error?.message,
-      details: a.error?.details,
-      hint: a.error?.hint,
-    },
+    cols: "id,status,attached_all_due_employees",
+    error: { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint },
   });
 
-  const msg = String(a.error?.message || "").toLowerCase();
-  const missingCol =
-    a.error?.code === "42703" ||
-    (msg.includes("column") && msg.includes("does not exist"));
+  const msg = String(error?.message || "").toLowerCase();
+  const missingCol = error?.code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
 
   if (missingCol) {
-    const b = await trySelect("id,status");
+    const b = await supabase.from("payroll_runs").select("id,status").eq("id", runId).single();
     if (!b.error) {
-      return {
-        ok: true,
-        run: b.data,
-        hasAttachedFlag: false,
-        attachedFlag: undefined,
-        attempts,
-      };
+      return { ok: true, run: b.data, hasAttachedFlag: false, attachedFlag: undefined, attempts };
     }
 
     attempts.push({
-      cols: b.cols,
-      error: {
-        code: b.error?.code,
-        message: b.error?.message,
-        details: b.error?.details,
-        hint: b.error?.hint,
-      },
+      cols: "id,status",
+      error: { code: b.error?.code, message: b.error?.message, details: b.error?.details, hint: b.error?.hint },
     });
   }
 
-  return {
-    ok: false,
-    run: null,
-    hasAttachedFlag: false,
-    attachedFlag: undefined,
-    attempts,
-  };
+  return { ok: false, run: null, hasAttachedFlag: false, attachedFlag: undefined, attempts };
 }
 
 async function restoreAttachedAllDueEmployeesIfNeeded(
@@ -488,32 +376,20 @@ async function restoreAttachedAllDueEmployeesIfNeeded(
   afterValue: any,
   enabled: boolean
 ) {
-  if (!enabled) {
-    return { ok: true, restored: false, reason: "flag not present" };
-  }
+  if (!enabled) return { ok: true, restored: false, reason: "flag not present" };
 
   const before = beforeValue === null || beforeValue === undefined ? null : Boolean(beforeValue);
   const after = afterValue === null || afterValue === undefined ? null : Boolean(afterValue);
 
-  if (before === after) {
-    return { ok: true, restored: false, reason: "no change" };
-  }
+  if (before === after) return { ok: true, restored: false, reason: "no change" };
 
-  const { error } = await supabase
-    .from("payroll_runs")
-    .update({ attached_all_due_employees: before })
-    .eq("id", runId);
+  const { error } = await supabase.from("payroll_runs").update({ attached_all_due_employees: before }).eq("id", runId);
 
   if (error) {
     return {
       ok: false,
       restored: false,
-      error: {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-      },
+      error: { code: error.code, message: error.message, details: error.details, hint: error.hint },
     };
   }
 
@@ -521,48 +397,22 @@ async function restoreAttachedAllDueEmployeesIfNeeded(
 }
 
 async function refreshRunTotalsFromAttachments(supabase: any, runId: string) {
-  const attachTry = await tryAttachments(supabase, runId);
-  if (!attachTry.ok || !attachTry.tableUsed || !attachTry.whereColumn) {
-    return {
-      ok: false,
-      status: 500,
-      error: "Could not find a payroll run employees table to refresh totals",
-      debug: { attachTry },
-    };
-  }
-
-  const table = attachTry.tableUsed;
-  const whereCol = attachTry.whereColumn;
-
   const { data: rows, error: rowsErr } = await supabase
-    .from(table)
+    .from("payroll_run_employees")
     .select("*")
-    .eq(whereCol, runId);
+    .eq("run_id", runId);
 
   if (rowsErr) {
-    return {
-      ok: false,
-      status: 500,
-      error: rowsErr.message,
-      debug: { table, whereCol },
-    };
+    return { ok: false, status: 500, error: rowsErr.message, debug: { table: "payroll_run_employees", whereCol: "run_id" } };
   }
 
   const rr = Array.isArray(rows) ? rows : [];
 
-  const grossSum = rr.reduce(
-    (a: number, x: any) => a + toNumberSafe(pickFirst(x?.gross_pay, x?.grossPay, 0)),
-    0
-  );
-  const netSum = rr.reduce(
-    (a: number, x: any) => a + toNumberSafe(pickFirst(x?.net_pay, x?.netPay, 0)),
-    0
-  );
+  const grossSum = rr.reduce((a: number, x: any) => a + toNumberSafe(pickFirst(x?.gross_pay, x?.grossPay, 0)), 0);
+  const netSum = rr.reduce((a: number, x: any) => a + toNumberSafe(pickFirst(x?.net_pay, x?.netPay, 0)), 0);
   const taxSum = rr.reduce((a: number, x: any) => a + toNumberSafe(pickFirst(x?.tax, 0)), 0);
 
-  const niSum = rr.reduce((a: number, x: any) => {
-    return a + toNumberSafe(pickFirst(x?.ni_employee, x?.employee_ni, 0));
-  }, 0);
+  const niSum = rr.reduce((a: number, x: any) => a + toNumberSafe(pickFirst(x?.ni_employee, x?.employee_ni, 0)), 0);
 
   const { error: runUpErr } = await supabase
     .from("payroll_runs")
@@ -575,42 +425,24 @@ async function refreshRunTotalsFromAttachments(supabase: any, runId: string) {
     .eq("id", runId);
 
   if (runUpErr) {
-    return {
-      ok: false,
-      status: 500,
-      error: runUpErr.message,
-      debug: { table, whereCol },
-    };
+    return { ok: false, status: 500, error: runUpErr.message, debug: { table: "payroll_run_employees", whereCol: "run_id" } };
   }
 
-  return { ok: true, status: 200, tableUsed: table, whereColumn: whereCol };
+  return { ok: true, status: 200, tableUsed: "payroll_run_employees", whereColumn: "run_id" };
 }
 
 async function setGrossOnlyCalcForRun(supabase: any, runId: string) {
-  const attachTry = await tryAttachments(supabase, runId);
-  if (!attachTry.ok || !attachTry.tableUsed || !attachTry.whereColumn) {
-    return {
-      ok: false,
-      status: 500,
-      error: "Could not find a payroll run employees table to recalculate",
-      debug: { attachTry },
-    };
-  }
-
-  const table = attachTry.tableUsed;
-  const whereCol = attachTry.whereColumn;
-
   const { data: rows, error: rowsErr } = await supabase
-    .from(table)
+    .from("payroll_run_employees")
     .select("*")
-    .eq(whereCol, runId);
+    .eq("run_id", runId);
 
   if (rowsErr) {
     return {
       ok: false,
       status: 500,
       error: rowsErr.message,
-      debug: { table, whereCol },
+      debug: { table: "payroll_run_employees", whereCol: "run_id" },
     };
   }
 
@@ -634,23 +466,21 @@ async function setGrossOnlyCalcForRun(supabase: any, runId: string) {
     const patch: any = {
       calc_mode: "gross_only",
       net_pay: Number(net.toFixed(2)),
+      tax: 0,
+      ni_employee: 0,
+      ni_employer: 0,
     };
 
-    if (r && typeof r === "object" && "tax" in r) patch.tax = 0;
-
-    if (r && typeof r === "object" && "ni_employee" in r) patch.ni_employee = 0;
     if (r && typeof r === "object" && "employee_ni" in r) patch.employee_ni = 0;
-
-    if (r && typeof r === "object" && "ni_employer" in r) patch.ni_employer = 0;
     if (r && typeof r === "object" && "employer_ni" in r) patch.employer_ni = 0;
 
-    const { error: upErr } = await supabase.from(table).update(patch).eq("id", rowId);
+    const { error: upErr } = await supabase.from("payroll_run_employees").update(patch).eq("id", rowId);
     if (upErr) {
       return {
         ok: false,
         status: 500,
         error: `Failed to update gross-only calc for row ${rowId}: ${upErr.message}`,
-        debug: { table, whereCol, rowId, patch },
+        debug: { table: "payroll_run_employees", whereCol: "run_id", rowId, patch },
       };
     }
   }
@@ -658,7 +488,7 @@ async function setGrossOnlyCalcForRun(supabase: any, runId: string) {
   const totals = await refreshRunTotalsFromAttachments(supabase, runId);
   if (!totals.ok) return totals;
 
-  return { ok: true, status: 200, tableUsed: table, whereColumn: whereCol };
+  return { ok: true, status: 200, tableUsed: "payroll_run_employees", whereColumn: "run_id" };
 }
 
 async function tryComputeFullViaRpc(supabase: any, runId: string) {
@@ -686,20 +516,14 @@ async function tryComputeFullViaRpc(supabase: any, runId: string) {
     attempts.push({
       fn: c.fn,
       args: c.args,
-      error: {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-      },
+      error: { code: error.code, message: error.message, details: error.details, hint: error.hint },
     });
   }
 
   return {
     ok: false,
     status: 501,
-    error:
-      "No Supabase RPC function was found to compute a payroll run in full. Create a DB function and call it from here.",
+    error: "No Supabase RPC function was found to compute a payroll run in full. Create a DB function and call it from here.",
     attempts: attempts.slice(0, 12),
   };
 }
@@ -707,12 +531,7 @@ async function tryComputeFullViaRpc(supabase: any, runId: string) {
 export async function GET(req: Request, { params }: Ctx) {
   try {
     const id = params?.id;
-    if (!id) {
-      return NextResponse.json(
-        { ok: false, error: "Missing payroll run id" },
-        { status: 400 }
-      );
-    }
+    if (!id) return NextResponse.json({ ok: false, error: "Missing payroll run id" }, { status: 400 });
 
     const includeDebug = new URL(req.url).searchParams.get("debug") === "1";
 
@@ -723,7 +542,7 @@ export async function GET(req: Request, { params }: Ctx) {
       return NextResponse.json(
         {
           ok: false,
-          debugSource: "payroll_run_route_admin_v6_full_compute_action",
+          debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
           error: result.error,
           ...(includeDebug ? { debug: result.debug } : {}),
         },
@@ -733,7 +552,7 @@ export async function GET(req: Request, { params }: Ctx) {
 
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_run_route_admin_v6_full_compute_action",
+      debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
       run: result.run,
       employees: result.employees,
       totals: result.totals,
@@ -745,7 +564,7 @@ export async function GET(req: Request, { params }: Ctx) {
     return NextResponse.json(
       {
         ok: false,
-        debugSource: "payroll_run_route_admin_v6_full_compute_action",
+        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
         error: err?.message ?? "Unexpected error",
       },
       { status: 500 }
@@ -756,12 +575,7 @@ export async function GET(req: Request, { params }: Ctx) {
 export async function PATCH(req: Request, { params }: Ctx) {
   try {
     const id = params?.id;
-    if (!id) {
-      return NextResponse.json(
-        { ok: false, error: "Missing payroll run id" },
-        { status: 400 }
-      );
-    }
+    if (!id) return NextResponse.json({ ok: false, error: "Missing payroll run id" }, { status: 400 });
 
     const body = await req.json().catch(() => ({}));
     const action = normalizeAction(body?.action);
@@ -782,7 +596,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         return NextResponse.json(
           {
             ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
+            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
             error: "Failed to fetch payroll run status before recalculation.",
             debug: { attempts: pre.attempts || [] },
           },
@@ -792,11 +606,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
       if (String(pre.run?.status || "").toLowerCase() !== "draft") {
         return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
-            error: "Recalculate is only allowed for draft runs.",
-          },
+          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Recalculate is only allowed for draft runs." },
           { status: 409 }
         );
       }
@@ -806,7 +616,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         return NextResponse.json(
           {
             ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
+            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
             error: rec?.error || "Recalculate failed",
             ...(rec?.debug ? { debug: rec.debug } : {}),
           },
@@ -828,12 +638,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
       return NextResponse.json({
         ok: true,
-        debugSource: "payroll_run_route_admin_v6_full_compute_action",
+        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
         action: "recalculate",
-        attachments: {
-          tableUsed: rec?.tableUsed ?? null,
-          whereColumn: rec?.whereColumn ?? null,
-        },
+        attachments: { tableUsed: "payroll_run_employees", whereColumn: "run_id" },
         sideEffects: pre.hasAttachedFlag
           ? {
               attached_all_due_employees: {
@@ -856,12 +663,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
       if (!pre.ok) {
         return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
-            error: pre.error,
-            debug: pre.debug,
-          },
+          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: pre.error, debug: pre.debug },
           { status: pre.status || 500 }
         );
       }
@@ -869,12 +671,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const status = String(pre?.run?.status || "").toLowerCase();
       if (status !== "draft") {
         return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
-            error: "Full compute is only allowed for draft runs.",
-            runStatus: status,
-          },
+          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Full compute is only allowed for draft runs.", runStatus: status },
           { status: 409 }
         );
       }
@@ -882,26 +679,15 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const blockingCount = Number(pre?.exceptions?.blockingCount ?? 0);
       if (blockingCount > 0) {
         return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
-            error: "Full compute blocked. Fix blocking exceptions first.",
-            exceptions: pre.exceptions,
-          },
+          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Full compute blocked. Fix blocking exceptions first.", exceptions: pre.exceptions },
           { status: 409 }
         );
       }
 
-      const attachMeta = pre?.attachmentsMeta || null;
       const hasEmployees = Array.isArray(pre?.employees) && pre.employees.length > 0;
       if (!hasEmployees) {
         return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
-            error: "Full compute blocked. No attached employees were found for this run.",
-            attachmentsMeta: attachMeta,
-          },
+          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Full compute blocked. No attached employees were found for this run." },
           { status: 409 }
         );
       }
@@ -913,7 +699,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         return NextResponse.json(
           {
             ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
+            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
             action: "compute_full",
             error: rpc?.error || "Full compute RPC failed",
             attempts: rpc?.attempts || [],
@@ -939,10 +725,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
         return NextResponse.json(
           {
             ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
+            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
             action: "compute_full",
             error:
-              "Full compute attempted, but the run still looks seeded (not all employee rows are calc_mode='full'). Ensure your DB compute function writes tax, NI, net, and calc_mode='full' back to the attachments table.",
+              "Full compute attempted, but the run still looks seeded (not all employee rows are calc_mode='full'). Ensure your DB compute function writes tax, NI, net, and calc_mode='full' back to payroll_run_employees.",
             computeVia: rpc?.via,
             totalsRefreshOk: Boolean(totalsRefresh?.ok),
             seededMode: true,
@@ -957,11 +743,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
       return NextResponse.json({
         ok: true,
-        debugSource: "payroll_run_route_admin_v6_full_compute_action",
+        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
         action: "compute_full",
         computeVia: rpc?.via,
         totalsRefreshOk: Boolean(totalsRefresh?.ok),
-        attachmentsMeta: attachMeta,
+        attachmentsMeta: { tableUsed: "payroll_run_employees", whereColumn: "run_id" },
         sideEffects: flagPre?.hasAttachedFlag
           ? {
               attached_all_due_employees: {
@@ -984,12 +770,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
       if (!pre.ok) {
         return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
-            error: pre.error,
-            debug: pre.debug,
-          },
+          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: pre.error, debug: pre.debug },
           { status: pre.status || 500 }
         );
       }
@@ -1001,12 +782,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
         return NextResponse.json(
           {
             ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
+            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
             error:
               "Approval blocked. This run is not fully calculated (calc_mode is not 'full' for all employees). Run full compute first.",
             seededMode: true,
             exceptions: pre.exceptions,
-            debug: pre.debug,
           },
           { status: 409 }
         );
@@ -1014,29 +794,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
       if (blockingCount > 0) {
         return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
-            error: "Approval blocked. Fix blocking exceptions first.",
-            seededMode: false,
-            exceptions: pre.exceptions,
-          },
+          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Approval blocked. Fix blocking exceptions first.", seededMode: false, exceptions: pre.exceptions },
           { status: 409 }
         );
       }
 
-      const { error: upErr } = await supabase
-        .from("payroll_runs")
-        .update({ status: "approved" })
-        .eq("id", id);
+      const { error: upErr } = await supabase.from("payroll_runs").update({ status: "approved" }).eq("id", id);
 
       if (upErr) {
         return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v6_full_compute_action",
-            error: upErr.message,
-          },
+          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: upErr.message },
           { status: 500 }
         );
       }
@@ -1045,7 +812,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
       return NextResponse.json({
         ok: true,
-        debugSource: "payroll_run_route_admin_v6_full_compute_action",
+        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
         action: "approve",
         run: post.run,
         employees: post.employees,
@@ -1060,26 +827,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "Nothing to update. Expected { items: [...] } or { action: 'approve'|'recalculate'|'compute_full' }",
+          error: "Nothing to update. Expected { items: [...] } or { action: 'approve'|'recalculate'|'compute_full' }",
         },
         { status: 400 }
       );
     }
-
-    const attachTry = await tryAttachments(supabase, id);
-    if (!attachTry.ok || !attachTry.tableUsed || !attachTry.whereColumn) {
-      return NextResponse.json(
-        {
-          ok: false,
-          debugSource: "payroll_run_route_admin_v6_full_compute_action",
-          error: "Could not find a payroll run employees table to update",
-        },
-        { status: 500 }
-      );
-    }
-
-    const table = attachTry.tableUsed;
 
     const results: any[] = [];
 
@@ -1091,7 +843,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       const deductions = Number(toNumberSafe(it?.deductions).toFixed(2));
       const net = Number(toNumberSafe(it?.net).toFixed(2));
 
-      const r = await updateRunEmployeeRow(supabase, table, rowId, gross, deductions, net);
+      const r = await updateRunEmployeeRow(supabase, rowId, gross, deductions, net);
       results.push({ id: rowId, ok: r.ok, ...(r.ok ? {} : { error: r.error }) });
     }
 
@@ -1100,7 +852,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       return NextResponse.json(
         {
           ok: false,
-          debugSource: "payroll_run_route_admin_v6_full_compute_action",
+          debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
           error: `Updated rows, but failed to refresh totals: ${totals?.error || "unknown error"}`,
           updateResults: results,
         },
@@ -1112,7 +864,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     return NextResponse.json({
       ok: true,
-      debugSource: "payroll_run_route_admin_v6_full_compute_action",
+      debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
       run: result.run,
       employees: result.employees,
       totals: result.totals,
@@ -1124,7 +876,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     return NextResponse.json(
       {
         ok: false,
-        debugSource: "payroll_run_route_admin_v6_full_compute_action",
+        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
         error: err?.message ?? "Unexpected error",
       },
       { status: 500 }
