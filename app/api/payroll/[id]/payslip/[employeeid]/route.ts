@@ -1,4 +1,4 @@
-// E:\Projects\wageflow01\app\api\payroll\[id]\payslip\[employeeId]\route.ts
+﻿// E:\Projects\wageflow01\app\api\payroll\[id]\payslip\[employeeId]\route.ts
 /* @ts-nocheck */
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -74,6 +74,13 @@ function safeNumber(x: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function isSspLike(e: { code?: any; name?: any; description?: any }) {
+  const code = String(e?.code || "").toUpperCase();
+  const name = String(e?.name || "").toLowerCase();
+  const desc = String(e?.description || "").toLowerCase();
+  return code === "SSP" || code === "SSP1" || name.includes("statutory sick") || desc.includes("statutory sick");
+}
+
 function pickEarliestSicknessStart(sspForEmployee: any): string | null {
   const abs = Array.isArray(sspForEmployee?.absences) ? sspForEmployee.absences : [];
   const starts = abs
@@ -88,10 +95,6 @@ function pickEarliestSicknessStart(sspForEmployee: any): string | null {
  * - Uses payroll_runs.period_end as the "pay date proxy" for history.
  * - Looks back 8 weeks (56 days) ending the day before first sickness.
  * - AWE = total gross from matching runs / 8.
- *
- * This is good enough for the reform cap behaviour wiring.
- * If you later store explicit pay_date per run and/or need exact relevant period rules,
- * we can tighten it further.
  */
 async function computeAweWeeklyForSspCap(
   supabase: any,
@@ -110,7 +113,7 @@ async function computeAweWeeklyForSspCap(
   }
 
   const windowEnd = referenceEndIso;
-  const windowStart = addDaysIso(windowEnd, -55); // inclusive 56-day window
+  const windowStart = addDaysIso(windowEnd, -55);
 
   const { data: runs, error: runsErr } = await supabase
     .from("payroll_runs")
@@ -130,13 +133,7 @@ async function computeAweWeeklyForSspCap(
     .filter((id: any) => typeof id === "string" && id.length > 0);
 
   if (!runIds.length) {
-    return {
-      aweWeekly: 0,
-      totalGrossInWindow: 0,
-      runCount: 0,
-      windowStart,
-      windowEnd,
-    };
+    return { aweWeekly: 0, totalGrossInWindow: 0, runCount: 0, windowStart, windowEnd };
   }
 
   const { data: pres, error: presErr } = await supabase
@@ -151,7 +148,6 @@ async function computeAweWeeklyForSspCap(
 
   const rows = Array.isArray(pres) ? pres : [];
   const totalGross = rows.reduce((sum: number, r: any) => sum + (Number(r?.gross_pay) || 0), 0);
-
   const aweWeekly = totalGross > 0 ? totalGross / 8 : 0;
 
   return {
@@ -191,38 +187,10 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
   const periodStart = runRow["period_start"] ?? runRow["pay_period_start"] ?? null;
   const periodEnd = runRow["period_end"] ?? runRow["pay_period_end"] ?? null;
 
-  // 1b) Compute SSP amounts for this run + employee using the absence SSP engine
-  let sspForEmployee: any = null;
-
-  if (companyId && periodStart && periodEnd) {
-    try {
-      const sspEmployeesRaw = await getSspAmountsForRun(companyId, periodStart, periodEnd);
-      const sspEmployees = Array.isArray(sspEmployeesRaw) ? sspEmployeesRaw : [];
-      sspForEmployee =
-        sspEmployees.find((e: any) => String(e.employeeId) === String(employeeId)) ?? null;
-
-      if (sspForEmployee) {
-        console.log("payslip route: SSP engine result", {
-          runId,
-          employeeId,
-          totalQualifyingDays: sspForEmployee.totalQualifyingDays,
-          totalPayableDays: sspForEmployee.totalPayableDays,
-          dailyRate: sspForEmployee.dailyRate,
-          sspAmount: sspForEmployee.sspAmount,
-          packMeta: sspForEmployee.packMeta ? { taxYear: sspForEmployee.packMeta.taxYear } : null,
-        });
-      }
-    } catch (err) {
-      console.error("payslip route: error computing SSP amounts", err);
-    }
-  }
-
   // 2) Load the payroll_run_employees row for this run + employee
   const { data: preRow, error: preError } = await supabase
     .from("payroll_run_employees")
-    .select(
-      "id, run_id, employee_id, gross_pay, net_pay, tax, ni_employee, ni_employer, pay_after_leaving"
-    )
+    .select("id, run_id, employee_id, gross_pay, net_pay, tax, ni_employee, ni_employer, pay_after_leaving")
     .eq("run_id", runId)
     .eq("employee_id", employeeId)
     .maybeSingle();
@@ -252,12 +220,8 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     .eq("employee_id", employeeId);
 
   if (!allPreError && Array.isArray(allPreRows) && allPreRows.length > 0) {
-    const ids = allPreRows
-      .map((r: any) => r.id)
-      .filter((v: any) => typeof v === "string");
-    if (ids.length > 0) {
-      preIds = ids;
-    }
+    const ids = allPreRows.map((r: any) => r.id).filter((v: any) => typeof v === "string");
+    if (ids.length > 0) preIds = ids;
   }
 
   // 3) Load the company
@@ -316,9 +280,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
         .select("p45_provided, p45_present, starter_declaration, p45_tax_code")
         .eq("employee_id", employeeId)
         .maybeSingle();
-      if (legacyRow && !legacyError) {
-        row = legacyRow;
-      }
+      if (legacyRow && !legacyError) row = legacyRow;
     }
 
     if (row) {
@@ -425,7 +387,67 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     elements.push(normalised);
   }
 
-  // 6) SSP injection and April 2026 reform cap (if enabled in Compliance Pack)
+  // 6) SSP engine precheck (avoid slow compute when no sickness exists)
+  let sspForEmployee: any = null;
+  let sspEngineRan = false;
+
+  if (companyId && periodStart && periodEnd) {
+    try {
+      let hasSickness = false;
+
+      const { data: spAny, error: spErr } = await supabase
+        .from("sickness_periods")
+        .select("id")
+        .eq("company_id", companyId)
+        .lte("start_date", periodEnd)
+        .gte("end_date", periodStart)
+        .limit(1);
+
+      if (!spErr && Array.isArray(spAny) && spAny.length > 0) hasSickness = true;
+
+      if (!hasSickness) {
+        const { data: apsAny, error: apsErr } = await supabase
+          .from("absence_pay_schedules")
+          .select("id, element_code")
+          .eq("company_id", companyId)
+          .lte("pay_period_start", periodEnd)
+          .gte("pay_period_end", periodStart)
+          .limit(1);
+
+        if (!apsErr && Array.isArray(apsAny) && apsAny.length > 0) hasSickness = true;
+      }
+
+      if (hasSickness) {
+        const sspEmployeesRaw = await getSspAmountsForRun(companyId, periodStart, periodEnd);
+        const sspEmployees = Array.isArray(sspEmployeesRaw) ? sspEmployeesRaw : [];
+        sspEngineRan = true;
+
+        const matchKeys = new Set(
+          [String(employeeId), String(employeeRow?.employee_id || ""), String(employeeRow?.id || "")]
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+        );
+
+        sspForEmployee = sspEmployees.find((e: any) => matchKeys.has(String(e?.employeeId).trim())) ?? null;
+
+        if (sspForEmployee) {
+          console.log("payslip route: SSP engine result", {
+            runId,
+            employeeId,
+            totalQualifyingDays: sspForEmployee.totalQualifyingDays,
+            totalPayableDays: sspForEmployee.totalPayableDays,
+            dailyRate: sspForEmployee.dailyRate,
+            sspAmount: sspForEmployee.sspAmount,
+            packMeta: sspForEmployee.packMeta ? { taxYear: sspForEmployee.packMeta.taxYear } : null,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("payslip route: error computing SSP amounts", err);
+    }
+  }
+
+  // 6b) SSP injection and April 2026 reform cap (if enabled in Compliance Pack)
   let sspAdjusted = false;
   let sspDetails: any = null;
 
@@ -438,9 +460,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     let effectiveDailyRate = safeNumber(sspForEmployee.dailyRate) ?? 0;
     let effectiveAmount = safeNumber(sspForEmployee.sspAmount) ?? 0;
 
-    const warnings: string[] = Array.isArray(sspForEmployee.warnings)
-      ? [...sspForEmployee.warnings]
-      : [];
+    const warnings: string[] = Array.isArray(sspForEmployee.warnings) ? [...sspForEmployee.warnings] : [];
 
     const lowCapEnabled = Boolean(packMeta?.lowEarnerPercentCapEnabled);
     const lowPct = safeNumber(packMeta?.lowEarnerPercent);
@@ -476,8 +496,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
             );
           }
         } catch (err) {
-          const msg =
-            err && typeof err === "object" && "message" in err ? (err as any).message : err;
+          const msg = err && typeof err === "object" && "message" in err ? (err as any).message : err;
           warnings.push(
             `SSP low-earner cap is enabled but AWE calculation failed. Flat rate SSP used. (${String(msg)})`
           );
@@ -487,21 +506,12 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
       }
     }
 
-    const sspElem = elements.find((e) => {
-      const code = (e.code || "").toUpperCase();
-      const name = (e.name || "").toLowerCase();
-      const desc = (e.description || "").toLowerCase();
-      return code === "SSP" || code === "SSP1" || name.includes("statutory sick") || desc.includes("statutory sick");
-    });
+    const sspElem = elements.find((e) => isSspLike(e));
 
     const descBase = `Statutory Sick Pay for ${payable} day${payable === 1 ? "" : "s"} sickness (${qualifying} qualifying day${qualifying === 1 ? "" : "s"} in this period)`;
-
     const descCap = lowCapEnabled ? (capApplied ? `, low-earner cap applied` : `, low-earner cap checked`) : "";
-
     const descRate =
-      Number.isFinite(effectiveDailyRate) && effectiveDailyRate > 0
-        ? `, daily rate £${effectiveDailyRate.toFixed(2)}`
-        : "";
+      Number.isFinite(effectiveDailyRate) && effectiveDailyRate > 0 ? `, daily rate £${effectiveDailyRate.toFixed(2)}` : "";
 
     if (sspElem) {
       sspElem.amount = effectiveAmount;
@@ -538,6 +548,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
       awe: aweInfo,
       packMeta: packMeta ? { ...packMeta } : null,
       warnings,
+      source: "ssp_engine",
     };
 
     console.log("payslip route: SSP element adjusted", {
@@ -549,6 +560,33 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
       capEnabled: lowCapEnabled,
       capApplied,
     });
+  }
+
+  // 6c) If SSP engine returned nothing but an SSP element exists, expose basic SSP meta + force £ into description
+  const sspElemStored = elements.find((e) => isSspLike(e));
+  if (!sspDetails && sspElemStored) {
+    const amt = round2(Number(sspElemStored.amount ?? 0));
+    const existingDesc = String(sspElemStored.description || "");
+    if (!existingDesc.includes("£")) {
+      const suffix = `amount £${amt.toFixed(2)}`;
+      sspElemStored.description = existingDesc ? `${existingDesc}, ${suffix}` : suffix;
+    }
+
+    sspDetails = {
+      totalQualifyingDays: null,
+      totalPayableDays: null,
+      dailyRateUsed: null,
+      amount: amt,
+      capEnabled: null,
+      capApplied: null,
+      awe: null,
+      packMeta: null,
+      warnings: [
+        "SSP pay element exists in payroll_run_pay_elements but no sickness record was found for this run period, so SSP engine details could not be derived.",
+      ],
+      source: "stored_pay_element",
+      engineRan: sspEngineRan,
+    };
   }
 
   // 7) Totals and flags, including final tax code resolution
@@ -610,18 +648,12 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
         }
       } catch (err) {
         const msg = err && typeof err === "object" && "message" in err ? (err as any).message : err;
-        console.error("payslip route: PAYE auto calc failed", {
-          runId,
-          employeeId,
-          error: String(msg),
-        });
+        console.error("payslip route: PAYE auto calc failed", { runId, employeeId, error: String(msg) });
 
         gross = grossStored;
         net = netStored;
         deductions = grossStored - netStored;
       }
-    } else {
-      // fallback: use stored totals
     }
   }
 
@@ -669,11 +701,11 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
   };
 
   const totalsPayload = {
-    gross,
-    deductions,
-    net,
-    tax,
-    ni,
+    gross: round2(gross),
+    deductions: round2(deductions),
+    net: round2(net),
+    tax: round2(tax),
+    ni: round2(ni),
   };
 
   const flagsPayload = {
@@ -725,11 +757,7 @@ export async function GET(_req: Request, context: RouteParams) {
 
   if (!runId || !employeeId) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "BAD_REQUEST",
-        message: "Run id and employee id are required in the route.",
-      },
+      { ok: false, error: "BAD_REQUEST", message: "Run id and employee id are required in the route." },
       { status: 400 }
     );
   }
