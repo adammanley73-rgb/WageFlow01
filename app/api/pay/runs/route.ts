@@ -1,4 +1,6 @@
 /* @ts-nocheck */
+/* E:\Projects\wageflow01\app\api\pay\runs\route.ts */
+
 import { NextResponse } from "next/server";
 import { getAdmin } from "@lib/admin";
 
@@ -8,12 +10,17 @@ export async function GET() {
     if (!admin) return NextResponse.json({ ok: false, error: "Admin client not available" }, { status: 503 });
 
     const { client, companyId } = admin;
-    const { data, error } = await client.from("pay_runs").select("*").eq("company_id", companyId);
+
+    const { data, error } = await client
+      .from("payroll_runs")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false });
 
     if (error) return NextResponse.json({ ok: false, error }, { status: 500 });
+
     return NextResponse.json({ ok: true, items: data ?? [] });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err?.message ?? "Unexpected error" }, { status: 500 });
   }
 }
-
