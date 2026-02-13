@@ -1,9 +1,10 @@
-/* C:\Users\adamm\Projects\wageflow01\app\api\payroll\runs\route.ts */
+/* E:\Projects\wageflow01\app\api\payroll\runs\route.ts */
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { randomUUID } from "crypto";
 import { getAdmin } from "@lib/admin";
+import { syncAbsencePayToRun } from "@lib/payroll/syncAbsencePayToRun";
 
 export const dynamic = "force-dynamic";
 
@@ -483,7 +484,10 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
       );
     }
 
-    if (msgLower.includes("only allowed for fortnightly") || msgLower.includes("only allowed for fortnightly, four_weekly, or monthly")) {
+    if (
+      msgLower.includes("only allowed for fortnightly") ||
+      msgLower.includes("only allowed for fortnightly, four_weekly, or monthly")
+    ) {
       return NextResponse.json(
         {
           ok: false,
@@ -497,7 +501,11 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
       );
     }
 
-    if (msgLower.includes("open supplementary") || msgLower.includes("already exists for this parent") || msgLower.includes("complete or archive it first")) {
+    if (
+      msgLower.includes("open supplementary") ||
+      msgLower.includes("already exists for this parent") ||
+      msgLower.includes("complete or archive it first")
+    ) {
       return NextResponse.json(
         {
           ok: false,
@@ -590,6 +598,43 @@ function payDateMismatchResponse(args: {
     },
     { status: 409 }
   );
+}
+
+async function bestEffortAbsenceSync(args: {
+  client: any;
+  runId: string;
+  runRow: any;
+}) {
+  const { client, runId, runRow } = args;
+
+  try {
+    const { data: preRows, error: preErr } = await client
+      .from("payroll_run_employees")
+      .select("*")
+      .eq("run_id", runId);
+
+    if (preErr) {
+      console.error("[payroll_runs] absence sync: failed to load payroll_run_employees", {
+        runId,
+        error: preErr,
+      });
+      return;
+    }
+
+    const payrollRunEmployees = Array.isArray(preRows) ? preRows : [];
+
+    await syncAbsencePayToRun({
+      supabase: client,
+      runId,
+      runRow,
+      payrollRunEmployees,
+    });
+  } catch (err: any) {
+    console.error("[payroll_runs] absence sync: unexpected failure", {
+      runId,
+      error: err?.message ?? err,
+    });
+  }
 }
 
 /* -----------------------
@@ -1023,6 +1068,12 @@ export async function POST(req: Request) {
         );
       }
 
+      await bestEffortAbsenceSync({
+        client,
+        runId: newId,
+        runRow: newRes.data,
+      });
+
       return NextResponse.json(
         { ok: true, run_id: newId, created: true, run: newRes.data, debugSource: "supplementary_create_v2" },
         { status: 201 }
@@ -1337,6 +1388,12 @@ export async function POST(req: Request) {
     }
 
     const run = createdRes.data;
+
+    await bestEffortAbsenceSync({
+      client,
+      runId: run.id,
+      runRow: run,
+    });
 
     const res = NextResponse.json(
       {
