@@ -21,7 +21,7 @@ function getServiceKey() {
  */
 function assertAdminToken(req: Request) {
   const expected = (process.env.ADMIN_PURGE_TOKEN || "").trim();
-  if (!expected) return; // backwards compatible
+  if (!expected) return;
 
   const provided = (req.headers.get("x-admin-token") || "").trim();
   if (!provided || provided !== expected) {
@@ -37,14 +37,19 @@ type CleanupResult = {
 };
 
 async function bestEffortDelete(
-  admin: ReturnType<typeof createClient>,
+  admin: any,
   table: string,
   run: () => Promise<{ count?: number | null; error?: any }>
 ): Promise<CleanupResult> {
   try {
     const { count, error } = await run();
     if (error) {
-      return { table, ok: false, count: count ?? null, error: error?.message || String(error) };
+      return {
+        table,
+        ok: false,
+        count: count ?? null,
+        error: error?.message || String(error),
+      };
     }
     return { table, ok: true, count: count ?? null, error: null };
   } catch (e: any) {
@@ -92,16 +97,16 @@ export async function POST(req: Request) {
     if (listErr) throw listErr;
 
     const match = (users?.users || []).find(
-      (u) => (u.email || "").toLowerCase() === email
+      (u: any) => (u.email || "").toLowerCase() === email
     );
 
     if (!match?.id) {
       return NextResponse.json({ ok: true, message: "No user found" });
     }
 
-    const userId = match.id;
+    const userId: string = match.id;
 
-    // 2) Best-effort cleanup in app tables first (so if something fails, auth user still exists)
+    // 2) Best-effort cleanup in app tables first
     const cleanup: CleanupResult[] = [];
 
     cleanup.push(
@@ -124,7 +129,7 @@ export async function POST(req: Request) {
       })
     );
 
-    // Legacy table name (kept as a best-effort delete so older schemas don't leave junk behind)
+    // Legacy table name (safe to keep as best-effort)
     cleanup.push(
       await bestEffortDelete(admin, "company_members (legacy)", async () => {
         const { count, error } = await admin
