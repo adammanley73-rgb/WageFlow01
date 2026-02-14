@@ -1,4 +1,4 @@
-// C:\Users\adamm\Projects\wageflow01\app\api\admin\employees\purge-by-email\route.ts
+/* E:\Projects\wageflow01\app\api\admin\employees\purge-by-email\route.ts */
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -21,7 +21,7 @@ function getServiceKey() {
  */
 function assertAdminToken(req: Request) {
   const expected = (process.env.ADMIN_PURGE_TOKEN || "").trim();
-  if (!expected) return; // if not set, we don't block (backwards compatible)
+  if (!expected) return; // backwards compatible
 
   const provided = (req.headers.get("x-admin-token") || "").trim();
   if (!provided || provided !== expected) {
@@ -29,12 +29,38 @@ function assertAdminToken(req: Request) {
   }
 }
 
+type CleanupResult = {
+  table: string;
+  ok: boolean;
+  count?: number | null;
+  error?: string | null;
+};
+
+async function bestEffortDelete(
+  admin: ReturnType<typeof createClient>,
+  table: string,
+  run: () => Promise<{ count?: number | null; error?: any }>
+): Promise<CleanupResult> {
+  try {
+    const { count, error } = await run();
+    if (error) {
+      return { table, ok: false, count: count ?? null, error: error?.message || String(error) };
+    }
+    return { table, ok: true, count: count ?? null, error: null };
+  } catch (e: any) {
+    return { table, ok: false, count: null, error: e?.message || String(e) };
+  }
+}
+
 export async function POST(req: Request) {
   try {
     assertAdminToken(req);
 
-    const supabaseUrl =
-      (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+    const supabaseUrl = (
+      process.env.SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      ""
+    ).trim();
 
     const serviceKey = getServiceKey();
 
@@ -63,7 +89,6 @@ export async function POST(req: Request) {
       page: 1,
       perPage: 1000,
     });
-
     if (listErr) throw listErr;
 
     const match = (users?.users || []).find(
@@ -76,18 +101,48 @@ export async function POST(req: Request) {
 
     const userId = match.id;
 
-    // 2) Delete auth user
+    // 2) Best-effort cleanup in app tables first (so if something fails, auth user still exists)
+    const cleanup: CleanupResult[] = [];
+
+    cleanup.push(
+      await bestEffortDelete(admin, "company_memberships", async () => {
+        const { count, error } = await admin
+          .from("company_memberships")
+          .delete({ count: "exact" })
+          .or(`user_id.eq.${userId},user_id_uuid.eq.${userId}`);
+        return { count, error };
+      })
+    );
+
+    cleanup.push(
+      await bestEffortDelete(admin, "profiles", async () => {
+        const { count, error } = await admin
+          .from("profiles")
+          .delete({ count: "exact" })
+          .eq("id", userId);
+        return { count, error };
+      })
+    );
+
+    // Legacy table name (kept as a best-effort delete so older schemas don't leave junk behind)
+    cleanup.push(
+      await bestEffortDelete(admin, "company_members (legacy)", async () => {
+        const { count, error } = await admin
+          .from("company_members")
+          .delete({ count: "exact" })
+          .eq("user_id", userId);
+        return { count, error };
+      })
+    );
+
+    // 3) Delete auth user (final step)
     const { error: delAuthErr } = await admin.auth.admin.deleteUser(userId);
     if (delAuthErr) throw delAuthErr;
-
-    // 3) Best-effort cleanup in your own tables (ignore errors if tables differ)
-    // Add/remove table deletes as your schema evolves.
-    await admin.from("company_members").delete().eq("user_id", userId);
-    await admin.from("profiles").delete().eq("id", userId);
 
     return NextResponse.json({
       ok: true,
       purged: { email, userId },
+      cleanup,
     });
   } catch (e: any) {
     const msg = e?.message || "Unknown error";
