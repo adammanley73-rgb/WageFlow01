@@ -64,13 +64,9 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState<ToastState>({ open: false, message: "" });
 
-  // Intro video is now controlled by a cookie so the server can decide BEFORE first paint.
-  // Cookie is session-scoped (no Max-Age), so it resets when the browser fully closes.
   const INTRO_COOKIE = "tbc_intro_played_v1";
   const [introPhase, setIntroPhase] = useState<IntroPhase>(initialShowIntro ? "show" : "hide");
 
-  // Put your HMRC “gate” logo here (public file).
-  // Expected path: C:\Users\adamm\Projects\wageflow01\public\hmrc-gate.png
   const HMRC_GATE_LOGO_SRC = "/hmrc-gate.png";
 
   const showToast = (message: string) => {
@@ -92,7 +88,6 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
   };
 
   useEffect(() => {
-    // If user prefers reduced motion, skip the intro and set cookie so the server stops offering it next time.
     try {
       const reduced =
         typeof window !== "undefined" &&
@@ -108,7 +103,6 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
       // ignore
     }
 
-    // Safety net: if cookie already exists but server did not pass it correctly, hide.
     try {
       if (document.cookie.includes(`${INTRO_COOKIE}=1`)) {
         setIntroPhase("hide");
@@ -116,7 +110,6 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
     } catch {
       // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -151,9 +144,9 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
         name: "WageFlow",
         tagline: "Payroll first. Built for control.",
         description:
-          "Automated payroll with exception-led review so you only focus on what needs attention. WageFlow is the flagship.",
+          "Automated payroll with exception-led review so you only focus on what needs attention. WageFlow is live now.",
         href: "/wageflow",
-        badge: "Flagship",
+        badge: "Live Now",
         icon: <LayoutGrid className="w-6 h-6" aria-hidden="true" />,
         logoSrc: "/WageFlowLogo.png",
         comingSoon: false,
@@ -161,30 +154,30 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
       },
       {
         name: "PeopleFlow",
-        tagline: "Coming soon",
+        tagline: "Coming 2025",
         description:
           "HR workflows and employee records designed to sit cleanly alongside WageFlow, without the mess.",
-        badge: "Coming soon",
+        badge: "Coming 2025",
         icon: <Users className="w-6 h-6" aria-hidden="true" />,
         logoSrc: "/PeopleFlow.png",
         comingSoon: true,
       },
       {
         name: "AccountsFlow",
-        tagline: "Coming soon",
+        tagline: "Coming 2025",
         description:
           "Finance ops and reporting that stays aligned with payroll and people data, without spreadsheet chaos.",
-        badge: "Coming soon",
+        badge: "Coming 2025",
         icon: <Briefcase className="w-6 h-6" aria-hidden="true" />,
         logoSrc: "/AccountsFlow.png",
         comingSoon: true,
       },
       {
         name: "BusinessFlow",
-        tagline: "Coming soon",
+        tagline: "Coming 2026",
         description:
           "BusinessFlow is the full package name when WageFlow, PeopleFlow, and AccountsFlow are used together.",
-        badge: "Coming soon",
+        badge: "Coming 2026",
         icon: <Layers className="w-6 h-6" aria-hidden="true" />,
         logoSrc: "/BusinessFlowLogo.png",
         comingSoon: true,
@@ -196,17 +189,17 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
   const pillars: Pill[] = useMemo(
     () => [
       {
-        title: "Operational clarity",
-        desc: "Obvious changes. Clear reasons. No mystery states.",
+        title: "See why every calculation was made",
+        desc: "Audit trail for every payroll change. No mystery states.",
         icon: <Shield className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />,
       },
       {
-        title: "UK-first workflow design",
+        title: "Follows HMRC RTI workflow exactly",
         desc: "Built around real UK payroll behaviour. Calm, predictable process.",
         icon: <Building2 className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />,
       },
       {
-        title: "Practical automation",
+        title: "Auto-calculate tax, NI, pension contributions",
         desc: "Automation reduces errors. Humans keep control where it matters.",
         icon: <Sparkles className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />,
       },
@@ -382,24 +375,39 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
 
                 <div className="mt-5">
                   <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mt-2 leading-tight">
-                    The Payroll revolution is here
+                    UK Payroll Software That Eliminates Manual Errors
                   </h1>
                 </div>
 
                 <p className="text-lg md:text-xl text-gray-700 mt-5 max-w-xl">
-                  Stop spending hours running payroll. WageFlow automates the work so you only review the 1 in 50 exceptions.
-                  Approve it, amend it, or delete it. Job done.
+                  Built by a payroll professional with 27 years UK payroll experience. WageFlow automates payroll so you only review exceptions.
                 </p>
 
                 <div className="mt-6 bg-gray-50 border border-gray-200 rounded-2xl p-5">
                   <p className="font-semibold text-gray-900">Why WageFlow exists</p>
                   <p className="text-gray-700 mt-2">
-                    WageFlow is my payroll app. I built it using the skills and expertise I have gathered over a 27 year career
-                    across Payroll, HR, and Pensions environments, including numerous software implementations.
+                    I built WageFlow using 27 years of experience across Payroll, HR, and Pensions environments. I have supported the implementation of payroll and HR systems for 20+ companies of varying size.
                   </p>
                   <p className="text-gray-700 mt-2">
-                    It is built for calm control, clear review, and fewer mistakes. Payroll is treated like it matters, because it does.
+                    WageFlow solves the problems I saw daily: manual errors, unclear calculations, and time wasted on repetitive tasks.
                   </p>
+                </div>
+
+                <div className="mt-6 bg-blue-50 border-2 border-blue-200 rounded-2xl p-5">
+                  <p className="font-bold text-gray-900 flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-[#0f3c85]" aria-hidden="true" />
+                    Pilot Program: First 10 Companies
+                  </p>
+                  <p className="text-gray-700 mt-2">
+                    The first 10 customers get a free Payroll Director guided parallel run and 3 months free, subject to weekly/monthly testimonial submissions.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onRequestDemo}
+                    className="mt-4 w-full bg-[#0f3c85] text-white px-6 py-3 rounded-lg font-semibold hover:opacity-95 transition focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
+                  >
+                    Apply for pilot program
+                  </button>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-4 mt-8">
@@ -424,11 +432,11 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
                 <div className="mt-5 text-sm text-gray-700 space-y-2">
                   <div className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-green-600" aria-hidden="true" />
-                    WageFlow is the flagship product
+                    WageFlow is live now
                   </div>
                   <div className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-green-600" aria-hidden="true" />
-                    PeopleFlow and AccountsFlow are coming soon
+                    PeopleFlow and AccountsFlow launching 2025-2026
                   </div>
                   <div className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-green-600" aria-hidden="true" />
@@ -442,12 +450,12 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
                   <Building2 className="w-5 h-5 text-[#0f3c85] mt-0.5" aria-hidden="true" />
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">Founder</h2>
-                    <p className="text-gray-700 mt-2">Real payroll experience, turned into software that is hard to mess up.</p>
+                    <p className="text-gray-700 mt-2">27 years delivering payroll across HR, Pensions, Payroll environments.</p>
                   </div>
                 </div>
 
                 <div className="mt-6 rounded-2xl overflow-hidden border border-gray-200 bg-white">
-                  <div className="relative w-full aspect-[16/10]">
+                  <div className="relative w-full aspect-[4/3]">
                     <Image
                       src="/MeWageFlowWebsitePicDeepNavyBlueMAIN.png"
                       alt="WageFlow founder"
@@ -457,8 +465,12 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
                     />
                   </div>
                   <div className="p-4">
-                    <p className="font-semibold text-gray-900">Payroll, built properly</p>
-                    <p className="text-sm text-gray-700 mt-1">WageFlow leads hard with Payroll. The suite follows when it is ready.</p>
+                    <p className="font-semibold text-gray-900">Adam Manley, Founder</p>
+                    <ul className="text-sm text-gray-700 mt-2 space-y-1">
+                      <li>27 years delivering payroll across HR, Pensions, Payroll environments</li>
+                      <li>Supported the implementation of payroll/HR systems for 20+ companies of varying size</li>
+                      <li>Built WageFlow to solve the problems I saw daily</li>
+                    </ul>
                   </div>
                 </div>
 
@@ -514,7 +526,7 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
             <div className="text-center mb-12">
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Products</h2>
               <p className="text-lg text-gray-700 mt-3 max-w-3xl mx-auto">
-                WageFlow is live. PeopleFlow, AccountsFlow, and BusinessFlow are coming soon.
+                WageFlow is live now. Other products launching 2025-2026.
               </p>
             </div>
 
@@ -678,7 +690,7 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
 
               <div className="bg-white border border-gray-200 rounded-2xl p-6">
                 <p className="font-semibold text-gray-900">Monthly free offer</p>
-                <p className="text-gray-700 mt-2">The “Get 1st month free” offer will go live when billing is enabled.</p>
+                <p className="text-gray-700 mt-2">The "Get 1st month free" offer will go live when billing is enabled.</p>
 
                 <button
                   type="button"
@@ -725,7 +737,18 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
               <div className="flex items-center gap-3 mb-4">
                 <div className="text-white font-bold">The Business Consortium Ltd</div>
               </div>
-              <p className="text-sm text-gray-300">Payroll-first systems for SMEs. WageFlow leads. The rest follows.</p>
+              <p className="text-sm text-gray-300 mb-4">Payroll-first systems for SMEs. WageFlow leads. The rest follows.</p>
+              
+              <div className="text-xs text-gray-400 space-y-1 border-t border-gray-800 pt-4">
+                <p>Registered in England and Wales</p>
+                <p>Company No: 16636529</p>
+                <p className="leading-relaxed">Registered Office: 86-90 Paul Street, London EC2A 4NE</p>
+                <p className="mt-2">
+                  <a href="mailto:enquiries@thebusinessconsortiumltd.co.uk" className="hover:text-white transition">
+                    enquiries@thebusinessconsortiumltd.co.uk
+                  </a>
+                </p>
+              </div>
             </div>
 
             <div>
@@ -783,6 +806,22 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
                   <button type="button" onClick={() => scrollToId("contact")} className="hover:text-white transition">
                     Contact
                   </button>
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="text-white font-semibold mb-4">Legal</h4>
+              <ul className="space-y-2 text-sm">
+                <li>
+                  <a href="/privacy" className="hover:text-white transition">
+                    Privacy Policy
+                  </a>
+                </li>
+                <li>
+                  <a href="/terms" className="hover:text-white transition">
+                    Terms of Service
+                  </a>
                 </li>
               </ul>
             </div>
