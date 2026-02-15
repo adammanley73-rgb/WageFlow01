@@ -338,7 +338,7 @@ export default function WageFlowLandingV2() {
     () => [
       {
         q: "Is the first month really free?",
-        a: "The offer is launching soon. The button currently shows a "Coming soon" confirmation.",
+        a: "The offer is launching soon. The button currently shows a 'Coming soon' confirmation.",
       },
       {
         q: "Do I need to add a card on day 1?",
