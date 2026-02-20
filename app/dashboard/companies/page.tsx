@@ -41,7 +41,7 @@ async function selectCompanyAction(formData: FormData) {
     redirect("/dashboard/companies");
   }
 
-  const jar = cookies();
+  const jar = await cookies();
 
   jar.set("active_company_id", companyId, {
     path: "/",

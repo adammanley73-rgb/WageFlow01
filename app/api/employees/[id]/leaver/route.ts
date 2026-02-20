@@ -48,8 +48,9 @@ function toNumberOrNull(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export async function GET(_req: Request, context: { params: { id: string } }) {
-  const employeeId = context.params?.id;
+export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
+  const params = await context.params;
+  const employeeId = params?.id;
   if (!employeeId) return badRequest("Missing employee id");
 
   const supabaseAdmin = getSupabaseAdmin();
@@ -121,8 +122,9 @@ export async function GET(_req: Request, context: { params: { id: string } }) {
   }
 }
 
-export async function POST(req: Request, context: { params: { id: string } }) {
-  const employeeId = context.params?.id;
+export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
+  const params = await context.params;
+  const employeeId = params?.id;
   if (!employeeId) return badRequest("Missing employee id");
 
   const supabaseAdmin = getSupabaseAdmin();

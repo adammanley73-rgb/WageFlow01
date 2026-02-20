@@ -9,8 +9,8 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-function getActiveCompanyId(): string {
-  const jar = cookies();
+async function getActiveCompanyId(): Promise<string> {
+  const jar = await cookies();
   return (
     jar.get("active_company_id")?.value ??
     jar.get("company_id")?.value ??
@@ -66,7 +66,7 @@ export async function GET() {
       );
     }
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     type Row = { employee_number: string | null };
 

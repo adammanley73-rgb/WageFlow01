@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
 function pickFirst(...vals: any[]) {
   for (const v of vals) {
@@ -530,7 +530,8 @@ async function tryComputeFullViaRpc(supabase: any, runId: string) {
 
 export async function GET(req: Request, { params }: Ctx) {
   try {
-    const id = params?.id;
+    const resolvedParams = await params;
+    const id = resolvedParams?.id;
     if (!id) return NextResponse.json({ ok: false, error: "Missing payroll run id" }, { status: 400 });
 
     const includeDebug = new URL(req.url).searchParams.get("debug") === "1";
@@ -574,7 +575,8 @@ export async function GET(req: Request, { params }: Ctx) {
 
 export async function PATCH(req: Request, { params }: Ctx) {
   try {
-    const id = params?.id;
+    const resolvedParams = await params;
+    const id = resolvedParams?.id;
     if (!id) return NextResponse.json({ ok: false, error: "Missing payroll run id" }, { status: 400 });
 
     const body = await req.json().catch(() => ({}));

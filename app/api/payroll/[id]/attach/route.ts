@@ -33,9 +33,10 @@ function createAdminClient() {
  *
  * Response: { ok: true, inserted: number }
  */
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const supabase = createAdminClient();
-  const runId = params?.id;
+  const resolvedParams = await params;
+  const runId = resolvedParams?.id;
   if (!runId) {
     return NextResponse.json(
       { ok: false, error: "RUN_ID_MISSING" },

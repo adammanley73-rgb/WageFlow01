@@ -1,29 +1,25 @@
-// lib/company.ts
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-// Note: do NOT put "use server" in this file.
-// Next would treat every export as a server action and require async.
-
-export function getCompanyIdFromCookie(): string | null {
-  const c = cookies().get("company_id");
+export async function getCompanyIdFromCookie(): Promise<string | null> {
+  const c = (await cookies()).get("company_id");
   return c?.value ?? null;
 }
 
-export function requireCompanyIdOrRedirect(): string {
-  const id = getCompanyIdFromCookie();
+export async function requireCompanyIdOrRedirect(): Promise<string> {
+  const id = await getCompanyIdFromCookie();
   if (!id) redirect("/dashboard/companies");
   return id;
 }
 
-export function clearCompanyCookie() {
-  cookies().delete("company_id");
+export async function clearCompanyCookie(): Promise<void> {
+  (await cookies()).delete("company_id");
 }
 
-export function setCompanyCookie(id: string) {
+export async function setCompanyCookie(id: string): Promise<void> {
   if (!id) return;
-  cookies().set({
+  (await cookies()).set({
     name: "company_id",
     value: id,
     httpOnly: true,
@@ -33,9 +29,9 @@ export function setCompanyCookie(id: string) {
 }
 
 export async function fetchSelectedCompanyName(): Promise<string | null> {
-  const id = getCompanyIdFromCookie();
+  const id = await getCompanyIdFromCookie();
   if (!id) return null;
-  const supabase = supabaseServer();
+  const supabase = await supabaseServer();
   const { data, error } = await supabase
     .from("companies")
     .select("name")

@@ -30,8 +30,9 @@ function previewWriteBlocked() {
   return isPreview && !allow;
 }
 
-export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
-  const employeeId = String(ctx?.params?.id || '').trim();
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
+  const employeeId = String(params?.id || '').trim();
   if (!employeeId) {
     return Response.json({ error: 'missing employee id' }, { status: 400 });
   }
@@ -52,13 +53,14 @@ export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
     if (!data) return new Response(null, { status: 204 });
     return Response.json({ data }, { status: 200 });
   } catch (_e) {
-    // Table missing, RLS denied, etc. Don’t block the wizard.
+    // Table missing, RLS denied, etc. Don't block the wizard.
     return new Response(null, { status: 204 });
   }
 }
 
-export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
-  const employeeId = String(ctx?.params?.id || '').trim();
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
+  const employeeId = String(params?.id || '').trim();
   if (!employeeId) {
     return Response.json({ error: 'missing employee id' }, { status: 400 });
   }

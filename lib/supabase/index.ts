@@ -12,17 +12,15 @@
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export function createClient() {
+export async function createClient() {
   if (typeof window !== 'undefined') {
-    // Browser side
     const { createBrowserClient } = require('@supabase/ssr')
     return createBrowserClient(URL, ANON)
   }
 
-  // Server side
   const { cookies } = require('next/headers')
   const { createServerClient } = require('@supabase/ssr')
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
 
   return createServerClient(URL, ANON, {
     cookies: {
@@ -33,16 +31,15 @@ export function createClient() {
   })
 }
 
-// Optional explicit exports (useful if you want to force one side)
 export function createBrowserClient() {
   const { createBrowserClient } = require('@supabase/ssr')
   return createBrowserClient(URL, ANON)
 }
 
-export function createServerClient() {
+export async function createServerClient() {
   const { cookies } = require('next/headers')
   const { createServerClient } = require('@supabase/ssr')
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   return createServerClient(URL, ANON, {
     cookies: {
       get(name: string) {

@@ -4,7 +4,7 @@ import { env } from '@lib/env';
 
 export const dynamic = 'force-dynamic';
 
-type Params = { params: { id: string } };
+type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, _ctx: Params) {
   if (env.preview) {
@@ -19,5 +19,3 @@ export async function POST() {
   }
   return NextResponse.json({ ok: false, error: 'not implemented' }, { status: 501 });
 }
-
-

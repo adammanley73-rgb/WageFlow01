@@ -1080,7 +1080,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const jar = cookies();
+    const jar = await cookies();
     const cookieToken = jar.get("wf_payroll_run_wizard")?.value ?? null;
     const wizardToken = typeof body?.wizardToken === "string" ? body.wizardToken.trim() : "";
 

@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { getAdmin } from "@lib/admin";
 
-type Params = { params: { id: string } };
+type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: Params) {
   try {
@@ -10,12 +10,13 @@ export async function GET(_req: Request, { params }: Params) {
     if (!admin) return NextResponse.json({ ok: false, error: "Admin client not available" }, { status: 503 });
 
     const { client, companyId } = admin;
-    if (!params?.id) return NextResponse.json({ ok: false, error: "Missing run id" }, { status: 400 });
+    const resolvedParams = await params;
+    if (!resolvedParams?.id) return NextResponse.json({ ok: false, error: "Missing run id" }, { status: 400 });
 
     const { data: run, error: runErr } = await client
       .from("payroll_runs")
       .select("id, run_number, frequency, period_start, period_end")
-      .eq("id", params.id)
+      .eq("id", resolvedParams.id)
       .eq("company_id", companyId)
       .single();
 
@@ -25,4 +26,3 @@ export async function GET(_req: Request, { params }: Params) {
     return NextResponse.json({ ok: false, error: err?.message ?? "Unexpected error" }, { status: 500 });
   }
 }
-

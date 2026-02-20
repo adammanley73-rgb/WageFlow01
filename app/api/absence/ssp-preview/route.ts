@@ -7,27 +7,8 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 import { getSspPlansForRun } from "@/lib/services/absenceService";
 
-/**
- * Debug endpoint:
- *
- *   GET /api/absence/ssp-preview?companyId=...&start=YYYY-MM-DD&end=YYYY-MM-DD
- *     [&dailyRate=NN.NN]
- *     [&qualifyingDaysPerWeek=5]
- *
- * - Uses getSspPlansForRun to get total SSP payable days per employee.
- * - Multiplies payable days by the SSP daily rate.
- *
- * Behaviour:
- * - If dailyRate query param is provided and valid, it is used (for testing).
- * - Otherwise we derive the daily rate from the Compliance Pack SSP weekly flat rate
- *   for the relevant date.
- *
- * Note:
- * - This is a preview tool, not the payroll engine.
- * - If the period spans a tax-year boundary, this uses a single pack date (end date by default).
- */
-function getSupabaseServerClient() {
-  const cookieStore = cookies();
+async function getSupabaseServerClient() {
+  const cookieStore = await cookies();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -96,7 +77,6 @@ export async function GET(req: Request) {
     );
   }
 
-  // Qualifying days per week (default 5). This affects daily flat rate derivation.
   let qualifyingDaysPerWeek = 5;
   if (qualifyingDaysRaw !== null) {
     const parsed = Number(qualifyingDaysRaw);
@@ -114,9 +94,8 @@ export async function GET(req: Request) {
   }
 
   try {
-    const supabase = getSupabaseServerClient();
+    const supabase = await getSupabaseServerClient();
 
-    // Enforce auth (RLS expects authenticated users)
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes?.user) {
       return NextResponse.json(
@@ -125,7 +104,6 @@ export async function GET(req: Request) {
       );
     }
 
-    // Decide which daily rate to use
     let dailyRate: number;
     let dailyRateSource: "override" | "compliance_pack";
     let packMeta: any = null;
@@ -146,7 +124,6 @@ export async function GET(req: Request) {
       dailyRate = parsed;
       dailyRateSource = "override";
     } else {
-      // Use the pack that applies to the period end date (most common expectation for previews)
       const packDate = endDate;
 
       const { data: packData, error: packErr } = await supabase.rpc("get_compliance_pack_for_date", {

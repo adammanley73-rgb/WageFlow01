@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\page.tsx
 
 import Link from "next/link";
@@ -29,11 +29,11 @@ function createAdminClient() {
 }
 
 type EmployeesPageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     sort?: string;
     direction?: string;
     showLeavers?: string;
-  };
+  }>;
 };
 
 function isUuid(s: string) {
@@ -60,7 +60,7 @@ function formatSupabaseError(err: any) {
 }
 
 export default async function EmployeesPage({ searchParams }: EmployeesPageProps) {
-  const jar = cookies();
+  const jar = await cookies();
 
   const activeCompanyId =
     jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
@@ -69,9 +69,10 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
     redirect("/dashboard/companies");
   }
 
-  const sortParam = searchParams?.sort;
-  const directionParam = searchParams?.direction;
-  const showLeaversParam = searchParams?.showLeavers;
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const sortParam = resolvedSearchParams?.sort;
+  const directionParam = resolvedSearchParams?.direction;
+  const showLeaversParam = resolvedSearchParams?.showLeavers;
 
   const sortKey: "name" | "number" = sortParam === "number" ? "number" : "name";
   const sortDirection: "asc" | "desc" =
@@ -128,14 +129,14 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
 
   const nameSortLabel = isNameSorted
     ? sortDirection === "asc"
-      ? "Sort ↑"
-      : "Sort ↓"
+      ? "Sort ?"
+      : "Sort ?"
     : "Sort";
 
   const numberSortLabel = isNumberSorted
     ? sortDirection === "asc"
-      ? "Sort ↑"
-      : "Sort ↓"
+      ? "Sort ?"
+      : "Sort ?"
     : "Sort";
 
   const currentSortParam = sortKey === "number" ? "number" : "name";

@@ -35,8 +35,9 @@ function previewWriteBlocked() {
   return isPreview && !allow;
 }
 
-export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
-  const employeeId = String(ctx?.params?.id || '').trim();
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
+  const employeeId = String(params?.id || '').trim();
   if (!employeeId) return Response.json({ error: 'missing employee id' }, { status: 400 });
 
   const supabase = getSupabase();
@@ -52,13 +53,14 @@ export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
     if (!data) return new Response(null, { status: 204 });
     return Response.json({ data }, { status: 200 });
   } catch (_e) {
-    // Table missing or RLS block. Don’t break the wizard.
+    // Table missing or RLS block. Don't break the wizard.
     return new Response(null, { status: 204 });
   }
 }
 
-export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
-  const employeeId = String(ctx?.params?.id || '').trim();
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
+  const employeeId = String(params?.id || '').trim();
   if (!employeeId) return Response.json({ error: 'missing employee id' }, { status: 400 });
 
   if (previewWriteBlocked()) {
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
 
     return Response.json({ id: employeeId, data }, { status: 201 });
   } catch (e: any) {
-    // Don’t block the wizard. Return success with a warning.
+    // Don't block the wizard. Return success with a warning.
     return Response.json(
       { id: employeeId, data: row, warning: 'db_write_failed', detail: String(e?.message || e) },
       { status: 201 }

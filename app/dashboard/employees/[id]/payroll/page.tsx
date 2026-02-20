@@ -344,9 +344,9 @@ async function findEmployeeTotalsInRun(
 export default async function EmployeePayrollHistoryPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const jar = cookies();
+  const jar = await cookies();
 
   const activeCompanyId =
     jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
@@ -355,7 +355,8 @@ export default async function EmployeePayrollHistoryPage({
     redirect("/dashboard/companies");
   }
 
-  const routeId = String(params?.id || "").trim();
+  const resolvedParams = await params;
+  const routeId = String(resolvedParams?.id || "").trim();
   if (!routeId) redirect("/dashboard/employees");
 
   const supabase = createAdminClient();

@@ -10,8 +10,8 @@ import { randomUUID } from "crypto";
 
 export const dynamic = "force-dynamic";
 
-function getActiveCompanyId(): string {
-  const jar = cookies();
+async function getActiveCompanyId(): Promise<string> {
+  const jar = await cookies();
   return (
     jar.get("active_company_id")?.value ??
     jar.get("company_id")?.value ??
@@ -75,7 +75,7 @@ export async function GET() {
       );
     }
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data, error } = await supabase
       .from("employees")
@@ -255,7 +255,7 @@ export async function POST(req: Request) {
       if (insertRow[k] === undefined) delete insertRow[k];
     });
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data, error } = await supabase
       .from("employees")

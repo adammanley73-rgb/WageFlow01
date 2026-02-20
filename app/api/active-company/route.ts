@@ -10,8 +10,8 @@ type Company = {
   created_at?: string;
 };
 
-function buildCookieHeader(): string {
-  const jar = cookies();
+async function buildCookieHeader(): Promise<string> {
+  const jar = await cookies();
   const all = jar.getAll();
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
@@ -22,7 +22,7 @@ async function loadCompanies(origin: string): Promise<Company[]> {
       method: "GET",
       cache: "no-store",
       headers: {
-        cookie: buildCookieHeader(),
+        cookie: await buildCookieHeader(),
       },
     });
 
@@ -44,7 +44,7 @@ async function loadCompanies(origin: string): Promise<Company[]> {
 // - 204 No Content if no active company cookie exists
 // - 200 { ok:true, id, name, company:{id,name} }
 export async function GET(req: Request) {
-  const jar = cookies();
+  const jar = await cookies();
 
   const id =
     jar.get("active_company_id")?.value ??

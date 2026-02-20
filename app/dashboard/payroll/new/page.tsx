@@ -431,7 +431,7 @@ export default function PayrollNewPage() {
 
         setActiveCompanyId(cid);
 
-        const supabase = createClient();
+        const supabase = await createClient();
 
         const res = await supabase
           .from("pay_schedules")

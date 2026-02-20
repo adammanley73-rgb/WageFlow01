@@ -14,9 +14,9 @@ function isUuid(s: string) {
   );
 }
 
-function getActiveCompanyIdFromCookies(): string | null {
+async function getActiveCompanyIdFromCookies(): Promise<string | null> {
   try {
-    const jar = cookies();
+    const jar = await cookies();
     const v =
       jar.get("active_company_id")?.value ??
       jar.get("company_id")?.value ??
@@ -36,9 +36,9 @@ function getCompanyIdFallbackFromEnv(): string | null {
   return isUuid(v) ? v : null;
 }
 
-function resolveCompanyId(): string | null {
+async function resolveCompanyId(): Promise<string | null> {
   // Primary: browser/session context
-  const cookieCompanyId = getActiveCompanyIdFromCookies();
+  const cookieCompanyId = await getActiveCompanyIdFromCookies();
   if (cookieCompanyId) return cookieCompanyId;
 
   // Fallback: local/dev or single-tenant pinned instance
@@ -114,7 +114,7 @@ function getOrCreateAdminClient(url: string, key: string): SupabaseClient {
 }
 
 export async function getAdmin(): Promise<AdminContext | null> {
-  const companyId = resolveCompanyId();
+  const companyId = await resolveCompanyId();
   if (!companyId) return null;
 
   // Preview stub disabled - preview deployments now use real Supabase client

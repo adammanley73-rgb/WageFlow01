@@ -1,4 +1,4 @@
-﻿/* @ts-nocheck */
+/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\page.tsx
 
 import Link from "next/link"
@@ -39,8 +39,8 @@ function isUuid(s: string) {
   )
 }
 
-function getActiveCompanyId(): string | null {
-  const jar = cookies()
+async function getActiveCompanyId(): Promise<string | null> {
+  const jar = await cookies()
   const v =
     jar.get("active_company_id")?.value ??
     jar.get("company_id")?.value ??
@@ -160,7 +160,7 @@ function GreyTile(props: { title: string; description?: string; href?: string })
 }
 
 export default async function DashboardPage() {
-  const companyId = getActiveCompanyId()
+  const companyId = await getActiveCompanyId()
   const counts = await getCounts(companyId)
 
   return (

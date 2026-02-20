@@ -15,8 +15,8 @@ type EmployeeRow = {
   employee_number: string | null;
 };
 
-function getActiveCompanyId(): string | null {
-  const jar = cookies();
+async function getActiveCompanyId(): Promise<string | null> {
+  const jar = await cookies();
   return jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
 }
 
@@ -48,9 +48,9 @@ function readChunkedCookieValue(
   return parts.map((p) => p.value).join("");
 }
 
-function extractAccessTokenFromCookies(): string | null {
+async function extractAccessTokenFromCookies(): Promise<string | null> {
   try {
-    const jar = cookies();
+    const jar = await cookies();
     const all = jar.getAll();
 
     const bases = new Set<string>();
@@ -91,12 +91,12 @@ function extractAccessTokenFromCookies(): string | null {
   }
 }
 
-function createSupabaseRequestClient() {
+async function createSupabaseRequestClient() {
   const url = getSupabaseUrl();
   const key = getSupabaseKey();
   if (!url || !key) return null;
 
-  const token = extractAccessTokenFromCookies();
+  const token = await extractAccessTokenFromCookies();
   const opts: any = { auth: { persistSession: false, autoRefreshToken: false } };
   if (token) opts.global = { headers: { Authorization: `Bearer ${token}` } };
 
@@ -107,7 +107,7 @@ async function loadEmployeesForCompany(
   companyId: string
 ): Promise<{ data: EmployeeRow[]; error: string | null }> {
   try {
-    const supabase = createSupabaseRequestClient();
+    const supabase = await createSupabaseRequestClient();
     if (!supabase) return { data: [], error: "Supabase env missing" };
 
     const { data, error } = await supabase
@@ -129,7 +129,7 @@ async function loadEmployeesForCompany(
 }
 
 export default async function LeaverWizardEntryPage() {
-  const companyId = getActiveCompanyId();
+  const companyId = await getActiveCompanyId();
 
   if (!companyId) {
     return (

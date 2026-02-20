@@ -7,7 +7,7 @@ import { createServerClient } from "@supabase/auth-helpers-nextjs";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { params: { id: string } };
+type Ctx = { params: Promise<{ id: string }> };
 
 function isUuid(s: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -26,7 +26,7 @@ function canonPhone(raw: string) {
   return plus + digits;
 }
 
-function getSupabase() {
+async function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -34,7 +34,7 @@ function getSupabase() {
     throw new Error("Missing Supabase env. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
   }
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
 
   return createServerClient(url, anon, {
     cookies: {
@@ -87,12 +87,13 @@ async function resolveEmployee(supabase: any, rawId: string) {
 
 export async function GET(_req: Request, ctx: Ctx) {
   try {
-    const supabase = getSupabase();
+    const supabase = await getSupabase();
 
     const { data: auth, error: authError } = await supabase.auth.getUser();
     if (authError || !auth?.user) return json(false, 401, { error: "unauthorized" });
 
-    const emp = await resolveEmployee(supabase, ctx?.params?.id);
+    const params = await ctx.params;
+    const emp = await resolveEmployee(supabase, params?.id);
     if (!emp?.id) return json(false, 404, { error: "employee not found" });
 
     const { data, error } = await supabase
@@ -113,12 +114,13 @@ export async function GET(_req: Request, ctx: Ctx) {
 
 export async function POST(req: Request, ctx: Ctx) {
   try {
-    const supabase = getSupabase();
+    const supabase = await getSupabase();
 
     const { data: auth, error: authError } = await supabase.auth.getUser();
     if (authError || !auth?.user) return json(false, 401, { error: "unauthorized" });
 
-    const emp = await resolveEmployee(supabase, ctx?.params?.id);
+    const params = await ctx.params;
+    const emp = await resolveEmployee(supabase, params?.id);
     if (!emp?.id || !emp?.company_id) return json(false, 404, { error: "employee not found" });
 
     const body = await req.json().catch(() => ({}));

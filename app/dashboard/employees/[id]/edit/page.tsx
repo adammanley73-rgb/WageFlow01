@@ -382,7 +382,7 @@ export default function EditEmployeePage() {
         setLoading(true);
         setErr(null);
 
-        const supabase = createClient();
+        const supabase = await createClient();
         const selectCols = "*";
 
         async function tryBy(col: "id" | "employee_id", value: string) {
@@ -666,7 +666,7 @@ export default function EditEmployeePage() {
     try {
       setSaving(true);
 
-      const supabase = createClient();
+      const supabase = await createClient();
 
       const idCandidate = String((employee as any)?.id || "").trim();
       const employeeIdCandidate = String((employee as any)?.employee_id || "").trim();
