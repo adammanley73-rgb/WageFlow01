@@ -1,9 +1,8 @@
 // @ts-nocheck
-/* preview: auto-suppressed to keep Preview builds green. */
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabaseServer, getCompanyId } from '@/lib/supabaseServer';
+import { createBrowserClient } from '@supabase/ssr';
 
 type Counts = {
   employees: number;
@@ -24,17 +23,22 @@ export default function useEmployeeCounts() {
     let isMounted = true;
 
     async function load() {
-      const sb = supabaseServer();
-      const companyId = getCompanyId();
+      const sb = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
 
-      if (!sb || !companyId) {
-        if (isMounted) {
-          setCounts({ employees: 0, runs: 0, tasks: 0, notices: 0 });
-        }
+      const companyId = document.cookie
+        .split('; ')
+        .find((row) => row.startsWith('company_id='))
+        ?.split('=')[1];
+
+      if (!companyId) {
+        if (isMounted) setCounts({ employees: 0, runs: 0, tasks: 0, notices: 0 });
         return;
       }
 
-      const { data, error } = await sb
+      const { count, error } = await sb
         .from('employees')
         .select('id', { count: 'exact', head: true })
         .eq('company_id', companyId);
@@ -44,17 +48,12 @@ export default function useEmployeeCounts() {
       if (error) {
         setCounts({ employees: 0, runs: 0, tasks: 0, notices: 0 });
       } else {
-        setCounts((prev) => ({
-          ...prev,
-          employees: data ? data.length : 0,
-        }));
+        setCounts((prev) => ({ ...prev, employees: count ?? 0 }));
       }
     }
 
     void load();
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, []);
 
   return counts;

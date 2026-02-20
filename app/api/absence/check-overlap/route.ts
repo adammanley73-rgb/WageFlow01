@@ -41,9 +41,9 @@ function readChunkedCookieValue(
   return parts.map((p) => p.value).join("")
 }
 
-function extractAccessTokenFromCookies(): string | null {
+async function extractAccessTokenFromCookies(): Promise<string | null> {
   try {
-    const jar = cookies()
+    const jar = await cookies()
     const all = jar.getAll()
 
     const bases = new Set<string>()
@@ -85,8 +85,8 @@ function extractAccessTokenFromCookies(): string | null {
   }
 }
 
-function getCompanyIdFromCookies(): string | null {
-  const jar = cookies()
+async function getCompanyIdFromCookies(): Promise<string | null> {
+  const jar = await cookies()
   return (
     jar.get("active_company_id")?.value ||
     jar.get("company_id")?.value ||
@@ -94,7 +94,7 @@ function getCompanyIdFromCookies(): string | null {
   )
 }
 
-function createSupabaseRequestClient() {
+async function createSupabaseRequestClient() {
   const url = getSupabaseUrl()
   const key = getSupabaseKey()
 
@@ -102,7 +102,7 @@ function createSupabaseRequestClient() {
     throw new Error("Supabase env is missing (URL or key)")
   }
 
-  const accessToken = extractAccessTokenFromCookies()
+  const accessToken = await extractAccessTokenFromCookies()
 
   const opts: any = {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -140,7 +140,7 @@ export async function POST(req: Request) {
       })
     }
 
-    const companyId = getCompanyIdFromCookies()
+    const companyId = await getCompanyIdFromCookies()
     if (!companyId) {
       return NextResponse.json({
         ok: true,
@@ -149,7 +149,7 @@ export async function POST(req: Request) {
       })
     }
 
-    const supabase = createSupabaseRequestClient()
+    const supabase = await createSupabaseRequestClient()
 
     const { data: rows, error } = await supabase
       .from("absences")

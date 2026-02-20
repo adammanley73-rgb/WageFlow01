@@ -12,8 +12,8 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
  * store so session cookies are sent on subsequent requests. Throws if the env vars
  * are missing.
  */
-export function createClient() {
-  const cookieStore = cookies();
+export async function createClient() {
+  const cookieStore = await cookies();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) {

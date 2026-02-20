@@ -1,4 +1,4 @@
-﻿// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\page.tsx
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\page.tsx
 
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActionButton from "@/components/ui/ActionButton";
@@ -88,7 +88,7 @@ function employeeLabel(emp: EmployeeRow | undefined | null, fallbackId: string) 
 }
 
 export default async function AbsencePage() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
 
   const activeCompanyId =
     cookieStore.get("active_company_id")?.value ??

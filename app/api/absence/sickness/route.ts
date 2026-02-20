@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
+
 function getSupabaseUrl(): string {
   return (
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -13,7 +14,6 @@ function getSupabaseUrl(): string {
 }
 
 function getSupabaseKey(): string {
-  // Prefer service role if present. Fall back to anon key.
   return (
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
@@ -41,12 +41,11 @@ function readChunkedCookieValue(
   return parts.map((p) => p.value).join("");
 }
 
-function extractAccessTokenFromCookies(): string | null {
+async function extractAccessTokenFromCookies(): Promise<string | null> {
   try {
-    const jar = cookies();
+    const jar = await cookies();
     const all = jar.getAll();
 
-    // Group potential auth-token cookies by base name, handle chunked cookies (.0, .1, ...)
     const bases = new Set<string>();
 
     for (const c of all) {
@@ -68,13 +67,11 @@ function extractAccessTokenFromCookies(): string | null {
         }
       })();
 
-      // Try plain JSON
       try {
         const obj = JSON.parse(decoded);
         if (obj && typeof obj.access_token === "string") return obj.access_token;
       } catch {}
 
-      // Try base64 JSON
       try {
         const asJson = Buffer.from(decoded, "base64").toString("utf8");
         const obj = JSON.parse(asJson);
@@ -88,7 +85,7 @@ function extractAccessTokenFromCookies(): string | null {
   }
 }
 
-function createSupabaseRequestClient() {
+async function createSupabaseRequestClient() {
   const url = getSupabaseUrl();
   const key = getSupabaseKey();
 
@@ -96,7 +93,7 @@ function createSupabaseRequestClient() {
     throw new Error("Supabase env is missing (URL or key)");
   }
 
-  const accessToken = extractAccessTokenFromCookies();
+  const accessToken = await extractAccessTokenFromCookies();
 
   const opts: any = {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -108,6 +105,7 @@ function createSupabaseRequestClient() {
 
   return createClient(url, key, opts);
 }
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -151,7 +149,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const companyId =
       cookieStore.get("active_company_id")?.value ||
       cookieStore.get("company_id")?.value ||
@@ -164,7 +162,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = createSupabaseRequestClient();
+    const supabase = await createSupabaseRequestClient();
 
     const { data: rows, error: rowsError } = await supabase
       .from("absences")

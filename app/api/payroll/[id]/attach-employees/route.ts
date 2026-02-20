@@ -27,9 +27,9 @@ function createAdminClient() {
 }
 
 type RouteParams = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 function isUuid(s: any) {
@@ -171,7 +171,8 @@ function defaultNiCategory(emp: any): string {
 }
 
 export async function POST(_req: Request, { params }: RouteParams) {
-  const runId = String(params?.id ?? "").trim();
+  const resolvedParams = await params;
+  const runId = String(resolvedParams?.id ?? "").trim();
 
   if (!runId) {
     return NextResponse.json(

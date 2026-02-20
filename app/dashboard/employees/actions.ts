@@ -9,7 +9,7 @@ export async function deleteEmployeeAction(formData: FormData) {
   if (!id) redirect('/dashboard/employees?m=missing');
 
   // Build absolute base URL so fetch works in any env
-  const h = headers();
+  const h = await headers();
   const host =
     h.get('x-forwarded-host') ??
     h.get('host') ??

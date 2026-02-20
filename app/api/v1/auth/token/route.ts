@@ -40,7 +40,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
 
     const cookiesToSet: Array<{
       name: string;

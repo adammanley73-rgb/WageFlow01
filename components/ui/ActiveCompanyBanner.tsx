@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-
-type CookieJar = ReturnType<typeof cookies>;
+import { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 
 function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
@@ -18,7 +17,7 @@ function getSupabaseEnv() {
   return { url, anonKey };
 }
 
-function getActiveCompanyId(jar: CookieJar): string | null {
+function getActiveCompanyId(jar: ReadonlyRequestCookies): string | null {
   const v = jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
   if (!v) return null;
 
@@ -26,13 +25,13 @@ function getActiveCompanyId(jar: CookieJar): string | null {
   return isUuid(trimmed) ? trimmed : null;
 }
 
-function safeGetAll(jar: CookieJar) {
+function safeGetAll(jar: ReadonlyRequestCookies) {
   const anyJar: any = jar as any;
   if (typeof anyJar?.getAll === "function") return anyJar.getAll();
   return [];
 }
 
-async function tryGetCompanyName(companyId: string, jar: CookieJar): Promise<string | null> {
+async function tryGetCompanyName(companyId: string, jar: ReadonlyRequestCookies): Promise<string | null> {
   try {
     const { url, anonKey } = getSupabaseEnv();
     if (!url || !anonKey) return null;
@@ -64,7 +63,7 @@ async function tryGetCompanyName(companyId: string, jar: CookieJar): Promise<str
 }
 
 export default async function ActiveCompanyBanner() {
-  const jar = cookies();
+  const jar = await cookies();
   const companyId = getActiveCompanyId(jar);
 
   if (!companyId) {
@@ -87,7 +86,6 @@ export default async function ActiveCompanyBanner() {
 
   const companyName = await tryGetCompanyName(companyId, jar);
 
-  // Never show the UUID. Ever.
   const showName = companyName || "Selected";
 
   return (

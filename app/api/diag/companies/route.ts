@@ -35,7 +35,7 @@ export async function GET() {
   // 2) Supabase client call (uses @supabase/ssr with cookies)
   let sb
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data, error } = await supabase.from('my_companies_v').select('*')
     sb = {
       ok: !error,

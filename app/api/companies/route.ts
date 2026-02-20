@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_request: Request) {
   try {
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data, error } = await supabase
       .from("companies")

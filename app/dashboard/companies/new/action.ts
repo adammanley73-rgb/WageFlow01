@@ -6,12 +6,9 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-/**
- * Sets the company cookie (helper kept local so we don't import other modules)
- */
-function setCompanyCookieLocal(id: string) {
+async function setCompanyCookieLocal(id: string) {
   if (!id) return;
-  cookies().set({
+  (await cookies()).set({
     name: "company_id",
     value: id,
     httpOnly: true,
@@ -27,9 +24,8 @@ export async function createCompanyAction(formData: FormData) {
     return { ok: false, error: "Company name is required." };
   }
 
-  const supabase = supabaseServer();
+  const supabase = await supabaseServer();
 
-  // Call the SECURITY DEFINER RPC so RLS cannot block us mid-flow
   const { data: newId, error } = await supabase.rpc(
     "create_company_with_owner",
     { company_name: name }

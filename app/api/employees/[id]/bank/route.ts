@@ -1,7 +1,5 @@
-// @ts-nocheck
 // app/api/employees/[id]/bank/route.ts
 
-import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 type BankRow = {
@@ -22,15 +20,15 @@ function getSupabase() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-// Only block writes on real Vercel previews unless explicitly allowed.
 function previewWriteBlocked() {
   const isPreview = process.env.VERCEL_ENV === 'preview';
   const allow = process.env.ALLOW_PREVIEW_WRITES === '1';
   return isPreview && !allow;
 }
 
-export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
-  const employeeId = String(ctx?.params?.id || '').trim();
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
+  const employeeId = String(params?.id || '').trim();
   if (!employeeId) return Response.json({ error: 'missing employee id' }, { status: 400 });
 
   const supabase = getSupabase();
@@ -46,13 +44,13 @@ export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
     if (!data) return new Response(null, { status: 204 });
     return Response.json({ data }, { status: 200 });
   } catch (_e) {
-    // Table missing or RLS blocked. Don’t break the wizard.
     return new Response(null, { status: 204 });
   }
 }
 
-export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
-  const employeeId = String(ctx?.params?.id || '').trim();
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
+  const employeeId = String(params?.id || '').trim();
   if (!employeeId) return Response.json({ error: 'missing employee id' }, { status: 400 });
 
   if (previewWriteBlocked()) {
@@ -75,12 +73,10 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
 
   const supabase = getSupabase();
   if (!supabase) {
-    // No DB configured; allow wizard to proceed in dev.
     return Response.json({ id: employeeId, data: row }, { status: 201 });
   }
 
   try {
-    // Upsert by employee_id so repeated saves update.
     const { data } = await supabase
       .from('employee_bank')
       .upsert(row, { onConflict: 'employee_id' })
@@ -90,7 +86,6 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
 
     return Response.json({ id: employeeId, data }, { status: 201 });
   } catch (e: any) {
-    // Don’t block the wizard; surface a warning if needed.
     return Response.json(
       { id: employeeId, data: row, warning: 'db_write_failed', detail: String(e?.message || e) },
       { status: 201 }

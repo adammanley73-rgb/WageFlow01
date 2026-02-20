@@ -3,7 +3,7 @@ import PageTemplate from "@/components/layout/PageTemplate";
 import { cookies } from "next/headers";
 
 export default async function ReportsPage() {
-const cookieStore = cookies();
+const cookieStore = await cookies();
 const activeCompanyName =
 cookieStore.get("active_company_name")?.value ?? "No company selected";
 

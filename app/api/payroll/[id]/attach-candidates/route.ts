@@ -30,9 +30,9 @@ function createAdminClient() {
 }
 
 type RouteParams = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
 function isUuid(s: any) {
@@ -70,7 +70,8 @@ function cleanEmail(v: any) {
 }
 
 export async function GET(_req: Request, { params }: RouteParams) {
-  const runId = String(params?.id ?? "").trim();
+  const resolvedParams = await params;
+  const runId = String(resolvedParams?.id ?? "").trim();
 
   if (!runId) {
     return NextResponse.json(

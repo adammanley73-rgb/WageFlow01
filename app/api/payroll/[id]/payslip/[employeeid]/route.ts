@@ -19,12 +19,12 @@ function createAdminClient() {
 }
 
 type RouteParams = {
-  params: {
+  params: Promise<{
     id?: string;
     runId?: string;
     employeeId?: string;
     employeeid?: string;
-  };
+  }>;
 };
 
 type NormalisedPayElement = {
@@ -750,7 +750,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
 }
 
 export async function GET(_req: Request, context: RouteParams) {
-  const { params } = context;
+  const params = await context.params;
 
   const runId = params.id ?? params.runId ?? null;
   const employeeId = params.employeeId ?? params.employeeid ?? null;

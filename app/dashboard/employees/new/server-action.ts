@@ -6,8 +6,8 @@ import { requireCompanyIdOrRedirect } from "@/lib/company";
 
 export async function createServerAction(formData: FormData) {
   try {
-    const companyId = requireCompanyIdOrRedirect();
-    const supabase = supabaseServer();
+    const companyId = await requireCompanyIdOrRedirect();
+    const supabase = await supabaseServer();
 
     const payload = {
       company_id: companyId,
@@ -19,7 +19,6 @@ export async function createServerAction(formData: FormData) {
       pay_frequency: (formData.get("pay_frequency") as string) || null,
     };
 
-    // Basic required fields
     if (!payload.first_name || !payload.last_name || !payload.email || !payload.pay_frequency) {
       return { ok: false, error: "First name, last name, email, and pay frequency are required." };
     }

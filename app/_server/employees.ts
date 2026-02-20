@@ -1,9 +1,9 @@
-// app/_server/employees.ts
+// E:\Projects\wageflow01\app\_server\employees.ts
 // Server-only employees data service. Lives under /app.
 
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
-import {
+import type {
   EmployeeRow,
   EmployeeListItem,
   EmployeePickerOption,
@@ -15,8 +15,9 @@ function requireEnv(name: string): string {
   return v;
 }
 
-function createSupabaseServer() {
-  const cookieStore = cookies();
+async function createSupabaseServer() {
+  const cookieStore = await cookies();
+
   return createServerClient(
     requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
     requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
@@ -25,6 +26,8 @@ function createSupabaseServer() {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
+        // In Next 15, cookies() can be read-only in many server contexts.
+        // These are intentionally no-ops for this server-only read service.
         set(_name: string, _value: string, _options: CookieOptions) {},
         remove(_name: string, _options: CookieOptions) {},
       },
@@ -32,24 +35,22 @@ function createSupabaseServer() {
   );
 }
 
-function getActiveCompanyFromCookies() {
-  const jar = cookies();
-  const id =
-    jar.get("active_company_id")?.value ??
-    jar.get("company_id")?.value ??
-    "";
+async function getActiveCompanyFromCookies() {
+  const jar = await cookies();
+
+  const id = jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? "";
   const name =
-    jar.get("active_company_name")?.value ??
-    jar.get("company_name")?.value ??
-    null;
+    jar.get("active_company_name")?.value ?? jar.get("company_name")?.value ?? null;
+
   return { id, name };
 }
 
 export async function listEmployeesSSR(limit = 500): Promise<EmployeeListItem[]> {
-  const { id: companyId } = getActiveCompanyFromCookies();
+  const { id: companyId } = await getActiveCompanyFromCookies();
   if (!companyId) return [];
 
-  const supabase = createSupabaseServer();
+  const supabase = await createSupabaseServer();
+
   const { data, error } = await supabase
     .from("employees")
     .select(
@@ -73,8 +74,8 @@ export async function listEmployeesSSR(limit = 500): Promise<EmployeeListItem[]>
 
   if (error || !data || !Array.isArray(data)) return [];
 
-  // Supabase types aren’t guaranteed. Coerce through unknown to satisfy TS.
-  const rows = (data ?? []) as unknown as EmployeeRow[];
+  // Supabase types aren't guaranteed. Coerce through unknown to satisfy TS.
+  const rows = data as unknown as EmployeeRow[];
 
   return rows.map((r) => ({
     id: r.id,
@@ -89,6 +90,7 @@ export async function listEmployeesSSR(limit = 500): Promise<EmployeeListItem[]>
 
 export async function listEmployeePickerOptions(limit = 500): Promise<EmployeePickerOption[]> {
   const rows = await listEmployeesSSR(limit);
+
   return rows.map((r) => ({
     value: r.id,
     label: r.name,
@@ -99,10 +101,11 @@ export async function listEmployeePickerOptions(limit = 500): Promise<EmployeePi
 export async function getEmployeeById(id: string): Promise<EmployeeRow | null> {
   if (!id) return null;
 
-  const { id: companyId } = getActiveCompanyFromCookies();
+  const { id: companyId } = await getActiveCompanyFromCookies();
   if (!companyId) return null;
 
-  const supabase = createSupabaseServer();
+  const supabase = await createSupabaseServer();
+
   const { data, error } = await supabase
     .from("employees")
     .select(

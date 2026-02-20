@@ -1,4 +1,4 @@
-﻿// C:\Users\adamm\Projects\wageflow01\app\api\counts\route.ts
+// C:\Users\adamm\Projects\wageflow01\app\api\counts\route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
@@ -64,7 +64,7 @@ async function getCountsForCompany(companyId: string): Promise<CountsResult> {
 
 export async function GET() {
   try {
-    const jar = cookies();
+    const jar = await cookies();
 
     const activeCompanyId =
       jar.get("active_company_id")?.value ??

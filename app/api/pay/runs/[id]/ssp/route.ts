@@ -7,7 +7,7 @@ import { getSspAmountsForRun } from "@/lib/services/absenceService";
 
 export const dynamic = "force-dynamic";
 
-type Params = { params: { id: string } };
+type Params = { params: Promise<{ id: string }> };
 
 function round2(n: number): number {
   return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
@@ -47,7 +47,8 @@ export async function GET(req: Request, { params }: Params) {
     }
 
     const client = admin.client;
-    const runId = params?.id;
+    const resolvedParams = await params;
+    const runId = resolvedParams?.id;
 
     if (!runId) {
       return NextResponse.json(
