@@ -98,11 +98,11 @@ function employeeLabel(emp: EmployeeRow | undefined | null, fallbackId: string) 
 type SearchParamsRecord = Record<string, string | string[] | undefined>;
 
 type Props = {
-  searchParams?: SearchParamsRecord | Promise<SearchParamsRecord>;
+  searchParams?: Promise<SearchParamsRecord>;
 };
 
 export default async function AbsencePage({ searchParams }: Props) {
-  const sp: SearchParamsRecord | undefined = searchParams ? await Promise.resolve(searchParams) : undefined;
+  const sp: SearchParamsRecord | undefined = searchParams ? await searchParams : undefined;
 
   const deletedParam = typeof sp?.deleted === "string" ? sp.deleted : "";
   const deleteErrorParam = typeof sp?.deleteError === "string" ? sp.deleteError : "";
