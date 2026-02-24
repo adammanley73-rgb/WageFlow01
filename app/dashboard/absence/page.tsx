@@ -1,11 +1,13 @@
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\page.tsx
+// C:\Projects\wageflow01\app\dashboard\absence\page.tsx
 
 import PageTemplate from "@/components/layout/PageTemplate";
-import ActionButton from "@/components/ui/ActionButton";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { formatUkDate } from "@/lib/formatUkDate";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import AbsenceEmployeeFilter from "./AbsenceEmployeeFilter";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +57,12 @@ function typeLabel(t: string | null | undefined): string {
       return "Shared parental";
     case "adoption":
       return "Adoption";
+    case "parental_bereavement":
+      return "Parental bereavement";
+    case "unpaid_leave":
+      return "Unpaid leave";
+    case "unpaid_other":
+      return "Unpaid leave";
     default:
       return v.replaceAll("_", " ");
   }
@@ -64,21 +72,21 @@ function employeeLabel(emp: EmployeeRow | undefined | null, fallbackId: string) 
   if (!emp) return fallbackId;
 
   const name =
-    (typeof emp.name === "string" && emp.name.trim()) ||
-    (typeof emp.full_name === "string" && emp.full_name.trim()) ||
-    (typeof emp.display_name === "string" && emp.display_name.trim()) ||
-    (typeof emp.preferred_name === "string" && emp.preferred_name.trim()) ||
+    (typeof (emp as any).name === "string" && (emp as any).name.trim()) ||
+    (typeof (emp as any).full_name === "string" && (emp as any).full_name.trim()) ||
+    (typeof (emp as any).display_name === "string" && (emp as any).display_name.trim()) ||
+    (typeof (emp as any).preferred_name === "string" && (emp as any).preferred_name.trim()) ||
     [
-      typeof emp.first_name === "string" ? emp.first_name.trim() : "",
-      typeof emp.last_name === "string" ? emp.last_name.trim() : "",
+      typeof (emp as any).first_name === "string" ? (emp as any).first_name.trim() : "",
+      typeof (emp as any).last_name === "string" ? (emp as any).last_name.trim() : "",
     ]
       .filter(Boolean)
       .join(" ")
       .trim();
 
   const empNo =
-    (typeof emp.employee_number === "string" && emp.employee_number.trim()) ||
-    (typeof emp.payroll_number === "string" && emp.payroll_number.trim()) ||
+    (typeof (emp as any).employee_number === "string" && (emp as any).employee_number.trim()) ||
+    (typeof (emp as any).payroll_number === "string" && (emp as any).payroll_number.trim()) ||
     "";
 
   if (name && empNo) return name + " (" + empNo + ")";
@@ -87,7 +95,18 @@ function employeeLabel(emp: EmployeeRow | undefined | null, fallbackId: string) 
   return fallbackId;
 }
 
-export default async function AbsencePage() {
+type SearchParamsRecord = Record<string, string | string[] | undefined>;
+
+type Props = {
+  searchParams?: Promise<SearchParamsRecord>;
+};
+
+export default async function AbsencePage({ searchParams }: Props) {
+  const sp: SearchParamsRecord | undefined = searchParams ? await searchParams : undefined;
+
+  const deletedParam = typeof sp?.deleted === "string" ? sp.deleted : "";
+  const deleteErrorParam = typeof sp?.deleteError === "string" ? sp.deleteError : "";
+
   const cookieStore = await cookies();
 
   const activeCompanyId =
@@ -96,6 +115,55 @@ export default async function AbsencePage() {
     "";
 
   const supabase = getAdminClientOrNull();
+
+  async function deleteAbsenceAction(formData: FormData) {
+    "use server";
+
+    const cookieStoreInner = await cookies();
+
+    const activeCompanyIdInner =
+      cookieStoreInner.get("active_company_id")?.value ??
+      cookieStoreInner.get("company_id")?.value ??
+      "";
+
+    if (!activeCompanyIdInner) {
+      redirect("/dashboard/absence?deleteError=" + encodeURIComponent("No active company selected"));
+    }
+
+    const absenceIdRaw = formData.get("absenceId");
+    const absenceId = typeof absenceIdRaw === "string" ? absenceIdRaw.trim() : "";
+
+    if (!absenceId) {
+      redirect("/dashboard/absence?deleteError=" + encodeURIComponent("Missing absence id"));
+    }
+
+    const supabaseInner = getAdminClientOrNull();
+    if (!supabaseInner) {
+      redirect("/dashboard/absence?deleteError=" + encodeURIComponent("Server config missing"));
+    }
+
+    const { data, error } = await supabaseInner
+      .from("absences")
+      .delete()
+      .eq("id", absenceId)
+      .eq("company_id", activeCompanyIdInner)
+      .select("id");
+
+    if (error) {
+      redirect("/dashboard/absence?deleteError=" + encodeURIComponent(error.message ?? "Delete failed"));
+    }
+
+    const deletedCount = Array.isArray(data) ? data.length : 0;
+    if (deletedCount === 0) {
+      redirect(
+        "/dashboard/absence?deleteError=" +
+          encodeURIComponent("Nothing deleted. Wrong company, missing record, or bad id.")
+      );
+    }
+
+    revalidatePath("/dashboard/absence");
+    redirect("/dashboard/absence?deleted=1");
+  }
 
   if (!activeCompanyId) {
     return (
@@ -175,7 +243,6 @@ export default async function AbsencePage() {
         }
       }
     } catch {
-      // fall back to showing employee_id
     }
   }
 
@@ -195,6 +262,7 @@ export default async function AbsencePage() {
 
     return {
       id: String(r.id),
+      employeeId: employeeId || "",
       employee: employeeLabel(emp, employeeId || "Unknown employee"),
       startDate: start,
       endDate: end,
@@ -203,88 +271,35 @@ export default async function AbsencePage() {
     };
   });
 
+  const employeesForFilter = employeeIds
+    .map((id) => {
+      const emp = employeesById.get(id);
+      const label = employeeLabel(emp, id);
+      const empNo =
+        (typeof (emp as any)?.employee_number === "string" && (emp as any).employee_number.trim()) ||
+        (typeof (emp as any)?.payroll_number === "string" && (emp as any).payroll_number.trim()) ||
+        "";
+      return { id, label, employeeNumber: empNo || null };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+
   return (
     <PageTemplate title="Absence" currentSection="absence">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
         <ActiveCompanyBanner />
 
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
-          <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50 flex items-start justify-between gap-4">
-            <div>
-              <div className="text-sm font-semibold text-neutral-900">Absence records</div>
-              <div className="text-xs text-neutral-700">
-                Absences are created via the Absence wizards. Dates show in UK format dd-mm-yyyy.
-              </div>
-
-              {loadError ? (
-                <div className="mt-1 text-xs text-red-700">Load error: {loadError}</div>
-              ) : null}
-            </div>
-
-            <div className="shrink-0">
-              <div className="text-xs text-neutral-600">Use New Absence wizard to add records.</div>
-            </div>
+          <div className="px-4 py-2 bg-neutral-50 border-b border-neutral-300">
+            {deletedParam === "1" ? <div className="text-xs text-green-700">Deleted.</div> : null}
+            {deleteErrorParam ? <div className="text-xs text-red-700">Delete error: {deleteErrorParam}</div> : null}
+            {loadError ? <div className="text-xs text-red-700">Load error: {loadError}</div> : null}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <colgroup>
-                <col className="w-[22rem]" />
-                <col className="w-[10rem]" />
-                <col className="w-[10rem]" />
-                <col className="w-[12rem]" />
-                <col className="w-[12rem]" />
-              </colgroup>
-
-              <thead className="bg-neutral-100">
-                <tr className="border-b-2 border-neutral-300">
-                  <th className="text-left px-4 py-3 sticky left-0 bg-neutral-100">Employee</th>
-                  <th className="text-left px-4 py-3">Start Date</th>
-                  <th className="text-left px-4 py-3">End Date</th>
-                  <th className="text-left px-4 py-3">Type</th>
-                  <th className="text-right px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {absences.length === 0 ? (
-                  <tr className="border-b-2 border-neutral-300">
-                    <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
-                      <div className="text-neutral-800">No absences found for this company.</div>
-                      <div className="text-neutral-700 text-xs">
-                        If you know records exist, they were likely saved under a different company_id.
-                      </div>
-                    </td>
-                    <td className="px-4 py-6 text-right bg-white" />
-                  </tr>
-                ) : (
-                  absences.map((a) => (
-                    <tr key={a.id} className="border-b-2 border-neutral-300">
-                      <td className="px-4 py-3 sticky left-0 bg-white">{a.employee}</td>
-                      <td className="px-4 py-3">{a.startDate}</td>
-                      <td className="px-4 py-3">{a.endDate}</td>
-                      <td className="px-4 py-3">{a.type}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="inline-flex gap-2">
-                          <ActionButton href={`/dashboard/absence/${a.id}/edit`} variant="success">
-                            Edit
-                          </ActionButton>
-
-                          <ActionButton
-                            href="#"
-                            variant="primary"
-                            className={a.processedInPayroll ? "opacity-50 pointer-events-none" : ""}
-                          >
-                            Delete
-                          </ActionButton>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <AbsenceEmployeeFilter
+            employees={employeesForFilter}
+            absences={absences}
+            deleteAbsenceAction={deleteAbsenceAction}
+          />
         </div>
       </div>
     </PageTemplate>

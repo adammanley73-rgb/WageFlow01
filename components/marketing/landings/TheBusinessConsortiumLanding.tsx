@@ -69,6 +69,20 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
 
   const HMRC_GATE_LOGO_SRC = "/hmrc-gate.png";
 
+  const CONTACT_EMAIL = "enquiries@thebusinessconsortiumltd.co.uk";
+  const CONTACT_BODY =
+    "Welcome to The Business Consortium Ltd's initial contact method.\n\n" +
+    "Before we can help you, we just need a few details from you, listed below.\n" +
+    "Please answer the questions as best you can and when you're happy with your responses, hit that \"Send\" button.\n" +
+    "When we receive your enquiry, one of the onboarding team will be in touch; this usually happens within an hour as we don't believe in keeping people waiting; employees' wages are important so we treat them as such.\n\n" +
+    "Name of company:\n" +
+    "Name of company contact and their position in company:\n" +
+    "Best method of contact, telephone or email:\n" +
+    "Telephone or email details:\n" +
+    "Best time of day to contact:\n" +
+    "Size of company (No of employees):\n" +
+    "Pay frequencies (weekly/fortnightly/4-weekly/monthly):";
+
   const showToast = (message: string) => {
     setToast({ open: true, message });
     window.setTimeout(() => setToast({ open: false, message: "" }), 2200);
@@ -212,13 +226,17 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
     setTimeout(() => scrollToId(id), 0);
   };
 
-  const onRequestDemo = () => {
-    const mailto = buildMailto(
-      "enquiries@thebusinessconsortiumltd.co.uk",
-      "WageFlow demo request",
-      "Hi,\n\nPlease can I request a WageFlow demo.\n\nCompany name:\nNumber of employees:\nPay frequency (weekly/fortnightly/4-weekly/monthly):\n\nThanks,"
-    );
+  const openContactEmail = (subject: string) => {
+    const mailto = buildMailto(CONTACT_EMAIL, subject, CONTACT_BODY);
     window.location.href = mailto;
+  };
+
+  const onRequestDemo = () => {
+    openContactEmail("WageFlow demo request");
+  };
+
+  const onApplyPilotProgram = () => {
+    openContactEmail("Pilot program application");
   };
 
   return (
@@ -403,7 +421,7 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
                   </p>
                   <button
                     type="button"
-                    onClick={onRequestDemo}
+                    onClick={onApplyPilotProgram}
                     className="mt-4 w-full bg-[#0f3c85] text-white px-6 py-3 rounded-lg font-semibold hover:opacity-95 transition focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
                   >
                     Apply for pilot program
@@ -683,7 +701,7 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
                 <div className="mt-5 space-y-3 text-sm text-gray-800">
                   <div className="flex items-center gap-2">
                     <Mail className="w-4 h-4 text-[#0f3c85]" aria-hidden="true" />
-                    <span>enquiries@thebusinessconsortiumltd.co.uk</span>
+                    <span>{CONTACT_EMAIL}</span>
                   </div>
                 </div>
               </div>
@@ -738,7 +756,7 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
                 <div className="text-white font-bold">The Business Consortium Ltd</div>
               </div>
               <p className="text-sm text-gray-300 mb-4">Payroll-first systems for SMEs. WageFlow leads. The rest follows.</p>
-              
+
               <div className="text-xs text-gray-400 space-y-1 border-t border-gray-800 pt-4">
                 <p>Registered in England and Wales</p>
                 <p>Company No: 16636529</p>

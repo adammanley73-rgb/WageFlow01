@@ -6,7 +6,7 @@ import PageTemplate from "@/components/layout/PageTemplate";
 
 type HubCardProps = {
   title: string;
-  description: string;
+  description?: string;
   href?: string;
   disabled?: boolean;
   disabledNote?: string;
@@ -29,7 +29,7 @@ function HubCard({
     return (
       <div className={base + " opacity-80"}>
         <div className={titleCls}>{title}</div>
-        <div className={descCls}>{description}</div>
+        {description ? <div className={descCls}>{description}</div> : null}
         <div className={footerCls}>
           <span className="inline-flex items-center rounded-full bg-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-700 ring-1 ring-neutral-300">
             {disabledNote ?? "Not available"}
@@ -49,7 +49,7 @@ function HubCard({
       aria-label={"Open " + title}
     >
       <div className={titleCls}>{title}</div>
-      <div className={descCls}>{description}</div>
+      {description ? <div className={descCls}>{description}</div> : null}
       <div className={footerCls}>
         <span
           className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white"
@@ -73,51 +73,50 @@ export default function NewAbsenceHubPage() {
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
           <HubCard
             title="Sickness"
-            description="SSP wizard with PIWs, linking, waiting days, and the 28-week cap."
+            description="Updated rules apply from April 2026."
             href="/dashboard/absence/new/sickness"
           />
 
           <HubCard
             title="Annual leave"
-            description="Record paid annual leave. This feeds holiday pay calculations for the relevant pay period."
+            description="Holiday pay calculation."
             href="/dashboard/absence/new/annual"
           />
 
           <HubCard
             title="Maternity"
-            description="SMP wizard with AWE calculator and weekly schedule."
+            description="SMP calculation."
             href="/dashboard/absence/new/maternity"
           />
 
           <HubCard
             title="Adoption"
-            description="SAP wizard with weekly schedule."
+            description="SAP calculation."
             href="/dashboard/absence/new/adoption"
           />
 
           <HubCard
             title="Paternity"
-            description="SPP wizard with eligibility and schedule."
+            description="SPP calculation."
             href="/dashboard/absence/new/paternity"
           />
 
           <HubCard
             title="Shared parental"
-            description="ShPP wizard with shared leave details and schedule."
+            description="ShPP calculation."
             href="/dashboard/absence/new/shared-parental"
           />
 
           <HubCard
             title="Parental bereavement"
-            description="SPBP wizard placeholder. Still needs full restore."
+            description="SPBP calculation."
             href="/dashboard/absence/new/parental-bereavement"
           />
 
           <HubCard
             title="Unpaid leave"
-            description="Route not implemented yet."
-            disabled
-            disabledNote="Not built yet"
+            description="Pay adjustment calculation."
+            href="/dashboard/absence/new/unpaid"
           />
         </div>
 

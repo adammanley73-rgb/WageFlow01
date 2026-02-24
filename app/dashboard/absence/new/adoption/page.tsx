@@ -202,24 +202,18 @@ export default function AdoptionLeaveWizardPage() {
 
   return (
     <PageTemplate
-      title="Absence"
+      title="Adoption"
       currentSection="absence"
       headerMode="wizard"
       backHref="/dashboard/absence/new"
       backLabel="Back"
     >
       <div className="flex flex-col gap-4 flex-1 min-h-0">
-        <div className="rounded-2xl bg-white/80 px-4 py-4">
-          <h1 className="text-xl sm:text-2xl font-bold text-[#0f3c85]">
-            Adoption leave wizard
-          </h1>
-          <p className="mt-1 text-sm text-neutral-800">
-            Record adoption leave dates for an employee. This creates an absence
-            record that can later drive SAP calculations and reporting.
-          </p>
-        </div>
-
         <div className={CARD}>
+          <div className="mb-4 text-sm text-neutral-700">
+            Record adoption leave dates for an employee.
+          </div>
+
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <section className="flex flex-col gap-4">
               <h2 className="text-base font-semibold text-neutral-900">
@@ -357,11 +351,6 @@ export default function AdoptionLeaveWizardPage() {
                   )}
                 </div>
               </div>
-
-              <p className="text-[11px] text-neutral-600">
-                This v1 wizard records the absence dates. SAP calculations can
-                be layered on once the core absence flows are stable.
-              </p>
             </section>
 
             <section className="flex flex-col gap-3">
@@ -383,12 +372,7 @@ export default function AdoptionLeaveWizardPage() {
               </div>
             </section>
 
-            <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <p className="text-[11px] text-neutral-600">
-                This creates a draft adoption leave record in Absences. You will
-                add SAP schedule logic later without rebuilding the UI.
-              </p>
-
+            <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
               <div className="flex justify-end gap-3">
                 <button
                   type="button"

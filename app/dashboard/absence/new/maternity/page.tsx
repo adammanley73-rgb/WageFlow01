@@ -333,12 +333,7 @@ export default function MaternityWizardPage() {
             />
           </section>
 
-          <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <p className="text-[11px] text-neutral-600">
-              This wizard records maternity leave dates. SMP amounts and schedule are
-              computed server-side and saved on the absence record.
-            </p>
-
+          <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
             <div className="flex justify-end gap-3">
               <button
                 type="button"
