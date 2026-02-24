@@ -1,5 +1,5 @@
 /* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\page.tsx
+// C:\Projects\wageflow01\app\dashboard\employees\page.tsx
 
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -31,6 +31,8 @@ function createAdminClient() {
 
 type EmployeesPageProps = {
   searchParams?: Promise<{
+    sort?: string;
+    direction?: string;
     showLeavers?: string;
   }>;
 };
@@ -69,19 +71,32 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   }
 
   const resolvedSearchParams = searchParams ? await searchParams : {};
-  const showLeavers = resolvedSearchParams?.showLeavers === "1";
+  const sortParam = resolvedSearchParams?.sort;
+  const directionParam = resolvedSearchParams?.direction;
+  const showLeaversParam = resolvedSearchParams?.showLeavers;
+
+  const sortKey: "name" | "number" = sortParam === "number" ? "number" : "name";
+  const sortDirection: "asc" | "desc" = directionParam === "desc" ? "desc" : "asc";
+  const showLeavers = showLeaversParam === "1";
 
   const supabase = createAdminClient();
 
   let employeesQuery = supabase
     .from("employees")
-    .select(
-      "id, employee_number, first_name, last_name, email, ni_number, pay_frequency, status"
-    )
-    .eq("company_id", activeCompanyId)
-    .order("last_name", { ascending: true })
-    .order("first_name", { ascending: true })
-    .order("employee_number", { ascending: true });
+    .select("id, employee_number, first_name, last_name, email, ni_number, pay_frequency, status")
+    .eq("company_id", activeCompanyId);
+
+  if (sortKey === "number") {
+    employeesQuery = employeesQuery
+      .order("employee_number", { ascending: sortDirection === "asc" })
+      .order("last_name", { ascending: true })
+      .order("first_name", { ascending: true });
+  } else {
+    employeesQuery = employeesQuery
+      .order("last_name", { ascending: sortDirection === "asc" })
+      .order("first_name", { ascending: sortDirection === "asc" })
+      .order("employee_number", { ascending: true });
+  }
 
   const { data: employeesData, error: employeesError } = await employeesQuery;
 
@@ -90,9 +105,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const loadError = employeesError
     ? process.env.NODE_ENV === "production"
       ? "There was a problem loading employees."
-      : `There was a problem loading employees: ${formatSupabaseError(
-          employeesError
-        )}`
+      : `There was a problem loading employees: ${formatSupabaseError(employeesError)}`
     : null;
 
   const visibleEmployees = showLeavers
@@ -101,8 +114,9 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
 
   const hasAnyEmployees = employees.length > 0;
 
-  const toggleShowLeaversHref = `/dashboard/employees${
-    showLeavers ? "" : "?showLeavers=1"
+  const currentSortParam = sortKey === "number" ? "number" : "name";
+  const toggleShowLeaversHref = `/dashboard/employees?sort=${currentSortParam}&direction=${sortDirection}${
+    showLeavers ? "" : "&showLeavers=1"
   }`;
 
   return (
@@ -114,9 +128,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-semibold text-neutral-900">
-                  Employees
-                </div>
+                <div className="text-sm font-semibold text-neutral-900">Employees</div>
                 <div className="text-xs text-neutral-700">
                   {showLeavers
                     ? "All employees for the active company, including leavers."
