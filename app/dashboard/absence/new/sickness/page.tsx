@@ -123,7 +123,6 @@ export default function NewSicknessAbsencePage() {
     setOverlapPreview(null);
   }
 
-  // Overlap preview runs when employee + firstDay are set
   useEffect(() => {
     const employeeId = selectedEmployee?.id;
 
@@ -446,12 +445,7 @@ export default function NewSicknessAbsencePage() {
               />
             </section>
 
-            <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <p className="text-[11px] text-neutral-600">
-                Sickness dates recorded here will drive SSP and sickness pay
-                calculations in the payroll engine.
-              </p>
-
+            <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
               <div className="flex gap-3 justify-end">
                 <button
                   type="button"

@@ -1,29 +1,34 @@
-// C:\Users\adamm\Projects\wageflow01\app\api\absence\[id]\route.ts
-
+// C:\Projects\wageflow01\app\api\absence\[id]\route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-function getSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+function json(status: number, body: unknown) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+function getSupabaseAdminClientOrThrow() {
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
-    throw new Error("Supabase environment variables are not configured");
+    throw new Error("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY are not set on the server.");
   }
 
-  return createClient(url, serviceKey);
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false },
+  });
 }
 
 async function getCompanyIdFromCookies() {
   const cookieStore = await cookies();
-  return (
-    cookieStore.get("active_company_id")?.value ||
-    cookieStore.get("company_id")?.value ||
-    null
-  );
+  return cookieStore.get("active_company_id")?.value || cookieStore.get("company_id")?.value || null;
 }
 
 type AbsenceRow = {
@@ -51,45 +56,32 @@ type AbsenceOverlapRow = {
   last_day_actual: string | null;
 };
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const absenceId = typeof id === "string" ? id.trim() : "";
 
-    if (!id) {
-      return NextResponse.json(
-        { ok: false, code: "MISSING_ID", message: "Absence id is required." },
-        { status: 400 }
-      );
+    if (!absenceId) {
+      return json(400, { ok: false, code: "MISSING_ID", message: "Absence id is required." });
     }
 
     const companyId = await getCompanyIdFromCookies();
     if (!companyId) {
-      return NextResponse.json(
-        { ok: false, code: "NO_COMPANY", message: "No active company selected." },
-        { status: 400 }
-      );
+      return json(400, { ok: false, code: "NO_COMPANY", message: "No active company selected." });
     }
 
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseAdminClientOrThrow();
 
     const { data: absence, error } = await supabase
       .from("absences")
-      .select(
-        "id, company_id, employee_id, type, first_day, last_day_expected, last_day_actual, reference_notes, status"
-      )
+      .select("id, company_id, employee_id, type, first_day, last_day_expected, last_day_actual, reference_notes, status")
       .eq("company_id", companyId)
-      .eq("id", id)
+      .eq("id", absenceId)
       .single<AbsenceRow>();
 
     if (error || !absence) {
       console.error("Load absence error:", error);
-      return NextResponse.json(
-        { ok: false, code: "NOT_FOUND", message: "Absence not found." },
-        { status: 404 }
-      );
+      return json(404, { ok: false, code: "NOT_FOUND", message: "Absence not found." });
     }
 
     const { data: employee, error: empError } = await supabase
@@ -105,14 +97,12 @@ export async function GET(
 
     let employeeLabel = "Employee";
     if (employee) {
-      const name =
-        [employee.first_name, employee.last_name].filter(Boolean).join(" ").trim() ||
-        "Employee";
+      const name = [employee.first_name, employee.last_name].filter(Boolean).join(" ").trim() || "Employee";
       const number = employee.employee_number || "";
       employeeLabel = number ? `${name} (${number})` : name;
     }
 
-    return NextResponse.json({
+    return json(200, {
       ok: true,
       absence: {
         id: absence.id,
@@ -128,33 +118,22 @@ export async function GET(
     });
   } catch (err) {
     console.error("Unexpected error loading absence:", err);
-    return NextResponse.json(
-      { ok: false, code: "UNEXPECTED_ERROR", message: "Could not load this absence." },
-      { status: 500 }
-    );
+    return json(500, { ok: false, code: "UNEXPECTED_ERROR", message: "Could not load this absence." });
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const absenceId = typeof id === "string" ? id.trim() : "";
 
-    if (!id) {
-      return NextResponse.json(
-        { ok: false, code: "MISSING_ID", message: "Absence id is required." },
-        { status: 400 }
-      );
+    if (!absenceId) {
+      return json(400, { ok: false, code: "MISSING_ID", message: "Absence id is required." });
     }
 
     const companyId = await getCompanyIdFromCookies();
     if (!companyId) {
-      return NextResponse.json(
-        { ok: false, code: "NO_COMPANY", message: "No active company selected." },
-        { status: 400 }
-      );
+      return json(400, { ok: false, code: "NO_COMPANY", message: "No active company selected." });
     }
 
     const body = await request.json();
@@ -165,53 +144,41 @@ export async function PATCH(
     const referenceNotes: string | null = body?.reference_notes ?? null;
 
     if (!firstDay || !lastDayExpected) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "VALIDATION_ERROR",
-          message: "First day and expected last day are required.",
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "First day and expected last day are required.",
+      });
     }
 
     if (lastDayExpected < firstDay) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "VALIDATION_ERROR",
-          message: "Expected last day cannot be earlier than the first day.",
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Expected last day cannot be earlier than the first day.",
+      });
     }
 
     if (lastDayActual && lastDayActual < firstDay) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "VALIDATION_ERROR",
-          message: "Actual last day cannot be earlier than the first day.",
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Actual last day cannot be earlier than the first day.",
+      });
     }
 
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseAdminClientOrThrow();
 
     const { data: current, error: currentError } = await supabase
       .from("absences")
       .select("id, employee_id")
       .eq("company_id", companyId)
-      .eq("id", id)
+      .eq("id", absenceId)
       .single<{ id: string; employee_id: string }>();
 
     if (currentError || !current) {
       console.error("Load current absence for update error:", currentError);
-      return NextResponse.json(
-        { ok: false, code: "NOT_FOUND", message: "Absence not found." },
-        { status: 404 }
-      );
+      return json(404, { ok: false, code: "NOT_FOUND", message: "Absence not found." });
     }
 
     const { data: rows, error: rowsError } = await supabase
@@ -219,15 +186,12 @@ export async function PATCH(
       .select("id, first_day, last_day_expected, last_day_actual")
       .eq("company_id", companyId)
       .eq("employee_id", current.employee_id)
-      .neq("id", id)
+      .neq("id", absenceId)
       .returns<AbsenceOverlapRow[]>();
 
     if (rowsError) {
       console.error("Update overlap DB error:", rowsError);
-      return NextResponse.json(
-        { ok: false, code: "DB_ERROR", message: "Could not check existing absences." },
-        { status: 500 }
-      );
+      return json(500, { ok: false, code: "DB_ERROR", message: "Could not check existing absences." });
     }
 
     const newStart = firstDay;
@@ -238,24 +202,19 @@ export async function PATCH(
         .map((row) => {
           const start = row.first_day;
           const end = row.last_day_actual || row.last_day_expected || row.first_day;
-
           const overlaps = newStart <= end && newEnd >= start;
           if (!overlaps) return null;
-
           return { id: row.id, startDate: start, endDate: end };
         })
         .filter((x): x is { id: string; startDate: string; endDate: string } => Boolean(x));
 
     if (conflicts.length > 0) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "ABSENCE_DATE_OVERLAP",
-          message: "These dates would overlap another existing absence.",
-          conflicts,
-        },
-        { status: 409 }
-      );
+      return json(409, {
+        ok: false,
+        code: "ABSENCE_DATE_OVERLAP",
+        message: "These dates would overlap another existing absence.",
+        conflicts,
+      });
     }
 
     const updates = {
@@ -269,30 +228,63 @@ export async function PATCH(
       .from("absences")
       .update(updates)
       .eq("company_id", companyId)
-      .eq("id", id);
+      .eq("id", absenceId);
 
     if (updateError) {
       console.error("Update absence error:", updateError);
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "DB_ERROR",
-          message: "Could not update this absence. Please try again.",
-        },
-        { status: 500 }
-      );
+      return json(500, { ok: false, code: "DB_ERROR", message: "Could not update this absence. Please try again." });
     }
 
-    return NextResponse.json({ ok: true });
+    return json(200, { ok: true });
   } catch (err) {
     console.error("Unexpected error updating absence:", err);
-    return NextResponse.json(
-      {
+    return json(500, { ok: false, code: "UNEXPECTED_ERROR", message: "Unexpected error while updating this absence." });
+  }
+}
+
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const absenceId = typeof id === "string" ? id.trim() : "";
+
+    if (!absenceId) {
+      return json(400, { ok: false, code: "MISSING_ID", message: "Absence id is required." });
+    }
+
+    const companyId = await getCompanyIdFromCookies();
+    if (!companyId) {
+      return json(400, { ok: false, code: "NO_COMPANY", message: "No active company selected." });
+    }
+
+    const supabase = getSupabaseAdminClientOrThrow();
+
+    const { data, error } = await supabase
+      .from("absences")
+      .delete()
+      .eq("id", absenceId)
+      .eq("company_id", companyId)
+      .select("id");
+
+    if (error) {
+      console.error("Delete absence error:", error);
+      return json(500, { ok: false, code: "DB_ERROR", message: "Could not delete this absence." });
+    }
+
+    const deletedCount = Array.isArray(data) ? data.length : 0;
+
+    if (deletedCount === 0) {
+      return json(404, {
         ok: false,
-        code: "UNEXPECTED_ERROR",
-        message: "Unexpected error while updating this absence.",
-      },
-      { status: 500 }
-    );
+        code: "NOT_FOUND",
+        message: "Absence not found for this company.",
+        id: absenceId,
+        companyId,
+      });
+    }
+
+    return json(200, { ok: true, deletedId: (data as Array<{ id: string }>)[0].id, deletedCount });
+  } catch (err) {
+    console.error("Unexpected error deleting absence:", err);
+    return json(500, { ok: false, code: "UNEXPECTED_ERROR", message: "Unexpected error while deleting this absence." });
   }
 }

@@ -184,8 +184,24 @@ function HostedShortVideo({ src, title }: { src: string; title: string }) {
 export default function WageFlowLandingV2() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [billingMode, setBillingMode] = useState<BillingMode>("annual");
-  const [employeeCount, setEmployeeCount] = useState<number>(10);
+  const [employeeCount, setEmployeeCount] = useState<number>(5);
   const [toast, setToast] = useState<ToastState>({ open: false, message: "" });
+
+  const CONTACT_EMAIL = "enquiries@thebusinessconsortiumltd.co.uk";
+  const CONTACT_BODY =
+    "Welcome to The Business Consortium Ltd's initial contact method.\n\n" +
+    "Before we can help you, we just need a few details from you, listed below.\n" +
+    "Please answer the questions as best you can and when you're happy with your responses, hit that \"Send\" button.\n" +
+    "When we receive your enquiry, one of the onboarding team will be in touch; this usually happens within an hour as we don't believe in keeping people waiting; employees' wages are important so we treat them as such.\n\n" +
+    "Name of company:\n" +
+    "Name of company contact and their position in company:\n" +
+    "Best method of contact, telephone or email:\n" +
+    "Telephone or email details:\n" +
+    "Best time of day to contact:\n" +
+    "Size of company (No of employees):\n" +
+    "Pay frequencies (weekly/fortnightly/4-weekly/monthly):";
+
+  const HERO_SCREENSHOT_SRC = "/wageflow-screenshot.png";
 
   const showToast = (message: string) => {
     setToast({ open: true, message });
@@ -210,11 +226,7 @@ export default function WageFlowLandingV2() {
   }, [mobileMenuOpen]);
 
   const onRequestDemo = () => {
-    const mailto = buildMailto(
-      "enquiries@thebusinessconsortiumltd.co.uk",
-      "WageFlow demo request",
-      "Hi,\n\nPlease can I request a WageFlow demo.\n\nCompany name:\nNumber of employees:\nPay frequency (weekly/fortnightly/4-weekly/monthly):\nPreferred contact email:\n\nThanks,"
-    );
+    const mailto = buildMailto(CONTACT_EMAIL, "WageFlow demo request", CONTACT_BODY);
     window.location.href = mailto;
   };
 
@@ -223,20 +235,17 @@ export default function WageFlowLandingV2() {
       {
         icon: <Clock className="w-6 h-6" aria-hidden="true" />,
         title: "Exception-led payroll",
-        description:
-          "WageFlow runs the heavy lifting so you focus on what needs attention, not endless manual steps.",
+        description: "WageFlow runs the heavy lifting so you focus on what needs attention, not endless manual steps.",
       },
       {
         icon: <Shield className="w-6 h-6" aria-hidden="true" />,
         title: "UK-first workflow",
-        description:
-          "Structured runs, clear review, predictable approvals. Built for real UK payroll behaviour.",
+        description: "Structured runs, clear review, predictable approvals. Built for real UK payroll behaviour.",
       },
       {
         icon: <TrendingUp className="w-6 h-6" aria-hidden="true" />,
         title: "See changes before approval",
-        description:
-          "Review totals and movements so you catch problems during review, not after payday.",
+        description: "Review totals and movements so you catch problems during review, not after payday.",
       },
     ],
     []
@@ -259,19 +268,13 @@ export default function WageFlowLandingV2() {
       {
         icon: <Users className="w-6 h-6" aria-hidden="true" />,
         title: "SMEs running payroll in-house",
-        description:
-          "For owners and managers who need payroll done correctly without giving up half the week.",
-        bullets: [
-          "Reduce manual steps and repeat work.",
-          "Clear approvals and clean payroll history.",
-          "Less panic on payday week.",
-        ],
+        description: "For owners and managers who need payroll done correctly without giving up half the week.",
+        bullets: ["Reduce manual steps and repeat work.", "Clear approvals and clean payroll history.", "Less panic on payday week."],
       },
       {
         icon: <Shield className="w-6 h-6" aria-hidden="true" />,
         title: "Payroll and HR professionals",
-        description:
-          "For payroll, HR and finance teams who want a calm review process and clean outputs.",
+        description: "For payroll, HR and finance teams who want a calm review process and clean outputs.",
         bullets: [
           "Exception-led review so attention goes to the right places.",
           "Explainable totals and movements for sign-off.",
@@ -281,13 +284,8 @@ export default function WageFlowLandingV2() {
       {
         icon: <Scale className="w-6 h-6" aria-hidden="true" />,
         title: "Bureaux and multi-client operators",
-        description:
-          "For people running payroll for multiple clients and needing repeatable processes.",
-        bullets: [
-          "Consistent run structure across clients.",
-          "Clear checks before approval to reduce rework.",
-          "Simple pricing that scales with employee count.",
-        ],
+        description: "For people running payroll for multiple clients and needing repeatable processes.",
+        bullets: ["Consistent run structure across clients.", "Clear checks before approval to reduce rework.", "Simple pricing that scales with employee count."],
       },
     ],
     []
@@ -336,46 +334,22 @@ export default function WageFlowLandingV2() {
 
   const faqs: FAQ[] = useMemo(
     () => [
-      {
-        q: "Is the first month really free?",
-        a: "The offer is launching soon. The button currently shows a 'Coming soon' confirmation.",
-      },
-      {
-        q: "Do I need to add a card on day 1?",
-        a: "You can explore without a card. A card is required before you run your first live payroll.",
-      },
-      {
-        q: "What is the parallel run promise?",
-        a: "Most customers run one payroll in parallel first. Compare results and decide. No pressure, no lock-in.",
-      },
-      {
-        q: "Do you lock me into a contract?",
-        a: "No lock-in. Cancel anytime.",
-      },
+      { q: "Is the first month really free?", a: "The offer is launching soon. The button currently shows a 'Coming soon' confirmation." },
+      { q: "Do I need to add a card on day 1?", a: "You can explore without a card. A card is required before you run your first live payroll." },
+      { q: "What is the parallel run promise?", a: "Most customers run one payroll in parallel first. Compare results and decide. No pressure, no lock-in." },
+      { q: "Do you lock me into a contract?", a: "No lock-in. Cancel anytime." },
       {
         q: "How do extra employees work?",
         a: "The first 5 or 20 employees (depending on your plan) are included at no extra cost. Employees beyond this are billed at £1 per employee per month.",
       },
-      {
-        q: "Can I pay annually?",
-        a: "Yes. Annual plans are billed upfront and save the equivalent of 2 months compared to monthly.",
-      },
-      {
-        q: "Can I import data from my current payroll system?",
-        a: "Yes. WageFlow supports CSV imports for employee data. We provide templates and guidance to make the transition smooth.",
-      },
+      { q: "Can I pay annually?", a: "Yes. Annual plans are billed upfront and save the equivalent of 2 months compared to monthly." },
+      { q: "Can I import data from my current payroll system?", a: "Yes. WageFlow supports CSV imports for employee data. We provide templates and guidance to make the transition smooth." },
       {
         q: "What if I make a mistake after approval?",
         a: "You can amend or delete approved payroll runs before final submission. Once submitted to HMRC, you will need to process corrections in the next payroll run.",
       },
-      {
-        q: "Do you integrate with accounting software?",
-        a: "We provide export files compatible with most major accounting packages. Direct integrations are on our roadmap.",
-      },
-      {
-        q: "What happens if HMRC rules change?",
-        a: "We monitor HMRC updates and implement rule changes before they take effect. You receive notifications of any changes that affect your payroll.",
-      },
+      { q: "Do you integrate with accounting software?", a: "We provide export files compatible with most major accounting packages. Direct integrations are on our roadmap." },
+      { q: "What happens if HMRC rules change?", a: "We monitor HMRC updates and implement rule changes before they take effect. You receive notifications of any changes that affect your payroll." },
     ],
     []
   );
@@ -385,31 +359,14 @@ export default function WageFlowLandingV2() {
 
     return plans.map((plan) => {
       const isAnnual = billingMode === "annual";
-
       const base = isAnnual ? plan.annualPrice : plan.monthlyPrice;
       const baseLabel = isAnnual ? "/year" : "/month";
-
       const extras = Math.max(0, employees - plan.includedEmployees);
-
-      const extrasCost = isAnnual
-        ? extras * plan.extraEmployeeMonthly * 12
-        : extras * plan.extraEmployeeMonthly;
-
+      const extrasCost = isAnnual ? extras * plan.extraEmployeeMonthly * 12 : extras * plan.extraEmployeeMonthly;
       const total = base + extrasCost;
-
       const savings = calcAnnualSavings(plan.monthlyPrice, plan.annualPrice);
 
-      return {
-        plan,
-        employees,
-        extras,
-        base,
-        baseLabel,
-        extrasCost,
-        total,
-        savings,
-        isAnnual,
-      };
+      return { plan, employees, extras, base, baseLabel, extrasCost, total, savings, isAnnual };
     });
   }, [plans, billingMode, employeeCount]);
 
@@ -426,8 +383,6 @@ export default function WageFlowLandingV2() {
     showToast("Get 1st month free is coming soon.");
   };
 
-  const HERO_LEFT = "/videos/hero-left.mp4";
-  const HERO_RIGHT = "/videos/hero-right.mp4";
   const MID_WALKTHROUGH = "/videos/mid-walkthrough.mp4";
 
   return (
@@ -458,13 +413,7 @@ export default function WageFlowLandingV2() {
               aria-label="Go to top"
             >
               <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden animate-pulse">
-                <Image
-                  src="/WageFlowLogo.png"
-                  alt="WageFlow logo"
-                  width={36}
-                  height={36}
-                  className="object-contain"
-                />
+                <Image src="/WageFlowLogo.png" alt="WageFlow logo" width={36} height={36} className="object-contain" />
               </div>
               <span className="text-2xl font-bold text-[#0f3c85]">WageFlow</span>
             </button>
@@ -585,21 +534,8 @@ export default function WageFlowLandingV2() {
       <main id="main" className="pt-24" role="main">
         <section id="top" className="pt-10 pb-14 px-4">
           <div className="max-w-7xl mx-auto">
-            <div className="mb-10">
-              <p className="text-sm text-[#0f3c85] bg-blue-50 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-blue-100">
-                <Lock className="w-4 h-4" aria-hidden="true" />
-                Video previews
-              </p>
-              <p className="text-gray-700 mt-2">Press play. No autoplay.</p>
-
-              <div className="mt-5 grid md:grid-cols-2 gap-6 justify-items-center">
-                <HostedShortVideo src={HERO_LEFT} title="WageFlow preview video 1" />
-                <HostedShortVideo src={HERO_RIGHT} title="WageFlow preview video 2" />
-              </div>
-            </div>
-
-            <div className="grid lg:grid-cols-2 gap-10 items-center">
-              <div>
+            <div className="grid lg:grid-cols-2 gap-10 items-stretch">
+              <div className="h-full flex flex-col">
                 <p className="inline-flex items-center gap-2 text-sm text-[#0f3c85] bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
                   <Lock className="w-4 h-4" aria-hidden="true" />
                   Payroll first. Exception-led review.
@@ -614,34 +550,26 @@ export default function WageFlowLandingV2() {
                   You review the exceptions, then approve, amend, or delete. The rest stays automated.
                 </p>
 
-                <div className="mt-6 bg-gray-50 border border-gray-200 rounded-2xl p-5">
-                  <p className="font-semibold text-gray-900">Built by a payroll professional</p>
-                  <p className="text-gray-700 mt-2">
-                    WageFlow is my payroll app. I built it using the skills and expertise I have gathered over a 27 year career
-                    across Payroll, HR, and Pensions environments, including numerous software implementations.
-                  </p>
-                </div>
-
                 <div className="flex flex-col sm:flex-row gap-4 mt-8">
                   <button
                     type="button"
-                    onClick={onGetFreeMonth}
+                    onClick={onRequestDemo}
                     className="bg-[#0f3c85] text-white px-8 py-4 rounded-lg text-lg font-semibold hover:opacity-95 transition flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
                   >
-                    Get 1st Month Free
+                    Request a demo
                     <ChevronRight className="w-5 h-5" aria-hidden="true" />
                   </button>
 
                   <button
                     type="button"
-                    onClick={onRequestDemo}
+                    onClick={() => scrollToId("pricing")}
                     className="border-2 border-gray-300 text-gray-800 px-8 py-4 rounded-lg text-lg font-semibold hover:border-gray-400 transition focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
                   >
-                    Request a demo
+                    View pricing
                   </button>
                 </div>
 
-                <div className="mt-5 text-sm text-gray-700 space-y-2">
+                <div className="mt-8 text-sm text-gray-700 space-y-2">
                   <div className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-green-600" aria-hidden="true" />
                     Clear runs. Calm review. Clean approval.
@@ -655,57 +583,90 @@ export default function WageFlowLandingV2() {
                     One parallel payroll run included for trust
                   </div>
                 </div>
+
+                <div className="mt-10 lg:mt-auto bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                  <p className="font-semibold text-gray-900">Built by a payroll professional</p>
+                  <p className="text-gray-700 mt-2">
+                    WageFlow is my payroll app. I built it using the skills and expertise I have gathered over a 27 year career
+                    across Payroll, HR, and Pensions environments, including numerous software implementations.
+                  </p>
+                </div>
               </div>
 
-              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 md:p-8">
-                <h2 className="text-xl font-bold text-gray-900">What you get</h2>
-                <p className="text-gray-700 mt-2">Core features built to keep payroll clean, fast, and explainable.</p>
-
-                <div className="mt-6 grid gap-4">
-                  {featureHighlights.map((feature, index) => (
-                    <div key={index} className="bg-white border border-gray-200 rounded-xl p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-[#0f3c85]">
-                          {feature.icon}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900">{feature.title}</p>
-                          <p className="text-gray-700 mt-1">{feature.description}</p>
-                        </div>
+              <div className="h-full">
+                <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden h-full flex flex-col">
+                  <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-gray-200 bg-gray-50">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden">
+                        <Image src="/WageFlowLogo.png" alt="WageFlow logo" width={28} height={28} className="object-contain" />
                       </div>
+                      <div className="font-bold text-gray-900 text-lg">WageFlow</div>
                     </div>
-                  ))}
-                </div>
+                    <div className="text-xs font-semibold text-[#0f3c85] bg-blue-50 border border-blue-100 px-3 py-1 rounded-full">
+                      Product preview
+                    </div>
+                  </div>
 
-                <div className="mt-6 rounded-2xl overflow-hidden border border-gray-200 bg-white">
-                  <div className="flex items-center gap-3 p-4">
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden">
-                      <Image
-                        src="/WageFlowLogo.png"
-                        alt="WageFlow logo"
-                        width={36}
-                        height={36}
-                        className="object-contain"
-                      />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">WageFlow is the flagship</p>
-                      <p className="text-sm text-gray-700">
-                        PeopleFlow and AccountsFlow follow. BusinessFlow is the package name later.
-                      </p>
+                  <div className="relative flex-1 min-h-[420px] bg-white">
+                    <Image
+                      src={HERO_SCREENSHOT_SRC}
+                      alt=""
+                      fill
+                      priority
+                      sizes="(min-width: 1024px) 50vw, 100vw"
+                      className="object-cover blur-xl scale-110 opacity-25"
+                      aria-hidden="true"
+                    />
+                    <Image
+                      src={HERO_SCREENSHOT_SRC}
+                      alt="WageFlow dashboard preview"
+                      fill
+                      priority
+                      sizes="(min-width: 1024px) 50vw, 100vw"
+                      className="object-contain object-top"
+                    />
+                  </div>
+
+                  <div className="p-4 border-t border-gray-200 bg-white">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="w-full rounded-full bg-gray-100 border border-gray-200 px-4 py-2 text-center text-sm font-semibold text-gray-900">
+                        Exception-led review
+                      </div>
+                      <div className="w-full rounded-full bg-gray-100 border border-gray-200 px-4 py-2 text-center text-sm font-semibold text-gray-900">
+                        Explainable totals
+                      </div>
+                      <div className="w-full rounded-full bg-gray-100 border border-gray-200 px-4 py-2 text-center text-sm font-semibold text-gray-900">
+                        Audit trail per change
+                      </div>
                     </div>
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => scrollToId("pricing")}
-                  className="w-full mt-6 bg-[#0f3c85] text-white px-6 py-3 rounded-lg font-semibold hover:opacity-95 transition focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
-                >
-                  View pricing
-                </button>
               </div>
             </div>
+
+            <div className="mt-10 grid md:grid-cols-3 gap-4">
+              {featureHighlights.map((feature, index) => (
+                <div key={index} className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 bg-blue-50 rounded-2xl flex items-center justify-center text-[#0f3c85]">
+                      {feature.icon}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">{feature.title}</p>
+                      <p className="text-gray-700 mt-1">{feature.description}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => scrollToId("pricing")}
+              className="w-full mt-6 bg-[#0f3c85] text-white px-6 py-3 rounded-lg font-semibold hover:opacity-95 transition focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
+            >
+              View pricing
+            </button>
           </div>
         </section>
 
@@ -1091,9 +1052,7 @@ export default function WageFlowLandingV2() {
                       Request a demo
                     </button>
 
-                    <p className="text-xs text-gray-600 text-center mt-3">
-                      Offer and billing go live soon. Buttons confirm instead of failing.
-                    </p>
+                    <p className="text-xs text-gray-600 text-center mt-3">Offer and billing go live soon. Buttons confirm instead of failing.</p>
                   </div>
                 );
               })}
@@ -1105,9 +1064,7 @@ export default function WageFlowLandingV2() {
                   <CreditCard className="w-5 h-5 text-[#0f3c85] mt-0.5" aria-hidden="true" />
                   <div>
                     <p className="font-semibold text-gray-900">Card-before-first-payroll policy</p>
-                    <p className="text-gray-700 mt-1">
-                      You can explore WageFlow without a card. To run your first live payroll, you add a card. Simple.
-                    </p>
+                    <p className="text-gray-700 mt-1">You can explore WageFlow without a card. To run your first live payroll, you add a card. Simple.</p>
                   </div>
                 </div>
               </div>
@@ -1158,16 +1115,14 @@ export default function WageFlowLandingV2() {
                 <div className="mt-5 space-y-3 text-sm text-gray-800">
                   <div className="flex items-center gap-2">
                     <Mail className="w-4 h-4 text-[#0f3c85]" aria-hidden="true" />
-                    <span>enquiries@thebusinessconsortiumltd.co.uk</span>
+                    <span>{CONTACT_EMAIL}</span>
                   </div>
                 </div>
               </div>
 
               <div className="bg-white border border-gray-200 rounded-2xl p-6 text-left">
                 <p className="font-semibold text-gray-900">Get 1st month free</p>
-                <p className="text-gray-700 mt-2">
-                  This offer goes live when billing is enabled. For now, the button confirms "Coming soon".
-                </p>
+                <p className="text-gray-700 mt-2">This offer goes live when billing is enabled. For now, the button confirms "Coming soon".</p>
 
                 <button
                   type="button"
@@ -1204,10 +1159,7 @@ export default function WageFlowLandingV2() {
               </button>
             </div>
 
-            <a
-              href="/"
-              className="inline-flex items-center justify-center gap-2 text-blue-50 hover:text-white transition mt-8"
-            >
+            <a href="/" className="inline-flex items-center justify-center gap-2 text-blue-50 hover:text-white transition mt-8">
               Back to The Business Consortium
               <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </a>
@@ -1221,18 +1173,12 @@ export default function WageFlowLandingV2() {
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center overflow-hidden">
-                  <Image
-                    src="/WageFlowLogo.png"
-                    alt="WageFlow logo"
-                    width={34}
-                    height={34}
-                    className="object-contain"
-                  />
+                  <Image src="/WageFlowLogo.png" alt="WageFlow logo" width={34} height={34} className="object-contain" />
                 </div>
                 <div className="text-2xl font-bold text-white">WageFlow</div>
               </div>
               <p className="text-sm text-gray-300 mb-4">UK payroll software built for speed, clarity, and clean workflows.</p>
-              
+
               <div className="text-xs text-gray-400 space-y-1 border-t border-gray-800 pt-4">
                 <p>The Business Consortium Ltd</p>
                 <p>Registered in England and Wales</p>
@@ -1316,9 +1262,7 @@ export default function WageFlowLandingV2() {
           </div>
 
           <div className="border-t border-gray-800 pt-8">
-            <p className="text-sm text-gray-400 text-center">
-              © {new Date().getFullYear()} The Business Consortium Ltd. All rights reserved.
-            </p>
+            <p className="text-sm text-gray-400 text-center">© {new Date().getFullYear()} The Business Consortium Ltd. All rights reserved.</p>
           </div>
         </div>
       </footer>
