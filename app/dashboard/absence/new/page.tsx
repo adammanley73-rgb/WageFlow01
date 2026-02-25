@@ -1,4 +1,4 @@
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\page.tsx
+// C:\Projects\wageflow01\app\dashboard\absence\new\page.tsx
 /* @ts-nocheck */
 
 import Link from "next/link";
@@ -111,6 +111,12 @@ export default function NewAbsenceHubPage() {
             title="Parental bereavement"
             description="SPBP calculation."
             href="/dashboard/absence/new/parental-bereavement"
+          />
+
+          <HubCard
+            title="Bereaved partner's paternity"
+            description="New right from April 2026. Unpaid by default. Recordkeeping."
+            href="/dashboard/absence/new/bereaved-partners-paternity"
           />
 
           <HubCard
