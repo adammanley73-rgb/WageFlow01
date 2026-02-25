@@ -1,9 +1,10 @@
-// C:\Users\adamm\Projects\wageflow01\app\api\absence\unpaid\route.ts
+// C:\Projects\wageflow01\app\api\absence\unpaid\route.ts
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function json(status: number, body: any) {
@@ -13,12 +14,16 @@ function json(status: number, body: any) {
   });
 }
 
+function getSupabaseUrl(): string {
+  return process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+}
+
 function getAdminClientOrThrow() {
-  const url = process.env.SUPABASE_URL;
+  const url = getSupabaseUrl();
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
-    throw new Error("Server config missing. SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set.");
+    throw new Error("Server config missing. SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) / SUPABASE_SERVICE_ROLE_KEY not set.");
   }
 
   return createClient(url, serviceKey, { auth: { persistSession: false } });
@@ -28,13 +33,23 @@ function isIsoDate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
 }
 
+function isOverlapError(err: any) {
+  const code = err?.code ? String(err.code) : "";
+  if (code === "23P01") return true;
+
+  const msg = err?.message ? String(err.message).toLowerCase() : "";
+  if (msg.includes("absences_no_overlap_per_employee")) return true;
+
+  return false;
+}
+
 export async function POST(req: Request) {
   let body: any = null;
 
   try {
     body = await req.json();
   } catch {
-    return json(400, { ok: false, message: "Invalid JSON body." });
+    return json(400, { ok: false, code: "INVALID_JSON", message: "Invalid JSON body." });
   }
 
   const cookieStore = await cookies();
@@ -44,23 +59,23 @@ export async function POST(req: Request) {
     "";
 
   if (!activeCompanyId) {
-    return json(400, { ok: false, message: "No active company selected." });
+    return json(400, { ok: false, code: "NO_COMPANY", message: "No active company selected." });
   }
 
   const employeeId = String(body?.employeeId || "").trim();
-  if (!employeeId) return json(400, { ok: false, message: "Missing employeeId." });
+  if (!employeeId) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Missing employeeId." });
 
   const startDate = String(body?.startDate || "").trim();
   const endDate = String(body?.endDate || "").trim();
 
-  if (!isIsoDate(startDate)) return json(400, { ok: false, message: "Start date is required." });
-  if (!isIsoDate(endDate)) return json(400, { ok: false, message: "End date is required." });
-  if (startDate > endDate) return json(400, { ok: false, message: "End date cannot be before start date." });
+  if (!isIsoDate(startDate)) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Start date is required." });
+  if (!isIsoDate(endDate)) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "End date is required." });
+  if (startDate > endDate) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "End date cannot be before start date." });
 
   const totalDaysRaw = String(body?.totalDays || "").trim();
   const totalDaysNum = Number(totalDaysRaw);
   if (!totalDaysRaw || !Number.isFinite(totalDaysNum) || totalDaysNum <= 0) {
-    return json(400, { ok: false, message: "Total days must be a positive number." });
+    return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Total days must be a positive number." });
   }
 
   const notesRaw = body?.notes ? String(body.notes) : "";
@@ -72,7 +87,7 @@ export async function POST(req: Request) {
   try {
     supabase = getAdminClientOrThrow();
   } catch (e: any) {
-    return json(500, { ok: false, message: e?.message || "Server config missing." });
+    return json(500, { ok: false, code: "SERVER_CONFIG_MISSING", message: e?.message || "Server config missing." });
   }
 
   const { data, error } = await supabase
@@ -93,7 +108,16 @@ export async function POST(req: Request) {
     .maybeSingle();
 
   if (error) {
-    return json(500, { ok: false, message: error.message || "Insert failed." });
+    if (isOverlapError(error)) {
+      return json(409, {
+        ok: false,
+        code: "ABSENCE_DATE_OVERLAP",
+        message:
+          "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
+      });
+    }
+
+    return json(500, { ok: false, code: "DB_ERROR", message: error.message || "Insert failed." });
   }
 
   return json(200, { ok: true, id: data?.id || null });
