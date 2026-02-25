@@ -105,17 +105,13 @@ export default function AbsenceListPage() {
 
       const next = Array.isArray(data?.items) ? data.items : [];
       setTypes(next);
-    } catch (e) {
+    } catch (_e) {
       setTypes([]);
       setTypesError("Could not load absence types.");
     }
   }
 
-  async function loadAbsences(filters?: {
-    employeeId?: string;
-    status?: string;
-    type?: string;
-  }) {
+  async function loadAbsences(filters?: { employeeId?: string; status?: string; type?: string }) {
     try {
       setLoading(true);
       setLoadError(null);
@@ -142,7 +138,7 @@ export default function AbsenceListPage() {
 
       const next = Array.isArray(data?.items) ? data.items : [];
       setItems(next);
-    } catch (e) {
+    } catch (_e) {
       setItems([]);
       setLoadError("Could not load absences.");
     } finally {
@@ -181,7 +177,7 @@ export default function AbsenceListPage() {
         const data = await res.json().catch(() => null);
         const employees: SearchEmployee[] = Array.isArray(data?.employees) ? data.employees : [];
         if (!cancelled) setSearchResults(employees);
-      } catch (e) {
+      } catch (_e) {
         if (!cancelled) {
           setSearchResults([]);
           setSearchError("Search failed. Check your connection.");
@@ -412,11 +408,6 @@ export default function AbsenceListPage() {
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div className="flex flex-col gap-2 text-xs text-neutral-500">
-            <div>Data source: /api/absence/list</div>
-            <div>Type labels: /api/absence/types</div>
           </div>
         </div>
       </div>
