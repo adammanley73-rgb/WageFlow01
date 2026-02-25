@@ -1,30 +1,39 @@
 ﻿/* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\api\absence\sickness\route.ts
+// C:\Projects\wageflow01\app\api\absence\sickness\route.ts
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function json(status: number, body: any) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
 function getSupabaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
-    ""
-  );
+  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
 }
 
 function getSupabaseKey(): string {
-  return (
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    ""
-  );
+  return process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 }
 
-function readChunkedCookieValue(
-  all: { name: string; value: string }[],
-  baseName: string
-): string | null {
+function isOverlapError(err: any) {
+  const code = err?.code ? String(err.code) : "";
+  if (code === "23P01") return true;
+
+  const msg = err?.message ? String(err.message).toLowerCase() : "";
+  if (msg.includes("absences_no_overlap_per_employee")) return true;
+
+  return false;
+}
+
+function readChunkedCookieValue(all: { name: string; value: string }[], baseName: string): string | null {
   const exact = all.find((c) => c.name === baseName);
   if (exact) return exact.value;
 
@@ -117,65 +126,48 @@ export async function POST(request: Request) {
     const referenceNotes = body?.reference_notes || null;
 
     if (!employeeId || !firstDay || !lastDayExpected) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "VALIDATION_ERROR",
-          message: "Employee, first day and expected last day are required.",
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Employee, first day and expected last day are required.",
+      });
     }
 
     if (lastDayExpected < firstDay) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "VALIDATION_ERROR",
-          message: "Expected last day cannot be earlier than the first day.",
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Expected last day cannot be earlier than the first day.",
+      });
     }
 
     if (lastDayActual && lastDayActual < firstDay) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "VALIDATION_ERROR",
-          message: "Actual last day cannot be earlier than the first day.",
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "Actual last day cannot be earlier than the first day.",
+      });
     }
 
     const cookieStore = await cookies();
     const companyId =
-      cookieStore.get("active_company_id")?.value ||
-      cookieStore.get("company_id")?.value ||
-      null;
+      cookieStore.get("active_company_id")?.value || cookieStore.get("company_id")?.value || null;
 
     if (!companyId) {
-      return NextResponse.json(
-        { ok: false, code: "NO_COMPANY", message: "No active company selected." },
-        { status: 400 }
-      );
+      return json(400, { ok: false, code: "NO_COMPANY", message: "No active company selected." });
     }
 
     const supabase = await createSupabaseRequestClient();
 
     const { data: rows, error: rowsError } = await supabase
       .from("absences")
-      .select("id, first_day, last_day_expected, last_day_actual")
+      .select("id, status, first_day, last_day_expected, last_day_actual")
       .eq("company_id", companyId)
-      .eq("employee_id", employeeId);
+      .eq("employee_id", employeeId)
+      .neq("status", "cancelled");
 
     if (rowsError) {
-      console.error("Sickness create overlap DB error:", rowsError);
-      return NextResponse.json(
-        { ok: false, code: "DB_ERROR", message: "Could not check existing absences." },
-        { status: 500 }
-      );
+      return json(500, { ok: false, code: "DB_ERROR", message: "Could not check existing absences." });
     }
 
     const newStart = firstDay;
@@ -188,27 +180,25 @@ export async function POST(request: Request) {
           const end = row.last_day_actual || row.last_day_expected || row.first_day;
           const overlaps = newStart <= end && newEnd >= start;
           if (!overlaps) return null;
-
           return { id: row.id, startDate: start, endDate: end };
         })
         .filter(Boolean) || [];
 
     if (conflicts.length > 0) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "ABSENCE_DATE_OVERLAP",
-          message: "These dates would overlap another existing absence.",
-          conflicts,
-        },
-        { status: 409 }
-      );
+      return json(409, {
+        ok: false,
+        code: "ABSENCE_DATE_OVERLAP",
+        message:
+          "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
+        conflicts,
+      });
     }
 
     const insertPayload = {
       company_id: companyId,
       employee_id: employeeId,
       type: "sickness",
+      status: "draft",
       first_day: firstDay,
       last_day_expected: lastDayExpected,
       last_day_actual: lastDayActual,
@@ -218,27 +208,29 @@ export async function POST(request: Request) {
     const { error: insertError } = await supabase.from("absences").insert(insertPayload);
 
     if (insertError) {
-      console.error("Insert sickness absence error:", insertError);
-      return NextResponse.json(
-        {
+      if (isOverlapError(insertError)) {
+        return json(409, {
           ok: false,
-          code: "DB_ERROR",
-          message: "Could not create sickness absence. Please try again.",
-        },
-        { status: 500 }
-      );
+          code: "ABSENCE_DATE_OVERLAP",
+          message:
+            "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
+          conflicts: [],
+        });
+      }
+
+      return json(500, {
+        ok: false,
+        code: "DB_ERROR",
+        message: "Could not create sickness absence. Please try again.",
+      });
     }
 
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error("Unexpected error creating sickness absence:", err);
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "UNEXPECTED_ERROR",
-        message: "Unexpected error while saving this sickness absence.",
-      },
-      { status: 500 }
-    );
+    return json(200, { ok: true });
+  } catch (_err) {
+    return json(500, {
+      ok: false,
+      code: "UNEXPECTED_ERROR",
+      message: "Unexpected error while saving this sickness absence.",
+    });
   }
 }

@@ -1,11 +1,21 @@
-// C:\Users\adamm\Projects\wageflow01\app\api\absence\maternity\route.ts
+// C:\Projects\wageflow01\app\api\absence\maternity\route.ts
 // @ts-nocheck
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function json(status: number, body: any) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
 function createAdminClient() {
-  const url = process.env.SUPABASE_URL;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
@@ -15,6 +25,16 @@ function createAdminClient() {
   return createClient(url, serviceKey, {
     auth: { persistSession: false },
   });
+}
+
+function isOverlapError(err: any) {
+  const code = err?.code ? String(err.code) : "";
+  if (code === "23P01") return true;
+
+  const msg = err?.message ? String(err.message).toLowerCase() : "";
+  if (msg.includes("absences_no_overlap_per_employee")) return true;
+
+  return false;
 }
 
 /**
@@ -46,7 +66,6 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // Be tolerant about field names coming from the wizard
     const rawEmployeeId = body?.employeeId ?? body?.employee_id ?? null;
     const rawStartDate = body?.startDate ?? body?.first_day ?? null;
     const rawEndDate = body?.endDate ?? body?.last_day_expected ?? null;
@@ -54,35 +73,27 @@ export async function POST(req: Request) {
     const rawCompanyId = body?.companyId ?? body?.company_id ?? null;
     const rawEwcDate = body?.ewcDate ?? body?.ewc_date ?? null;
 
-    const employeeId = typeof rawEmployeeId === "string" ? rawEmployeeId : null;
-    const startDate = typeof rawStartDate === "string" ? rawStartDate : null;
-    const endDate = typeof rawEndDate === "string" ? rawEndDate : null;
-    let companyId = typeof rawCompanyId === "string" ? rawCompanyId : null;
+    const employeeId = typeof rawEmployeeId === "string" ? rawEmployeeId.trim() : "";
+    const startDate = typeof rawStartDate === "string" ? rawStartDate.trim() : "";
+    const endDate = typeof rawEndDate === "string" ? rawEndDate.trim() : "";
+    let companyId = typeof rawCompanyId === "string" ? rawCompanyId.trim() : "";
 
     if (!employeeId || !startDate || !endDate) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "MISSING_FIELDS",
-          message:
-            "employeeId, startDate and endDate are required for maternity absence.",
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "employeeId, startDate and endDate are required for maternity absence.",
+      });
     }
 
     if (endDate < startDate) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "INVALID_DATES",
-          message: "endDate must be on or after startDate.",
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message: "endDate must be on or after startDate.",
+      });
     }
 
-    // 1) Load employee to confirm it exists and get company_id if needed
     const { data: employeeRow, error: employeeError } = await supabase
       .from("employees")
       .select("id, company_id")
@@ -90,60 +101,36 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (employeeError || !employeeRow) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "EMPLOYEE_NOT_FOUND",
-          message:
-            "Employee could not be loaded for maternity absence creation.",
-          db: employeeError ?? null,
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "EMPLOYEE_NOT_FOUND",
+        message: "Employee could not be loaded for maternity absence creation.",
+        db: employeeError ?? null,
+      });
     }
 
     if (!companyId) {
-      companyId =
-        typeof employeeRow.company_id === "string"
-          ? employeeRow.company_id
-          : null;
+      companyId = typeof employeeRow.company_id === "string" ? employeeRow.company_id : "";
     }
 
     if (!companyId) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "COMPANY_ID_MISSING",
-          message:
-            "Company could not be determined for this maternity absence record.",
-        },
-        { status: 400 }
-      );
+      return json(400, {
+        ok: false,
+        code: "COMPANY_ID_MISSING",
+        message: "Company could not be determined for this maternity absence record.",
+      });
     }
 
-    // Prepare reference notes: include EWC in text if provided
     let referenceNotes: string | null = null;
-    const baseNotes =
-      typeof rawNotes === "string" && rawNotes.trim().length > 0
-        ? rawNotes.trim()
-        : "";
 
-    const ewcText =
-      typeof rawEwcDate === "string" && rawEwcDate.trim().length > 0
-        ? `EWC: ${rawEwcDate.trim()}`
-        : "";
+    const baseNotes = typeof rawNotes === "string" && rawNotes.trim().length > 0 ? rawNotes.trim() : "";
+    const ewcText = typeof rawEwcDate === "string" && rawEwcDate.trim().length > 0 ? `EWC: ${rawEwcDate.trim()}` : "";
 
-    if (baseNotes && ewcText) {
-      referenceNotes = `${baseNotes} | ${ewcText}`;
-    } else if (baseNotes) {
-      referenceNotes = baseNotes;
-    } else if (ewcText) {
-      referenceNotes = ewcText;
-    } else {
-      referenceNotes = null;
-    }
+    if (baseNotes && ewcText) referenceNotes = `${baseNotes} | ${ewcText}`;
+    else if (baseNotes) referenceNotes = baseNotes;
+    else if (ewcText) referenceNotes = ewcText;
+    else referenceNotes = null;
 
-    // 2) Insert the absence row (type = maternity, status = draft)
     const { data: insertedAbsence, error: absenceError } = await supabase
       .from("absences")
       .insert({
@@ -156,44 +143,42 @@ export async function POST(req: Request) {
         last_day_actual: null,
         reference_notes: referenceNotes,
       })
-      .select(
-        "id, company_id, employee_id, type, status, first_day, last_day_expected, last_day_actual"
-      )
+      .select("id, company_id, employee_id, type, status, first_day, last_day_expected, last_day_actual")
       .single();
 
     if (absenceError || !insertedAbsence) {
-      return NextResponse.json(
-        {
+      if (isOverlapError(absenceError)) {
+        return json(409, {
           ok: false,
-          error: "FAILED_TO_CREATE_ABSENCE",
-          message: "Failed to save maternity absence record.",
-          db: absenceError ?? null,
-        },
-        { status: 500 }
-      );
+          code: "ABSENCE_DATE_OVERLAP",
+          message:
+            "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
+        });
+      }
+
+      return json(500, {
+        ok: false,
+        code: "FAILED_TO_CREATE_ABSENCE",
+        message: "Failed to save maternity absence record.",
+        db: absenceError ?? null,
+      });
     }
 
     const absenceId: string = insertedAbsence.id;
 
-    return NextResponse.json(
-      {
-        ok: true,
-        absenceId,
-        companyId,
-        employeeId,
-      },
-      { status: 200 }
-    );
+    return json(200, {
+      ok: true,
+      absenceId,
+      companyId,
+      employeeId,
+    });
   } catch (err: any) {
     console.error("absence/maternity POST unexpected error", err);
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "UNEXPECTED_ERROR",
-        message: "Unexpected failure while saving maternity absence.",
-        details: err?.message ?? String(err),
-      },
-      { status: 500 }
-    );
+    return json(500, {
+      ok: false,
+      code: "UNEXPECTED_ERROR",
+      message: "Unexpected failure while saving maternity absence.",
+      details: err?.message ?? String(err),
+    });
   }
 }
