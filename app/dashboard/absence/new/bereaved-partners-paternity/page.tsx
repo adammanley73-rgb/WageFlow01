@@ -154,10 +154,7 @@ export default function BereavedPartnersPaternityWizardPage() {
 
       if (!res.ok || data?.ok === false) {
         const code = data?.code || "";
-        const msg =
-          data?.message ||
-          data?.error ||
-          "The server could not save this record.";
+        const msg = data?.message || data?.error || "The server could not save this record.";
 
         if (code === "ABSENCE_DATE_OVERLAP") {
           alert("Dates overlap an existing absence for this employee.\n\nChange the dates or cancel the other absence.");
@@ -169,8 +166,16 @@ export default function BereavedPartnersPaternityWizardPage() {
         return;
       }
 
-      alert("Bereaved partner's paternity leave recorded. It now appears in the Absence list.");
-      router.push("/dashboard/absence");
+      const newId = String(data?.id || data?.absenceId || "").trim();
+
+      if (newId) {
+        alert("Saved. Opening the record.");
+        router.push(`/dashboard/absence/${newId}`);
+        return;
+      }
+
+      alert("Saved. It now appears in the Absence list.");
+      router.push("/dashboard/absence/list");
     } catch (err) {
       console.error("Bereaved partner's paternity wizard error", err);
       alert("Something went wrong saving the form.");
@@ -205,9 +210,7 @@ export default function BereavedPartnersPaternityWizardPage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-neutral-700">
-                  Employee name
-                </label>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">Employee name</label>
 
                 <div className="relative">
                   <input
@@ -221,13 +224,9 @@ export default function BereavedPartnersPaternityWizardPage() {
                     placeholder="Start typing the employee name"
                   />
 
-                  {errors.employeeName ? (
-                    <p className="mt-1 text-xs text-red-600">{errors.employeeName}</p>
-                  ) : null}
+                  {errors.employeeName ? <p className="mt-1 text-xs text-red-600">{errors.employeeName}</p> : null}
 
-                  {searching ? (
-                    <p className="mt-1 text-xs text-neutral-600">Searching...</p>
-                  ) : null}
+                  {searching ? <p className="mt-1 text-xs text-neutral-600">Searching...</p> : null}
 
                   {searchResults.length > 0 ? (
                     <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-neutral-300 bg-white shadow-lg">
@@ -241,9 +240,7 @@ export default function BereavedPartnersPaternityWizardPage() {
                         >
                           <div className="font-medium">{emp.name}</div>
                           <div className="text-[11px] text-neutral-600">
-                            {emp.employeeNumber
-                              ? `Employee no: ${emp.employeeNumber}`
-                              : "No employee number set"}
+                            {emp.employeeNumber ? `Employee no: ${emp.employeeNumber}` : "No employee number set"}
                           </div>
                         </button>
                       ))}
@@ -253,9 +250,7 @@ export default function BereavedPartnersPaternityWizardPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-neutral-700">
-                  Employee number (optional)
-                </label>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">Employee number (optional)</label>
                 <input
                   type="text"
                   value={form.employeeNumber}
@@ -272,33 +267,25 @@ export default function BereavedPartnersPaternityWizardPage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-neutral-700">
-                  Start date
-                </label>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">Start date</label>
                 <input
                   type="date"
                   value={form.startDate}
                   onChange={(e) => updateField("startDate", e.target.value)}
                   className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
-                {errors.startDate ? (
-                  <p className="mt-1 text-xs text-red-600">{errors.startDate}</p>
-                ) : null}
+                {errors.startDate ? <p className="mt-1 text-xs text-red-600">{errors.startDate}</p> : null}
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-neutral-700">
-                  End date
-                </label>
+                <label className="mb-1 block text-sm font-medium text-neutral-700">End date</label>
                 <input
                   type="date"
                   value={form.endDate}
                   onChange={(e) => updateField("endDate", e.target.value)}
                   className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
-                {errors.endDate ? (
-                  <p className="mt-1 text-xs text-red-600">{errors.endDate}</p>
-                ) : null}
+                {errors.endDate ? <p className="mt-1 text-xs text-red-600">{errors.endDate}</p> : null}
               </div>
             </div>
           </section>
@@ -307,9 +294,7 @@ export default function BereavedPartnersPaternityWizardPage() {
             <h2 className="text-base font-semibold text-neutral-900">Notes and context</h2>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-neutral-700">
-                Notes (optional)
-              </label>
+              <label className="mb-1 block text-sm font-medium text-neutral-700">Notes (optional)</label>
               <textarea
                 value={form.notes}
                 onChange={(e) => updateField("notes", e.target.value)}
