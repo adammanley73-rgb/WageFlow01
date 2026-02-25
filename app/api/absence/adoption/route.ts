@@ -52,13 +52,11 @@ function isOverlapError(err: any) {
  *
  * Behaviour:
  * - Inserts an `absences` row with:
- *   type = "adoption_leave"
+ *   type = "adoption"
  *   status = "draft"
  *   first_day = startDate
  *   last_day_expected = endDate
  * - Stores placement date + notes in reference_notes (lightweight v1).
- *
- * Statutory Adoption Pay scheduling is intentionally not created here yet.
  */
 
 export async function POST(req: Request) {
@@ -124,14 +122,15 @@ export async function POST(req: Request) {
     }
 
     const notesText = typeof rawNotes === "string" ? rawNotes.trim() : "";
-    const combinedNotes = notesText.length > 0 ? `${notesText}\n\nPlacement date: ${placementDate}` : `Placement date: ${placementDate}`;
+    const combinedNotes =
+      notesText.length > 0 ? `${notesText}\n\nPlacement date: ${placementDate}` : `Placement date: ${placementDate}`;
 
     const { data: insertedAbsence, error: absenceError } = await supabase
       .from("absences")
       .insert({
         company_id: companyId,
         employee_id: employeeId,
-        type: "adoption_leave",
+        type: "adoption",
         status: "draft",
         first_day: startDate,
         last_day_expected: endDate,
@@ -154,7 +153,7 @@ export async function POST(req: Request) {
       return json(500, {
         ok: false,
         code: "FAILED_TO_CREATE_ABSENCE",
-        message: "Failed to save adoption leave record.",
+        message: "Failed to save adoption record.",
         db: absenceError ?? null,
       });
     }
@@ -165,7 +164,7 @@ export async function POST(req: Request) {
     return json(500, {
       ok: false,
       code: "UNEXPECTED_ERROR",
-      message: "Unexpected failure while saving adoption leave.",
+      message: "Unexpected failure while saving adoption absence.",
       details: err?.message ?? String(err),
     });
   }
