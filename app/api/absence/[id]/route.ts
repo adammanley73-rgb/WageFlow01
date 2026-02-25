@@ -13,12 +13,24 @@ function json(status: number, body: unknown) {
   });
 }
 
+function isOverlapError(err: any) {
+  const code = err?.code ? String(err.code) : "";
+  if (code === "23P01") return true;
+
+  const msg = err?.message ? String(err.message).toLowerCase() : "";
+  if (msg.includes("absences_no_overlap_per_employee")) return true;
+
+  return false;
+}
+
 function getSupabaseAdminClientOrThrow() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
-    throw new Error("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY are not set on the server.");
+    throw new Error(
+      "SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY are not set on the server."
+    );
   }
 
   return createClient(url, serviceKey, {
@@ -187,6 +199,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .eq("company_id", companyId)
       .eq("employee_id", current.employee_id)
       .neq("id", absenceId)
+      .neq("status", "cancelled")
       .returns<AbsenceOverlapRow[]>();
 
     if (rowsError) {
@@ -212,7 +225,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return json(409, {
         ok: false,
         code: "ABSENCE_DATE_OVERLAP",
-        message: "These dates would overlap another existing absence.",
+        message:
+          "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
         conflicts,
       });
     }
@@ -231,6 +245,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .eq("id", absenceId);
 
     if (updateError) {
+      if (isOverlapError(updateError)) {
+        return json(409, {
+          ok: false,
+          code: "ABSENCE_DATE_OVERLAP",
+          message:
+            "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
+          conflicts: [],
+        });
+      }
+
       console.error("Update absence error:", updateError);
       return json(500, { ok: false, code: "DB_ERROR", message: "Could not update this absence. Please try again." });
     }
@@ -258,12 +282,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
     const supabase = getSupabaseAdminClientOrThrow();
 
-    const { data, error } = await supabase
-      .from("absences")
-      .delete()
-      .eq("id", absenceId)
-      .eq("company_id", companyId)
-      .select("id");
+    const { data, error } = await supabase.from("absences").delete().eq("id", absenceId).eq("company_id", companyId).select("id");
 
     if (error) {
       console.error("Delete absence error:", error);
