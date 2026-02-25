@@ -1,4 +1,4 @@
-/* @ts-nocheck */
+﻿/* @ts-nocheck */
 // C:\Projects\wageflow01\app\api\absence\types\route.ts
 
 import { NextResponse } from "next/server";
@@ -12,8 +12,6 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "absence/types disabled on preview" }, { status: 404 });
   }
 
-  // API-driven list so the UI does not need hardcoded types.
-  // Keep this aligned with the DB constraint (absences_type_check).
   const items = [
     {
       code: "annual_leave",
@@ -81,7 +79,7 @@ export async function GET() {
     },
     {
       code: "bereaved_partners_paternity",
-      label: "Bereaved partner’s paternity leave",
+      label: "Bereaved partner's paternity leave",
       endpoint: "/api/absence/bereaved-partners-paternity",
       category: "bereavement",
       paid_default: false,
