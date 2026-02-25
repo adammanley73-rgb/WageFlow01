@@ -52,8 +52,7 @@ function isOverlapError(err: any) {
  * }
  *
  * Behaviour:
- * - Inserts an `absences` row with type = "paternity_leave", status = "draft".
- * - Does not create pay schedules yet (handled in statutory pay phase).
+ * - Inserts an `absences` row with type = "paternity", status = "draft".
  */
 export async function POST(req: Request) {
   const supabase = createAdminClient();
@@ -74,29 +73,17 @@ export async function POST(req: Request) {
     let companyId = typeof rawCompanyId === "string" ? rawCompanyId.trim() : "";
 
     if (!employeeId || !startDate || !endDate) {
-      return json(400, {
-        ok: false,
-        code: "VALIDATION_ERROR",
-        message: "employeeId, startDate, and endDate are required.",
-      });
+      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "employeeId, startDate, and endDate are required." });
     }
 
     if (endDate < startDate) {
-      return json(400, {
-        ok: false,
-        code: "VALIDATION_ERROR",
-        message: "endDate must be on or after startDate.",
-      });
+      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "endDate must be on or after startDate." });
     }
 
     if (rawWeeks != null) {
       const n = Number(rawWeeks);
       if (!Number.isFinite(n) || n <= 0) {
-        return json(400, {
-          ok: false,
-          code: "VALIDATION_ERROR",
-          message: "weeksOfLeave must be a positive number.",
-        });
+        return json(400, { ok: false, code: "VALIDATION_ERROR", message: "weeksOfLeave must be a positive number." });
       }
     }
 
@@ -107,12 +94,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (employeeError || !employeeRow) {
-      return json(400, {
-        ok: false,
-        code: "EMPLOYEE_NOT_FOUND",
-        message: "Employee could not be loaded for paternity leave.",
-        db: employeeError ?? null,
-      });
+      return json(400, { ok: false, code: "EMPLOYEE_NOT_FOUND", message: "Employee could not be loaded for paternity.", db: employeeError ?? null });
     }
 
     if (!companyId) {
@@ -120,11 +102,7 @@ export async function POST(req: Request) {
     }
 
     if (!companyId) {
-      return json(400, {
-        ok: false,
-        code: "COMPANY_ID_MISSING",
-        message: "Company could not be determined for this record.",
-      });
+      return json(400, { ok: false, code: "COMPANY_ID_MISSING", message: "Company could not be determined for this record." });
     }
 
     const notesText = typeof rawNotes === "string" ? rawNotes.trim() : "";
@@ -134,14 +112,14 @@ export async function POST(req: Request) {
       .insert({
         company_id: companyId,
         employee_id: employeeId,
-        type: "paternity_leave",
+        type: "paternity",
         status: "draft",
         first_day: startDate,
         last_day_expected: endDate,
         last_day_actual: null,
         reference_notes: notesText.length > 0 ? notesText : null,
       })
-      .select("id, company_id, employee_id, type, status, first_day, last_day_expected, last_day_actual")
+      .select("id")
       .single();
 
     if (absenceError || !insertedAbsence) {
@@ -149,27 +127,16 @@ export async function POST(req: Request) {
         return json(409, {
           ok: false,
           code: "ABSENCE_DATE_OVERLAP",
-          message:
-            "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
+          message: "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
         });
       }
 
-      return json(500, {
-        ok: false,
-        code: "FAILED_TO_CREATE_ABSENCE",
-        message: "Failed to save paternity leave record.",
-        db: absenceError ?? null,
-      });
+      return json(500, { ok: false, code: "FAILED_TO_CREATE_ABSENCE", message: "Failed to save paternity record.", db: absenceError ?? null });
     }
 
     return json(200, { ok: true, absenceId: insertedAbsence.id });
   } catch (err: any) {
     console.error("absence/paternity POST unexpected error", err);
-    return json(500, {
-      ok: false,
-      code: "UNEXPECTED_ERROR",
-      message: "Unexpected failure while saving paternity leave.",
-      details: err?.message ?? String(err),
-    });
+    return json(500, { ok: false, code: "UNEXPECTED_ERROR", message: "Unexpected failure while saving paternity.", details: err?.message ?? String(err) });
   }
 }

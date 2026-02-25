@@ -43,25 +43,16 @@ function isOverlapError(err: any) {
  * Expected body (v1 wizard):
  * {
  *   employeeId: string,
- *   employeeName?: string,
- *   employeeNumber?: string,
  *   startDate: string,     // "YYYY-MM-DD"
  *   endDate: string,       // "YYYY-MM-DD"
  *   childArrivalDate?: string,
  *   notes?: string,
- *   companyId?: string     // optional, can be derived from employee
+ *   companyId?: string
  * }
  *
  * Behaviour:
- * - Inserts an `absences` row with type = "shared_parental_leave", status = "draft".
- * - Stores first_day / last_day_expected using the provided dates.
- * - Stores notes in reference_notes.
- *
- * V1 scope:
- * - Recordkeeping + UI flow completion.
- * - ShPP scheduling and calculation will be added once statutory flows are stabilised.
+ * - Inserts an `absences` row with type = "shared_parental", status = "draft".
  */
-
 export async function POST(req: Request) {
   const supabase = createAdminClient();
 
@@ -81,19 +72,11 @@ export async function POST(req: Request) {
     let companyId = typeof rawCompanyId === "string" ? rawCompanyId.trim() : "";
 
     if (!employeeId || !startDate || !endDate) {
-      return json(400, {
-        ok: false,
-        code: "VALIDATION_ERROR",
-        message: "employeeId, startDate, and endDate are required.",
-      });
+      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "employeeId, startDate, and endDate are required." });
     }
 
     if (endDate < startDate) {
-      return json(400, {
-        ok: false,
-        code: "VALIDATION_ERROR",
-        message: "endDate must be on or after startDate.",
-      });
+      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "endDate must be on or after startDate." });
     }
 
     const { data: employeeRow, error: employeeError } = await supabase
@@ -103,12 +86,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (employeeError || !employeeRow) {
-      return json(400, {
-        ok: false,
-        code: "EMPLOYEE_NOT_FOUND",
-        message: "Employee could not be loaded for shared parental leave creation.",
-        db: employeeError ?? null,
-      });
+      return json(400, { ok: false, code: "EMPLOYEE_NOT_FOUND", message: "Employee could not be loaded for shared parental.", db: employeeError ?? null });
     }
 
     if (!companyId) {
@@ -116,11 +94,7 @@ export async function POST(req: Request) {
     }
 
     if (!companyId) {
-      return json(400, {
-        ok: false,
-        code: "COMPANY_ID_MISSING",
-        message: "Company could not be determined for this shared parental leave record.",
-      });
+      return json(400, { ok: false, code: "COMPANY_ID_MISSING", message: "Company could not be determined for this record." });
     }
 
     const notesText = typeof rawNotes === "string" ? rawNotes.trim() : "";
@@ -128,21 +102,19 @@ export async function POST(req: Request) {
     const insertPayload: any = {
       company_id: companyId,
       employee_id: employeeId,
-      type: "shared_parental_leave",
+      type: "shared_parental",
       status: "draft",
       first_day: startDate,
       last_day_expected: endDate,
       last_day_actual: null,
       reference_notes: notesText.length > 0 ? notesText : null,
-      source_meta: rawChildArrival
-        ? { childArrivalDate: rawChildArrival, source: "shared_parental_wizard_v1" }
-        : { source: "shared_parental_wizard_v1" },
+      source_meta: rawChildArrival ? { childArrivalDate: rawChildArrival, source: "shared_parental_wizard_v1" } : { source: "shared_parental_wizard_v1" },
     };
 
     const { data: insertedAbsence, error: absenceError } = await supabase
       .from("absences")
       .insert(insertPayload)
-      .select("id, company_id, employee_id, type, status, first_day, last_day_expected")
+      .select("id")
       .single();
 
     if (absenceError || !insertedAbsence) {
@@ -150,27 +122,16 @@ export async function POST(req: Request) {
         return json(409, {
           ok: false,
           code: "ABSENCE_DATE_OVERLAP",
-          message:
-            "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
+          message: "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
         });
       }
 
-      return json(500, {
-        ok: false,
-        code: "FAILED_TO_CREATE_ABSENCE",
-        message: "Failed to save shared parental leave record.",
-        db: absenceError ?? null,
-      });
+      return json(500, { ok: false, code: "FAILED_TO_CREATE_ABSENCE", message: "Failed to save shared parental record.", db: absenceError ?? null });
     }
 
     return json(200, { ok: true, absenceId: insertedAbsence.id });
   } catch (err: any) {
     console.error("absence/shared-parental POST unexpected error", err);
-    return json(500, {
-      ok: false,
-      code: "UNEXPECTED_ERROR",
-      message: "Unexpected failure while saving shared parental leave.",
-      details: err?.message ?? String(err),
-    });
+    return json(500, { ok: false, code: "UNEXPECTED_ERROR", message: "Unexpected failure while saving shared parental.", details: err?.message ?? String(err) });
   }
 }
