@@ -413,11 +413,6 @@ export default function AbsenceListPage() {
               </table>
             </div>
           </div>
-
-          <div className="flex flex-col gap-2 text-xs text-neutral-500">
-            <div>Data source: /api/absence/list</div>
-            <div>Type labels: /api/absence/types</div>
-          </div>
         </div>
       </div>
     </PageTemplate>
