@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,17 +14,10 @@ function json(status: number, body: any) {
   });
 }
 
-function createAdminClient() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error("absence/adoption route: missing Supabase env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
+function statusFromErr(err: any, fallback = 500): number {
+  const s = Number(err?.status);
+  if (s === 400 || s === 401 || s === 403 || s === 404 || s === 409) return s;
+  return fallback;
 }
 
 function isOverlapError(err: any) {
@@ -58,9 +51,13 @@ function isOverlapError(err: any) {
  *   last_day_expected = endDate
  * - Stores placement date + notes in reference_notes (lightweight v1).
  */
-
 export async function POST(req: Request) {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
+
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return json(401, { ok: false, code: "UNAUTHENTICATED", message: "Sign in required." });
+  }
 
   try {
     const body = await req.json();
@@ -100,12 +97,20 @@ export async function POST(req: Request) {
       .eq("id", employeeId)
       .maybeSingle();
 
-    if (employeeError || !employeeRow) {
-      return json(400, {
+    if (employeeError) {
+      return json(statusFromErr(employeeError), {
+        ok: false,
+        code: "EMPLOYEE_LOAD_FAILED",
+        message: "Employee could not be loaded for adoption leave.",
+        details: employeeError.message,
+      });
+    }
+
+    if (!employeeRow?.id || !employeeRow?.company_id) {
+      return json(404, {
         ok: false,
         code: "EMPLOYEE_NOT_FOUND",
         message: "Employee could not be loaded for adoption leave.",
-        db: employeeError ?? null,
       });
     }
 
@@ -118,6 +123,15 @@ export async function POST(req: Request) {
         ok: false,
         code: "COMPANY_ID_MISSING",
         message: "Company could not be determined for this record.",
+      });
+    }
+
+    // If a companyId was supplied, enforce it matches the employee's company
+    if (companyId && String(employeeRow.company_id) !== String(companyId)) {
+      return json(403, {
+        ok: false,
+        code: "EMPLOYEE_NOT_IN_COMPANY",
+        message: "Employee does not belong to the active company.",
       });
     }
 
@@ -137,7 +151,7 @@ export async function POST(req: Request) {
         last_day_actual: null,
         reference_notes: combinedNotes,
       })
-      .select("id, company_id, employee_id, type, status, first_day, last_day_expected, last_day_actual")
+      .select("id")
       .single();
 
     if (absenceError || !insertedAbsence) {
@@ -150,17 +164,16 @@ export async function POST(req: Request) {
         });
       }
 
-      return json(500, {
+      return json(statusFromErr(absenceError), {
         ok: false,
         code: "FAILED_TO_CREATE_ABSENCE",
         message: "Failed to save adoption record.",
-        db: absenceError ?? null,
+        details: absenceError?.message ?? null,
       });
     }
 
     return json(200, { ok: true, absenceId: insertedAbsence.id });
   } catch (err: any) {
-    console.error("absence/adoption POST unexpected error", err);
     return json(500, {
       ok: false,
       code: "UNEXPECTED_ERROR",
