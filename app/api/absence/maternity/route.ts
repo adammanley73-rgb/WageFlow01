@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,17 +14,10 @@ function json(status: number, body: any) {
   });
 }
 
-function createAdminClient() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error("absence/maternity route: missing Supabase env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
+function statusFromErr(err: any, fallback = 500): number {
+  const s = Number(err?.status);
+  if (s === 400 || s === 401 || s === 403 || s === 404 || s === 409) return s;
+  return fallback;
 }
 
 function isOverlapError(err: any) {
@@ -59,9 +52,13 @@ function isOverlapError(err: any) {
  * - Use companies.id for company_id.
  * - Any UI "employee id" display value is NOT used for foreign keys.
  */
-
 export async function POST(req: Request) {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
+
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return json(401, { ok: false, code: "UNAUTHENTICATED", message: "Sign in required." });
+  }
 
   try {
     const body = await req.json();
@@ -100,12 +97,20 @@ export async function POST(req: Request) {
       .eq("id", employeeId)
       .maybeSingle();
 
-    if (employeeError || !employeeRow) {
-      return json(400, {
+    if (employeeError) {
+      return json(statusFromErr(employeeError), {
+        ok: false,
+        code: "EMPLOYEE_LOAD_FAILED",
+        message: "Employee could not be loaded for maternity absence creation.",
+        details: employeeError.message,
+      });
+    }
+
+    if (!employeeRow?.id || !employeeRow?.company_id) {
+      return json(404, {
         ok: false,
         code: "EMPLOYEE_NOT_FOUND",
         message: "Employee could not be loaded for maternity absence creation.",
-        db: employeeError ?? null,
       });
     }
 
@@ -118,6 +123,14 @@ export async function POST(req: Request) {
         ok: false,
         code: "COMPANY_ID_MISSING",
         message: "Company could not be determined for this maternity absence record.",
+      });
+    }
+
+    if (companyId && String(employeeRow.company_id) !== String(companyId)) {
+      return json(403, {
+        ok: false,
+        code: "EMPLOYEE_NOT_IN_COMPANY",
+        message: "Employee does not belong to the active company.",
       });
     }
 
@@ -156,11 +169,11 @@ export async function POST(req: Request) {
         });
       }
 
-      return json(500, {
+      return json(statusFromErr(absenceError), {
         ok: false,
         code: "FAILED_TO_CREATE_ABSENCE",
         message: "Failed to save maternity absence record.",
-        db: absenceError ?? null,
+        details: absenceError?.message ?? null,
       });
     }
 
@@ -173,7 +186,6 @@ export async function POST(req: Request) {
       employeeId,
     });
   } catch (err: any) {
-    console.error("absence/maternity POST unexpected error", err);
     return json(500, {
       ok: false,
       code: "UNEXPECTED_ERROR",
