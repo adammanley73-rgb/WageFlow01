@@ -1,8 +1,8 @@
-// C:\Projects\wageflow01\app\api\absence\annual\route.ts
+﻿// C:\Projects\wageflow01\app\api\absence\annual\route.ts
 // @ts-nocheck
 
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 import { calculateHolidayPay } from "@/lib/payroll/holidayPay";
 
 export const runtime = "nodejs";
@@ -15,21 +15,10 @@ function json(status: number, body: any) {
   });
 }
 
-function getSupabaseUrl(): string {
-  return process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-}
-
-function createAdminClient() {
-  const url = getSupabaseUrl();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error("absence/annual route: missing Supabase env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
+function statusFromErr(err: any, fallback = 500): number {
+  const s = Number(err?.status);
+  if (s === 400 || s === 401 || s === 403 || s === 404 || s === 409) return s;
+  return fallback;
 }
 
 function isOverlapError(err: any) {
@@ -43,7 +32,12 @@ function isOverlapError(err: any) {
 }
 
 export async function POST(req: Request) {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
+
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return json(401, { ok: false, code: "UNAUTHENTICATED", message: "Sign in required." });
+  }
 
   try {
     const body = await req.json();
@@ -53,19 +47,17 @@ export async function POST(req: Request) {
     const rawEndDate = body?.endDate ?? body?.last_day_expected ?? null;
     const rawTotalDays = body?.totalDays ?? body?.days ?? body?.total_days ?? null;
     const rawNotes = body?.notes ?? body?.reference_notes ?? null;
-    const rawCompanyId = body?.companyId ?? body?.company_id ?? null;
 
     const employeeId = typeof rawEmployeeId === "string" ? rawEmployeeId.trim() : "";
     const startDate = typeof rawStartDate === "string" ? rawStartDate.trim() : "";
     const endDate = typeof rawEndDate === "string" ? rawEndDate.trim() : "";
     const totalDays = rawTotalDays;
-    let companyId = typeof rawCompanyId === "string" ? rawCompanyId.trim() : "";
 
     if (!employeeId || !startDate || !endDate || totalDays == null) {
       return json(400, {
         ok: false,
         code: "VALIDATION_ERROR",
-        message: "companyId, employeeId, startDate, endDate, and totalDays are required.",
+        message: "employeeId, startDate, endDate, and totalDays are required.",
       });
     }
 
@@ -92,26 +84,24 @@ export async function POST(req: Request) {
       .eq("id", employeeId)
       .maybeSingle();
 
-    if (employeeError || !employeeRow) {
-      return json(400, {
+    if (employeeError) {
+      return json(statusFromErr(employeeError), {
+        ok: false,
+        code: "EMPLOYEE_LOAD_FAILED",
+        message: "Failed to load employee.",
+        details: employeeError.message,
+      });
+    }
+
+    if (!employeeRow?.id || !employeeRow?.company_id) {
+      return json(404, {
         ok: false,
         code: "EMPLOYEE_NOT_FOUND",
         message: "Employee could not be loaded for annual leave calculation.",
-        db: employeeError ?? null,
       });
     }
 
-    if (!companyId) {
-      companyId = typeof employeeRow.company_id === "string" ? employeeRow.company_id : "";
-    }
-
-    if (!companyId) {
-      return json(400, {
-        ok: false,
-        code: "COMPANY_ID_MISSING",
-        message: "Company could not be determined for this annual leave record.",
-      });
-    }
+    const companyId = String(employeeRow.company_id);
 
     const { data: insertedAbsence, error: absenceError } = await supabase
       .from("absences")
@@ -138,11 +128,11 @@ export async function POST(req: Request) {
         });
       }
 
-      return json(500, {
+      return json(statusFromErr(absenceError), {
         ok: false,
         code: "FAILED_TO_CREATE_ABSENCE",
         message: "Failed to save annual leave record.",
-        db: absenceError ?? null,
+        details: absenceError?.message ?? null,
       });
     }
 
