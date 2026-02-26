@@ -1,9 +1,12 @@
-// C:\Users\adamm\Projects\wageflow01\app\api\counts\route.ts
+// C:\Projects\wageflow01\app\api\counts\route.ts
+
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type CountsResult = {
   employeeCount: number;
@@ -11,25 +14,34 @@ type CountsResult = {
   absenceRecordCount: number;
 };
 
-function createAdminClient() {
-  const url = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    console.error("counts api: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-    throw new Error("Missing Supabase admin env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: {
-      persistSession: false,
-    },
+function json(status: number, body: any) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
   });
 }
 
-async function getCountsForCompany(companyId: string): Promise<CountsResult> {
-  const supabase = createAdminClient();
+function isUuid(s: string) {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
+    s
+  );
+}
 
+async function getActiveCompanyId(): Promise<string | null> {
+  const jar = await cookies();
+  const raw =
+    jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+
+  if (!raw) return null;
+
+  const trimmed = String(raw).trim();
+  return isUuid(trimmed) ? trimmed : null;
+}
+
+async function getCountsForCompany(
+  supabase: any,
+  companyId: string
+): Promise<CountsResult> {
   const [employeesRes, payrollRunsRes, absencesRes] = await Promise.all([
     supabase
       .from("employees")
@@ -64,49 +76,61 @@ async function getCountsForCompany(companyId: string): Promise<CountsResult> {
 
 export async function GET() {
   try {
-    const jar = await cookies();
+    const supabase = await createClient();
 
-    const activeCompanyId =
-      jar.get("active_company_id")?.value ??
-      jar.get("company_id")?.value ??
-      null;
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
 
-    if (!activeCompanyId) {
-      // No company chosen yet; return zeroes but make it explicit
-      return NextResponse.json(
-        {
-          ok: true,
-          activeCompanyId: null,
-          reason: "NO_ACTIVE_COMPANY",
-          counts: {
-            employeeCount: 0,
-            payrollRunCount: 0,
-            absenceRecordCount: 0,
-          },
-        },
-        { status: 200 }
-      );
+    if (userErr || !user) {
+      return json(401, { ok: false, error: "NOT_AUTHENTICATED" });
     }
 
-    const counts = await getCountsForCompany(activeCompanyId);
+    const activeCompanyId = await getActiveCompanyId();
 
-    return NextResponse.json(
-      {
+    if (!activeCompanyId) {
+      return json(200, {
         ok: true,
-        activeCompanyId,
-        counts,
-      },
-      { status: 200 }
-    );
+        activeCompanyId: null,
+        reason: "NO_ACTIVE_COMPANY",
+        counts: {
+          employeeCount: 0,
+          payrollRunCount: 0,
+          absenceRecordCount: 0,
+        },
+      });
+    }
+
+    const { data: membership, error: membershipErr } = await supabase
+      .from("company_memberships")
+      .select("role")
+      .eq("company_id", activeCompanyId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (membershipErr) {
+      console.error("counts api: membership check error", membershipErr);
+      return json(403, { ok: false, error: "FORBIDDEN" });
+    }
+
+    if (!membership) {
+      return json(403, { ok: false, error: "NOT_A_MEMBER" });
+    }
+
+    const counts = await getCountsForCompany(supabase, activeCompanyId);
+
+    return json(200, {
+      ok: true,
+      activeCompanyId,
+      counts,
+    });
   } catch (err: any) {
     console.error("counts api: unhandled error", err);
 
-    return NextResponse.json(
-      {
-        ok: false,
-        error: err?.message ?? "Unknown error",
-      },
-      { status: 500 }
-    );
+    return json(500, {
+      ok: false,
+      error: err?.message ?? "Unknown error",
+    });
   }
 }

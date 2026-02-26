@@ -1,12 +1,19 @@
-/* @ts-nocheck */
-/* E:\Projects\wageflow01\app\api\payroll\[id]\route.ts */
+// C:\Projects\wageflow01\app\api\payroll\[id]\route.ts
 
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getServerSupabase } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+function json(status: number, body: any) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
 
 function pickFirst(...vals: any[]) {
   for (const v of vals) {
@@ -20,63 +27,170 @@ function pickFirst(...vals: any[]) {
 
 function toNumberSafe(v: any): number {
   const n =
-    typeof v === "number" ? v : parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
+    typeof v === "number"
+      ? v
+      : parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
 
 function isUuid(v: any): boolean {
   const s = String(v ?? "").trim();
   if (!s) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    s
+  );
 }
 
 function normalizeAction(v: any): string {
   return String(v ?? "").trim().toLowerCase();
 }
 
-function getAdminClient() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceRoleKey) {
-    throw new Error(
-      "Supabase admin env missing: SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY"
-    );
-  }
-
-  return createClient(url, serviceRoleKey, { auth: { persistSession: false } });
+function isStaffRole(role: string) {
+  return ["owner", "admin", "manager", "processor"].includes(
+    String(role || "").toLowerCase()
+  );
 }
 
-async function tryAttachments(supabase: any, runId: string) {
+function isApproveRole(role: string) {
+  return ["owner", "admin", "manager"].includes(String(role || "").toLowerCase());
+}
+
+async function requireUser() {
+  const supabase = await getServerSupabase();
+  const { data, error } = await supabase.auth.getUser();
+
+  const user = data?.user ?? null;
+  if (error || !user) {
+    return { ok: false as const, res: json(401, { ok: false, code: "UNAUTHENTICATED", message: "Sign in required." }) };
+  }
+
+  return { ok: true as const, supabase, user };
+}
+
+async function getRoleForCompany(
+  supabase: any,
+  companyId: string,
+  userId: string
+): Promise<{ ok: true; role: string } | { ok: false; res: Response }> {
+  const { data, error } = await supabase
+    .from("company_memberships")
+    .select("role")
+    .eq("company_id", companyId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    return {
+      ok: false,
+      res: json(500, {
+        ok: false,
+        code: "MEMBERSHIP_CHECK_FAILED",
+        message: "Could not validate company membership.",
+      }),
+    };
+  }
+
+  if (!data) {
+    return {
+      ok: false,
+      res: json(403, {
+        ok: false,
+        code: "FORBIDDEN",
+        message: "You do not have access to this company.",
+      }),
+    };
+  }
+
+  return { ok: true, role: String((data as any).role || "member") };
+}
+
+async function loadRun(supabase: any, runId: string) {
+  const { data, error } = await supabase
+    .from("payroll_runs")
+    .select("*")
+    .eq("id", runId)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false as const, status: 500, error: error.message };
+  }
+
+  if (!data) {
+    return { ok: false as const, status: 404, error: "Payroll run not found" };
+  }
+
+  return { ok: true as const, run: data as any };
+}
+
+async function loadAttachments(
+  supabase: any,
+  runId: string,
+  companyId: string
+) {
   const attempts: any[] = [];
 
-  const { data, error } = await supabase
+  // Prefer binding to company_id if the column exists
+  const a = await supabase
     .from("payroll_run_employees")
     .select("*")
-    .eq("run_id", runId);
+    .eq("run_id", runId)
+    .eq("company_id", companyId);
 
-  if (!error) {
+  if (!a.error) {
     return {
-      ok: true,
+      ok: true as const,
       tableUsed: "payroll_run_employees",
-      whereColumn: "run_id",
-      rows: Array.isArray(data) ? data : [],
+      whereColumn: "run_id,company_id",
+      rows: Array.isArray(a.data) ? a.data : [],
       attempts,
     };
   }
 
   attempts.push({
     table: "payroll_run_employees",
-    col: "run_id",
+    col: "run_id,company_id",
     error: {
-      code: error.code,
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
+      code: a.error.code,
+      message: a.error.message,
+      details: a.error.details,
+      hint: a.error.hint,
     },
   });
 
-  return { ok: false, tableUsed: null, whereColumn: null, rows: [], attempts };
+  // Fallback if company_id column does not exist
+  const msg = String(a.error.message || "").toLowerCase();
+  const missingCol =
+    a.error.code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
+
+  if (missingCol) {
+    const b = await supabase
+      .from("payroll_run_employees")
+      .select("*")
+      .eq("run_id", runId);
+
+    if (!b.error) {
+      return {
+        ok: true as const,
+        tableUsed: "payroll_run_employees",
+        whereColumn: "run_id",
+        rows: Array.isArray(b.data) ? b.data : [],
+        attempts,
+      };
+    }
+
+    attempts.push({
+      table: "payroll_run_employees",
+      col: "run_id",
+      error: {
+        code: b.error.code,
+        message: b.error.message,
+        details: b.error.details,
+        hint: b.error.hint,
+      },
+    });
+  }
+
+  return { ok: false as const, tableUsed: null, whereColumn: null, rows: [], attempts };
 }
 
 function buildEmployeeRow(att: any, emp: any) {
@@ -109,14 +223,14 @@ function buildEmployeeRow(att: any, emp: any) {
 
   const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
   const tax = toNumberSafe(pickFirst(att?.tax, 0));
-
-  const employeeNi = toNumberSafe(pickFirst(att?.ni_employee, att?.employee_ni, att?.employeeNi, 0));
+  const employeeNi = toNumberSafe(
+    pickFirst(att?.ni_employee, att?.employee_ni, att?.employeeNi, 0)
+  );
   const pensionEmployee = toNumberSafe(pickFirst(att?.pension_employee, 0));
   const otherDeductions = toNumberSafe(pickFirst(att?.other_deductions, 0));
   const aoe = toNumberSafe(pickFirst(att?.attachment_of_earnings, 0));
 
   const deductions = Number((tax + employeeNi + pensionEmployee + otherDeductions + aoe).toFixed(2));
-
   const net = toNumberSafe(pickFirst(att?.net_pay, att?.netPay, gross - deductions));
 
   const safeId = String(pickFirst(att?.id, "") || "");
@@ -140,7 +254,9 @@ function deriveSeededMode(run: any, attachments: any[]): boolean {
 
   const hasCalcMode = attachments.some((r: any) => r && typeof r === "object" && "calc_mode" in r);
   if (hasCalcMode) {
-    return attachments.some((r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) !== "full");
+    return attachments.some(
+      (r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) !== "full"
+    );
   }
 
   const runTax = toNumberSafe(pickFirst(run?.total_tax, 0));
@@ -188,47 +304,101 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
     const taxCode = pickFirst(emp?.tax_code, emp?.taxCode, emp?.taxcode, null);
     if (!taxCode) codes.push("MISSING_TAX_CODE");
 
-    const niCat = pickFirst(emp?.ni_category, emp?.niCategory, emp?.ni_cat, null);
+    const niCat = pickFirst(emp?.ni_category, emp?.niCategory, emp?.ni_cat, emp?.niCat, null);
     if (!niCat) codes.push("MISSING_NI_CATEGORY");
 
-    if (codes.length === 0) continue;
-
     const blocking = codes.includes("MISSING_TAX_CODE") || codes.includes("MISSING_NI_CATEGORY");
-    if (blocking) blockingCount += 1;
-    else warningCount += 1;
 
-    items.push({
-      employee_id: employeeId,
-      employee_name: employeeName,
-      gross: Number(gross.toFixed(2)),
-      severity: blocking ? "block" : "warn",
-      codes,
-    });
+    if (blocking) blockingCount++;
+    else if (codes.length > 0) warningCount++;
+
+    if (codes.length > 0) {
+      items.push({
+        employee_id: employeeId || null,
+        employee_name: employeeName,
+        codes,
+        blocking,
+      });
+    }
   }
 
   return { items, blockingCount, warningCount, total: items.length };
 }
 
-async function getRunAndEmployees(supabase: any, runId: string, includeDebug: boolean) {
+async function getRunAndEmployees(
+  supabase: any,
+  runId: string,
+  includeDebug: boolean
+) {
   const debug: any = { runId, stage: {} };
 
-  const { data: run, error: runError } = await supabase
-    .from("payroll_runs")
-    .select("*")
-    .eq("id", runId)
-    .single();
+  const runRes = await loadRun(supabase, runId);
+  if (!runRes.ok) {
+    debug.stage.runFetch = { ok: false, error: runRes.error };
+    return { ok: false as const, status: runRes.status, error: runRes.error, debug: includeDebug ? debug : undefined };
+  }
 
-  if (runError) {
-    debug.stage.runFetch = { ok: false, code: runError.code, message: runError.message };
+  const run = runRes.run;
+  debug.stage.runFetch = { ok: true };
+
+  const companyId = String(run?.company_id || "").trim();
+  if (!companyId || !isUuid(companyId)) {
     return {
-      ok: false,
-      status: 404,
-      error: "Payroll run not found",
-      debug: includeDebug ? debug : undefined,
+      ok: false as const,
+      status: 500,
+      error: "Payroll run is missing a valid company_id.",
+      debug: includeDebug ? { ...debug, companyId } : undefined,
     };
   }
 
-  debug.stage.runFetch = { ok: true };
+  const attachTry = await loadAttachments(supabase, runId, companyId);
+  if (!attachTry.ok) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: "Failed to load attached employees for payroll run.",
+      debug: includeDebug ? { ...debug, attempts: attachTry.attempts } : undefined,
+    };
+  }
+
+  const attachments = attachTry.rows || [];
+  debug.stage.attachments = { ok: true, count: attachments.length };
+
+  const employeeIds = Array.from(
+    new Set(
+      attachments
+        .map((r: any) => String(pickFirst(r?.employee_id, "") || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const { data: emps, error: empErr } = await supabase
+    .from("employees")
+    .select("*")
+    .in("id", employeeIds)
+    .eq("company_id", companyId);
+
+  if (empErr) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: "Failed to load employees for payroll run.",
+      debug: includeDebug ? { ...debug, empErr: empErr.message } : undefined,
+    };
+  }
+
+  const empRows = Array.isArray(emps) ? emps : [];
+  const empById = new Map<string, any>();
+  for (const e of empRows) {
+    const id = String((e as any)?.id || "").trim();
+    if (id) empById.set(id, e);
+  }
+
+  const employees = attachments.map((att: any) => {
+    const employeeId = String(pickFirst(att?.employee_id, "") || "").trim();
+    const emp = employeeId ? empById.get(employeeId) : null;
+    return buildEmployeeRow(att, emp);
+  });
 
   const totals = {
     gross: Number(toNumberSafe(pickFirst(run?.total_gross_pay, 0)).toFixed(2)),
@@ -237,78 +407,14 @@ async function getRunAndEmployees(supabase: any, runId: string, includeDebug: bo
     net: Number(toNumberSafe(pickFirst(run?.total_net_pay, 0)).toFixed(2)),
   };
 
-  const attachTry = await tryAttachments(supabase, runId);
-  const attachments = attachTry.rows || [];
-
-  debug.stage.attachments = {
-    ok: attachTry.ok,
-    tableUsed: attachTry.tableUsed,
-    whereColumn: attachTry.whereColumn,
-    count: attachments.length,
-  };
-
-  if (includeDebug) {
-    debug.stage.attachAttempts = (attachTry.attempts || []).slice(0, 20);
-  }
-
-  const rawEmployeeIds = attachments
-    .map((a: any) => String(pickFirst(a?.employee_id, "") || "").trim())
-    .filter(Boolean);
-
-  const employeeIds = Array.from(new Set(rawEmployeeIds));
-  debug.stage.employeeIds = { count: employeeIds.length };
-
-  const invalidEmployeeIds = employeeIds.filter((x) => !isUuid(x));
-  if (invalidEmployeeIds.length > 0) {
-    debug.stage.employeeIdsInvalid = { count: invalidEmployeeIds.length, examples: invalidEmployeeIds.slice(0, 10) };
-
-    return {
-      ok: false,
-      status: 500,
-      error:
-        "Legacy employee identifiers detected in payroll attachments. payroll_run_employees.employee_id must be a UUID referencing employees.id. Fix the data/schema. Do not fall back to employees.employee_id.",
-      debug: includeDebug ? debug : undefined,
-    };
-  }
-
-  let employeesRaw: any[] = [];
-  if (employeeIds.length > 0) {
-    const { data: empData, error: empError } = await supabase.from("employees").select("*").in("id", employeeIds);
-
-    if (empError) {
-      employeesRaw = [];
-      debug.stage.employeesFetch = { ok: false, via: "employees.id", code: empError.code, message: empError.message };
-    } else {
-      employeesRaw = Array.isArray(empData) ? empData : [];
-      debug.stage.employeesFetch = { ok: true, via: "employees.id", count: employeesRaw.length };
-    }
-  } else {
-    debug.stage.employeesFetch = { ok: true, via: "none", count: 0 };
-  }
-
-  const empById = new Map<string, any>();
-  for (const e of employeesRaw) {
-    const k = String(pickFirst(e?.id, "") || "").trim();
-    if (k) empById.set(k, e);
-  }
-
-  const employees = attachments.map((att: any) => {
-    const key = String(pickFirst(att?.employee_id, "") || "").trim();
-    const emp = key ? empById.get(key) : null;
-    return buildEmployeeRow(att, emp);
-  });
-
   const seededMode = deriveSeededMode(run, attachments);
-  debug.stage.seededMode = { detected: seededMode };
-
   const exceptions = computeExceptions(attachments, empById);
 
   return {
-    ok: true,
-    status: 200,
-    run,
-    totals,
+    ok: true as const,
+    run: { ...(run as any), company_id: companyId },
     employees,
+    totals,
     seededMode,
     exceptions,
     attachmentsMeta: { tableUsed: attachTry.tableUsed, whereColumn: attachTry.whereColumn },
@@ -316,54 +422,55 @@ async function getRunAndEmployees(supabase: any, runId: string, includeDebug: bo
   };
 }
 
-async function updateRunEmployeeRow(supabase: any, rowId: string, gross: number, deductions: number, net: number) {
-  const patch = {
-    gross_pay: gross,
-    net_pay: net,
-    other_deductions: deductions,
-    manual_override: true,
-  };
-
-  const { error } = await supabase.from("payroll_run_employees").update(patch).eq("id", rowId);
-  if (!error) return { ok: true };
-
-  return {
-    ok: false,
-    error: { code: error.code, message: error.message, details: error.details, hint: error.hint },
-  };
-}
-
-async function fetchRunStatusAndFlag(supabase: any, runId: string) {
+async function fetchRunStatusAndFlag(supabase: any, runId: string, companyId: string) {
   const attempts: any[] = [];
 
-  const { data, error } = await supabase
+  const a = await supabase
     .from("payroll_runs")
-    .select("id,status,attached_all_due_employees")
+    .select("id,company_id,status,attached_all_due_employees")
     .eq("id", runId)
-    .single();
+    .eq("company_id", companyId)
+    .maybeSingle();
 
-  if (!error) {
-    return { ok: true, run: data, hasAttachedFlag: true, attachedFlag: data?.attached_all_due_employees, attempts };
+  if (!a.error && a.data) {
+    return {
+      ok: true,
+      run: a.data,
+      hasAttachedFlag: true,
+      attachedFlag: (a.data as any)?.attached_all_due_employees,
+      attempts,
+    };
   }
 
-  attempts.push({
-    cols: "id,status,attached_all_due_employees",
-    error: { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint },
-  });
+  if (a.error) {
+    attempts.push({
+      cols: "id,company_id,status,attached_all_due_employees",
+      error: { code: a.error.code, message: a.error.message, details: a.error.details, hint: a.error.hint },
+    });
+  }
 
-  const msg = String(error?.message || "").toLowerCase();
-  const missingCol = error?.code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
+  const msg = String(a.error?.message || "").toLowerCase();
+  const missingCol =
+    a.error?.code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
 
   if (missingCol) {
-    const b = await supabase.from("payroll_runs").select("id,status").eq("id", runId).single();
-    if (!b.error) {
+    const b = await supabase
+      .from("payroll_runs")
+      .select("id,company_id,status")
+      .eq("id", runId)
+      .eq("company_id", companyId)
+      .maybeSingle();
+
+    if (!b.error && b.data) {
       return { ok: true, run: b.data, hasAttachedFlag: false, attachedFlag: undefined, attempts };
     }
 
-    attempts.push({
-      cols: "id,status",
-      error: { code: b.error?.code, message: b.error?.message, details: b.error?.details, hint: b.error?.hint },
-    });
+    if (b.error) {
+      attempts.push({
+        cols: "id,company_id,status",
+        error: { code: b.error.code, message: b.error.message, details: b.error.details, hint: b.error.hint },
+      });
+    }
   }
 
   return { ok: false, run: null, hasAttachedFlag: false, attachedFlag: undefined, attempts };
@@ -372,6 +479,7 @@ async function fetchRunStatusAndFlag(supabase: any, runId: string) {
 async function restoreAttachedAllDueEmployeesIfNeeded(
   supabase: any,
   runId: string,
+  companyId: string,
   beforeValue: any,
   afterValue: any,
   enabled: boolean
@@ -383,36 +491,40 @@ async function restoreAttachedAllDueEmployeesIfNeeded(
 
   if (before === after) return { ok: true, restored: false, reason: "no change" };
 
-  const { error } = await supabase.from("payroll_runs").update({ attached_all_due_employees: before }).eq("id", runId);
+  const { error } = await supabase
+    .from("payroll_runs")
+    .update({ attached_all_due_employees: before })
+    .eq("id", runId)
+    .eq("company_id", companyId);
 
   if (error) {
-    return {
-      ok: false,
-      restored: false,
-      error: { code: error.code, message: error.message, details: error.details, hint: error.hint },
-    };
+    return { ok: false, restored: false, error: { code: error.code, message: error.message, details: error.details, hint: error.hint } };
   }
 
   return { ok: true, restored: true, before, after };
 }
 
-async function refreshRunTotalsFromAttachments(supabase: any, runId: string) {
-  const { data: rows, error: rowsErr } = await supabase
-    .from("payroll_run_employees")
-    .select("*")
-    .eq("run_id", runId);
-
-  if (rowsErr) {
-    return { ok: false, status: 500, error: rowsErr.message, debug: { table: "payroll_run_employees", whereCol: "run_id" } };
+async function refreshRunTotalsFromAttachments(supabase: any, runId: string, companyId: string) {
+  const attachTry = await loadAttachments(supabase, runId, companyId);
+  if (!attachTry.ok) {
+    return { ok: false, status: 500, error: "Failed to read payroll_run_employees for totals refresh.", debug: { attempts: attachTry.attempts } };
   }
 
-  const rr = Array.isArray(rows) ? rows : [];
+  const rr = Array.isArray(attachTry.rows) ? attachTry.rows : [];
 
-  const grossSum = rr.reduce((a: number, x: any) => a + toNumberSafe(pickFirst(x?.gross_pay, x?.grossPay, 0)), 0);
-  const netSum = rr.reduce((a: number, x: any) => a + toNumberSafe(pickFirst(x?.net_pay, x?.netPay, 0)), 0);
+  const grossSum = rr.reduce(
+    (a: number, x: any) => a + toNumberSafe(pickFirst(x?.gross_pay, x?.grossPay, 0)),
+    0
+  );
+  const netSum = rr.reduce(
+    (a: number, x: any) => a + toNumberSafe(pickFirst(x?.net_pay, x?.netPay, 0)),
+    0
+  );
   const taxSum = rr.reduce((a: number, x: any) => a + toNumberSafe(pickFirst(x?.tax, 0)), 0);
-
-  const niSum = rr.reduce((a: number, x: any) => a + toNumberSafe(pickFirst(x?.ni_employee, x?.employee_ni, 0)), 0);
+  const niSum = rr.reduce(
+    (a: number, x: any) => a + toNumberSafe(pickFirst(x?.ni_employee, x?.employee_ni, 0)),
+    0
+  );
 
   const { error: runUpErr } = await supabase
     .from("payroll_runs")
@@ -422,31 +534,23 @@ async function refreshRunTotalsFromAttachments(supabase: any, runId: string) {
       total_tax: Number(taxSum.toFixed(2)),
       total_ni: Number(niSum.toFixed(2)),
     })
-    .eq("id", runId);
+    .eq("id", runId)
+    .eq("company_id", companyId);
 
   if (runUpErr) {
-    return { ok: false, status: 500, error: runUpErr.message, debug: { table: "payroll_run_employees", whereCol: "run_id" } };
+    return { ok: false, status: 500, error: runUpErr.message };
   }
 
-  return { ok: true, status: 200, tableUsed: "payroll_run_employees", whereColumn: "run_id" };
+  return { ok: true, status: 200, tableUsed: "payroll_run_employees", whereColumn: attachTry.whereColumn };
 }
 
-async function setGrossOnlyCalcForRun(supabase: any, runId: string) {
-  const { data: rows, error: rowsErr } = await supabase
-    .from("payroll_run_employees")
-    .select("*")
-    .eq("run_id", runId);
-
-  if (rowsErr) {
-    return {
-      ok: false,
-      status: 500,
-      error: rowsErr.message,
-      debug: { table: "payroll_run_employees", whereCol: "run_id" },
-    };
+async function setGrossOnlyCalcForRun(supabase: any, runId: string, companyId: string) {
+  const attachTry = await loadAttachments(supabase, runId, companyId);
+  if (!attachTry.ok) {
+    return { ok: false, status: 500, error: "Failed to load payroll_run_employees for gross-only recalculation.", debug: { attempts: attachTry.attempts } };
   }
 
-  const rr = Array.isArray(rows) ? rows : [];
+  const rr = Array.isArray(attachTry.rows) ? attachTry.rows : [];
 
   for (const r of rr) {
     const rowId = String(pickFirst(r?.id, "") || "").trim();
@@ -474,21 +578,51 @@ async function setGrossOnlyCalcForRun(supabase: any, runId: string) {
     if (r && typeof r === "object" && "employee_ni" in r) patch.employee_ni = 0;
     if (r && typeof r === "object" && "employer_ni" in r) patch.employer_ni = 0;
 
-    const { error: upErr } = await supabase.from("payroll_run_employees").update(patch).eq("id", rowId);
+    const { error: upErr } = await supabase
+      .from("payroll_run_employees")
+      .update(patch)
+      .eq("id", rowId)
+      .eq("run_id", runId);
+
     if (upErr) {
       return {
         ok: false,
         status: 500,
         error: `Failed to update gross-only calc for row ${rowId}: ${upErr.message}`,
-        debug: { table: "payroll_run_employees", whereCol: "run_id", rowId, patch },
       };
     }
   }
 
-  const totals = await refreshRunTotalsFromAttachments(supabase, runId);
-  if (!totals.ok) return totals;
+  return { ok: true, status: 200 };
+}
 
-  return { ok: true, status: 200, tableUsed: "payroll_run_employees", whereColumn: "run_id" };
+async function updateRunEmployeeRow(
+  supabase: any,
+  runId: string,
+  rowId: string,
+  gross: number,
+  deductions: number,
+  net: number
+) {
+  const patch = {
+    gross_pay: gross,
+    net_pay: net,
+    other_deductions: deductions,
+    manual_override: true,
+  };
+
+  const { error } = await supabase
+    .from("payroll_run_employees")
+    .update(patch)
+    .eq("id", rowId)
+    .eq("run_id", runId);
+
+  if (!error) return { ok: true as const };
+
+  return {
+    ok: false as const,
+    error: { code: error.code, message: error.message, details: error.details, hint: error.hint },
+  };
 }
 
 async function tryComputeFullViaRpc(supabase: any, runId: string) {
@@ -508,10 +642,7 @@ async function tryComputeFullViaRpc(supabase: any, runId: string) {
 
   for (const c of candidates) {
     const { data, error } = await supabase.rpc(c.fn, c.args);
-
-    if (!error) {
-      return { ok: true, via: { fn: c.fn, args: c.args }, data, attempts };
-    }
+    if (!error) return { ok: true, via: { fn: c.fn, args: c.args }, data, attempts };
 
     attempts.push({
       fn: c.fn,
@@ -523,365 +654,358 @@ async function tryComputeFullViaRpc(supabase: any, runId: string) {
   return {
     ok: false,
     status: 501,
-    error: "No Supabase RPC function was found to compute a payroll run in full. Create a DB function and call it from here.",
+    error: "No Supabase RPC function was found to compute a payroll run in full.",
     attempts: attempts.slice(0, 12),
   };
 }
 
 export async function GET(req: Request, { params }: Ctx) {
-  try {
-    const resolvedParams = await params;
-    const id = resolvedParams?.id;
-    if (!id) return NextResponse.json({ ok: false, error: "Missing payroll run id" }, { status: 400 });
+  const resolvedParams = await params;
+  const id = String(resolvedParams?.id || "").trim();
 
-    const includeDebug = new URL(req.url).searchParams.get("debug") === "1";
+  if (!id) return json(400, { ok: false, error: "Missing payroll run id" });
+  if (!isUuid(id)) return json(400, { ok: false, error: "Invalid payroll run id" });
 
-    const supabase = getAdminClient();
-    const result = await getRunAndEmployees(supabase, id, includeDebug);
+  const gate = await requireUser();
+  if (!gate.ok) return gate.res;
 
-    if (!result.ok) {
-      return NextResponse.json(
-        {
-          ok: false,
-          debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-          error: result.error,
-          ...(includeDebug ? { debug: result.debug } : {}),
-        },
-        { status: result.status || 500 }
-      );
-    }
+  const includeDebug = new URL(req.url).searchParams.get("debug") === "1";
 
-    return NextResponse.json({
-      ok: true,
-      debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-      run: result.run,
-      employees: result.employees,
-      totals: result.totals,
-      seededMode: result.seededMode,
-      exceptions: result.exceptions,
+  const supabase = gate.supabase;
+
+  const result = await getRunAndEmployees(supabase, id, includeDebug);
+  if (!result.ok) {
+    return json(result.status || 500, {
+      ok: false,
+      debugSource: "payroll_run_route_rls_v1",
+      error: result.error,
       ...(includeDebug ? { debug: result.debug } : {}),
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      {
-        ok: false,
-        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-        error: err?.message ?? "Unexpected error",
-      },
-      { status: 500 }
-    );
   }
+
+  // membership check for role, used only to control debug detail and PATCH behaviour later
+  const roleRes = await getRoleForCompany(supabase, String((result.run as any).company_id), gate.user.id);
+  const role = roleRes.ok ? roleRes.role : "member";
+
+  const allowDebug = includeDebug && ["owner", "admin"].includes(role.toLowerCase());
+
+  return json(200, {
+    ok: true,
+    debugSource: "payroll_run_route_rls_v1",
+    run: result.run,
+    employees: result.employees,
+    totals: result.totals,
+    seededMode: result.seededMode,
+    exceptions: result.exceptions,
+    attachmentsMeta: result.attachmentsMeta,
+    ...(allowDebug ? { debug: result.debug } : {}),
+  });
 }
 
 export async function PATCH(req: Request, { params }: Ctx) {
-  try {
-    const resolvedParams = await params;
-    const id = resolvedParams?.id;
-    if (!id) return NextResponse.json({ ok: false, error: "Missing payroll run id" }, { status: 400 });
+  const resolvedParams = await params;
+  const id = String(resolvedParams?.id || "").trim();
 
-    const body = await req.json().catch(() => ({}));
-    const action = normalizeAction(body?.action);
+  if (!id) return json(400, { ok: false, error: "Missing payroll run id" });
+  if (!isUuid(id)) return json(400, { ok: false, error: "Invalid payroll run id" });
 
-    const supabase = getAdminClient();
+  const gate = await requireUser();
+  if (!gate.ok) return gate.res;
 
-    const isComputeFull =
-      action === "compute_full" ||
-      action === "compute-full" ||
-      action === "full_compute" ||
-      action === "fullcompute" ||
-      action === "compute";
+  const supabase = gate.supabase;
+  const userId = gate.user.id;
 
-    if (action === "recalculate") {
-      const pre = await fetchRunStatusAndFlag(supabase, id);
+  const body = await req.json().catch(() => ({}));
+  const action = normalizeAction(body?.action);
 
-      if (!pre.ok || !pre.run) {
-        return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-            error: "Failed to fetch payroll run status before recalculation.",
-            debug: { attempts: pre.attempts || [] },
-          },
-          { status: 500 }
-        );
-      }
+  const runRes = await loadRun(supabase, id);
+  if (!runRes.ok) return json(runRes.status, { ok: false, debugSource: "payroll_run_route_rls_v1", error: runRes.error });
 
-      if (String(pre.run?.status || "").toLowerCase() !== "draft") {
-        return NextResponse.json(
-          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Recalculate is only allowed for draft runs." },
-          { status: 409 }
-        );
-      }
+  const run = runRes.run;
+  const companyId = String(run?.company_id || "").trim();
+  if (!companyId || !isUuid(companyId)) {
+    return json(500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: "Payroll run is missing a valid company_id." });
+  }
 
-      const rec: any = await setGrossOnlyCalcForRun(supabase, id);
-      if (!rec?.ok) {
-        return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-            error: rec?.error || "Recalculate failed",
-            ...(rec?.debug ? { debug: rec.debug } : {}),
-          },
-          { status: rec?.status || 500 }
-        );
-      }
+  const roleRes = await getRoleForCompany(supabase, companyId, userId);
+  if (!roleRes.ok) return roleRes.res;
+  const role = roleRes.role;
 
-      const post = await fetchRunStatusAndFlag(supabase, id);
+  if (!isStaffRole(role)) {
+    return json(403, { ok: false, code: "INSUFFICIENT_ROLE", message: "You do not have permission to modify payroll runs." });
+  }
 
-      const flagFix = await restoreAttachedAllDueEmployeesIfNeeded(
-        supabase,
-        id,
-        pre.attachedFlag,
-        post?.attachedFlag,
-        Boolean(pre.hasAttachedFlag)
-      );
+  const isComputeFull =
+    action === "compute_full" ||
+    action === "compute-full" ||
+    action === "full_compute" ||
+    action === "fullcompute" ||
+    action === "compute";
 
-      const result = await getRunAndEmployees(supabase, id, false);
+  if (action === "recalculate") {
+    if (String(run?.status || "").toLowerCase() !== "draft") {
+      return json(409, { ok: false, debugSource: "payroll_run_route_rls_v1", error: "Recalculate is only allowed for draft runs." });
+    }
 
-      return NextResponse.json({
-        ok: true,
-        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-        action: "recalculate",
-        attachments: { tableUsed: "payroll_run_employees", whereColumn: "run_id" },
-        sideEffects: pre.hasAttachedFlag
-          ? {
-              attached_all_due_employees: {
-                before: pre.attachedFlag,
-                after: post?.attachedFlag,
-                restored: Boolean(flagFix?.restored),
-              },
-            }
-          : undefined,
-        run: result.run,
-        employees: result.employees,
-        totals: result.totals,
-        seededMode: result.seededMode,
-        exceptions: result.exceptions,
+    const pre = await fetchRunStatusAndFlag(supabase, id, companyId);
+    if (!pre.ok || !pre.run) {
+      return json(500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Failed to fetch payroll run status before recalculation.",
+        debug: { attempts: pre.attempts || [] },
       });
     }
 
-    if (isComputeFull) {
-      const pre = await getRunAndEmployees(supabase, id, true);
-
-      if (!pre.ok) {
-        return NextResponse.json(
-          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: pre.error, debug: pre.debug },
-          { status: pre.status || 500 }
-        );
-      }
-
-      const status = String(pre?.run?.status || "").toLowerCase();
-      if (status !== "draft") {
-        return NextResponse.json(
-          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Full compute is only allowed for draft runs.", runStatus: status },
-          { status: 409 }
-        );
-      }
-
-      const blockingCount = Number(pre?.exceptions?.blockingCount ?? 0);
-      if (blockingCount > 0) {
-        return NextResponse.json(
-          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Full compute blocked. Fix blocking exceptions first.", exceptions: pre.exceptions },
-          { status: 409 }
-        );
-      }
-
-      const hasEmployees = Array.isArray(pre?.employees) && pre.employees.length > 0;
-      if (!hasEmployees) {
-        return NextResponse.json(
-          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Full compute blocked. No attached employees were found for this run." },
-          { status: 409 }
-        );
-      }
-
-      const flagPre = await fetchRunStatusAndFlag(supabase, id);
-
-      const rpc: any = await tryComputeFullViaRpc(supabase, id);
-      if (!rpc?.ok) {
-        return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-            action: "compute_full",
-            error: rpc?.error || "Full compute RPC failed",
-            attempts: rpc?.attempts || [],
-          },
-          { status: rpc?.status || 501 }
-        );
-      }
-
-      const totalsRefresh: any = await refreshRunTotalsFromAttachments(supabase, id);
-
-      const flagPost = await fetchRunStatusAndFlag(supabase, id);
-      const flagFix = await restoreAttachedAllDueEmployeesIfNeeded(
-        supabase,
-        id,
-        flagPre?.attachedFlag,
-        flagPost?.attachedFlag,
-        Boolean(flagPre?.hasAttachedFlag)
-      );
-
-      const post = await getRunAndEmployees(supabase, id, false);
-
-      if (post.ok && Boolean(post.seededMode)) {
-        return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-            action: "compute_full",
-            error:
-              "Full compute attempted, but the run still looks seeded (not all employee rows are calc_mode='full'). Ensure your DB compute function writes tax, NI, net, and calc_mode='full' back to payroll_run_employees.",
-            computeVia: rpc?.via,
-            totalsRefreshOk: Boolean(totalsRefresh?.ok),
-            seededMode: true,
-            run: post.run,
-            employees: post.employees,
-            totals: post.totals,
-            exceptions: post.exceptions,
-          },
-          { status: 409 }
-        );
-      }
-
-      return NextResponse.json({
-        ok: true,
-        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-        action: "compute_full",
-        computeVia: rpc?.via,
-        totalsRefreshOk: Boolean(totalsRefresh?.ok),
-        attachmentsMeta: { tableUsed: "payroll_run_employees", whereColumn: "run_id" },
-        sideEffects: flagPre?.hasAttachedFlag
-          ? {
-              attached_all_due_employees: {
-                before: flagPre?.attachedFlag,
-                after: flagPost?.attachedFlag,
-                restored: Boolean(flagFix?.restored),
-              },
-            }
-          : undefined,
-        run: post.run,
-        employees: post.employees,
-        totals: post.totals,
-        seededMode: post.seededMode,
-        exceptions: post.exceptions,
-      });
+    const rec: any = await setGrossOnlyCalcForRun(supabase, id, companyId);
+    if (!rec?.ok) {
+      return json(rec?.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: rec?.error || "Recalculate failed", ...(rec?.debug ? { debug: rec.debug } : {}) });
     }
 
-    if (action === "approve") {
-      const pre = await getRunAndEmployees(supabase, id, true);
-
-      if (!pre.ok) {
-        return NextResponse.json(
-          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: pre.error, debug: pre.debug },
-          { status: pre.status || 500 }
-        );
-      }
-
-      const seededMode = Boolean(pre?.seededMode);
-      const blockingCount = Number(pre?.exceptions?.blockingCount ?? 0);
-
-      if (seededMode) {
-        return NextResponse.json(
-          {
-            ok: false,
-            debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-            error:
-              "Approval blocked. This run is not fully calculated (calc_mode is not 'full' for all employees). Run full compute first.",
-            seededMode: true,
-            exceptions: pre.exceptions,
-          },
-          { status: 409 }
-        );
-      }
-
-      if (blockingCount > 0) {
-        return NextResponse.json(
-          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: "Approval blocked. Fix blocking exceptions first.", seededMode: false, exceptions: pre.exceptions },
-          { status: 409 }
-        );
-      }
-
-      const { error: upErr } = await supabase.from("payroll_runs").update({ status: "approved" }).eq("id", id);
-
-      if (upErr) {
-        return NextResponse.json(
-          { ok: false, debugSource: "payroll_run_route_admin_v7_no_legacy_fallback", error: upErr.message },
-          { status: 500 }
-        );
-      }
-
-      const post = await getRunAndEmployees(supabase, id, false);
-
-      return NextResponse.json({
-        ok: true,
-        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-        action: "approve",
-        run: post.run,
-        employees: post.employees,
-        totals: post.totals,
-        seededMode: post.seededMode,
-        exceptions: post.exceptions,
-      });
+    const totalsRefresh: any = await refreshRunTotalsFromAttachments(supabase, id, companyId);
+    if (!totalsRefresh?.ok) {
+      return json(totalsRefresh?.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: totalsRefresh?.error || "Totals refresh failed" });
     }
 
-    const items = Array.isArray(body?.items) ? body.items : [];
-    if (items.length === 0) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Nothing to update. Expected { items: [...] } or { action: 'approve'|'recalculate'|'compute_full' }",
-        },
-        { status: 400 }
-      );
-    }
-
-    const results: any[] = [];
-
-    for (const it of items) {
-      const rowId = String(it?.id || "").trim();
-      if (!rowId) continue;
-
-      const gross = Number(toNumberSafe(it?.gross).toFixed(2));
-      const deductions = Number(toNumberSafe(it?.deductions).toFixed(2));
-      const net = Number(toNumberSafe(it?.net).toFixed(2));
-
-      const r = await updateRunEmployeeRow(supabase, rowId, gross, deductions, net);
-      results.push({ id: rowId, ok: r.ok, ...(r.ok ? {} : { error: r.error }) });
-    }
-
-    const totals: any = await refreshRunTotalsFromAttachments(supabase, id);
-    if (!totals?.ok) {
-      return NextResponse.json(
-        {
-          ok: false,
-          debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-          error: `Updated rows, but failed to refresh totals: ${totals?.error || "unknown error"}`,
-          updateResults: results,
-        },
-        { status: totals?.status || 500 }
-      );
-    }
+    const postFlag = await fetchRunStatusAndFlag(supabase, id, companyId);
+    const flagFix = await restoreAttachedAllDueEmployeesIfNeeded(
+      supabase,
+      id,
+      companyId,
+      pre.attachedFlag,
+      postFlag?.attachedFlag,
+      Boolean(pre.hasAttachedFlag)
+    );
 
     const result = await getRunAndEmployees(supabase, id, false);
+    if (!result.ok) {
+      return json(result.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: result.error });
+    }
 
-    return NextResponse.json({
+    return json(200, {
       ok: true,
-      debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
+      debugSource: "payroll_run_route_rls_v1",
+      action: "recalculate",
+      totalsRefreshOk: true,
+      attachmentsMeta: result.attachmentsMeta,
+      sideEffects: pre.hasAttachedFlag
+        ? {
+            attached_all_due_employees: {
+              before: pre.attachedFlag,
+              after: postFlag?.attachedFlag,
+              restored: Boolean(flagFix?.restored),
+            },
+          }
+        : undefined,
       run: result.run,
       employees: result.employees,
       totals: result.totals,
       seededMode: result.seededMode,
       exceptions: result.exceptions,
+    });
+  }
+
+  if (isComputeFull) {
+    if (String(run?.status || "").toLowerCase() !== "draft") {
+      return json(409, { ok: false, debugSource: "payroll_run_route_rls_v1", error: "Full compute is only allowed for draft runs.", runStatus: String(run?.status || "").toLowerCase() });
+    }
+
+    const pre = await getRunAndEmployees(supabase, id, true);
+    if (!pre.ok) {
+      return json(pre.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: pre.error, debug: pre.debug });
+    }
+
+    const blockingCount = Number(pre?.exceptions?.blockingCount ?? 0);
+    if (blockingCount > 0) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Full compute blocked. Fix blocking exceptions first.",
+        exceptions: pre.exceptions,
+      });
+    }
+
+    const hasEmployees = Array.isArray(pre?.employees) && pre.employees.length > 0;
+    if (!hasEmployees) {
+      return json(409, { ok: false, debugSource: "payroll_run_route_rls_v1", error: "Full compute blocked. No attached employees were found for this run." });
+    }
+
+    const flagPre = await fetchRunStatusAndFlag(supabase, id, companyId);
+
+    const rpc: any = await tryComputeFullViaRpc(supabase, id);
+    if (!rpc?.ok) {
+      return json(rpc?.status || 501, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        action: "compute_full",
+        error: rpc?.error || "Full compute RPC failed",
+        attempts: rpc?.attempts || [],
+      });
+    }
+
+    const totalsRefresh: any = await refreshRunTotalsFromAttachments(supabase, id, companyId);
+
+    const flagPost = await fetchRunStatusAndFlag(supabase, id, companyId);
+    const flagFix = await restoreAttachedAllDueEmployeesIfNeeded(
+      supabase,
+      id,
+      companyId,
+      flagPre?.attachedFlag,
+      flagPost?.attachedFlag,
+      Boolean(flagPre?.hasAttachedFlag)
+    );
+
+    const post = await getRunAndEmployees(supabase, id, false);
+    if (!post.ok) {
+      return json(post.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: post.error });
+    }
+
+    if (post.ok && Boolean(post.seededMode)) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        action: "compute_full",
+        error:
+          "Full compute attempted, but the run still looks seeded (not all employee rows are calc_mode='full'). Ensure your DB compute function writes tax, NI, net, and calc_mode='full' back to payroll_run_employees.",
+        computeVia: rpc?.via,
+        totalsRefreshOk: Boolean(totalsRefresh?.ok),
+        seededMode: true,
+        run: post.run,
+        employees: post.employees,
+        totals: post.totals,
+        exceptions: post.exceptions,
+      });
+    }
+
+    return json(200, {
+      ok: true,
+      debugSource: "payroll_run_route_rls_v1",
+      action: "compute_full",
+      computeVia: rpc?.via,
+      totalsRefreshOk: Boolean(totalsRefresh?.ok),
+      attachmentsMeta: post.attachmentsMeta,
+      sideEffects: flagPre?.hasAttachedFlag
+        ? {
+            attached_all_due_employees: {
+              before: flagPre?.attachedFlag,
+              after: flagPost?.attachedFlag,
+              restored: Boolean(flagFix?.restored),
+            },
+          }
+        : undefined,
+      run: post.run,
+      employees: post.employees,
+      totals: post.totals,
+      seededMode: post.seededMode,
+      exceptions: post.exceptions,
+    });
+  }
+
+  if (action === "approve") {
+    if (!isApproveRole(role)) {
+      return json(403, { ok: false, code: "INSUFFICIENT_ROLE", message: "You do not have permission to approve payroll runs." });
+    }
+
+    const pre = await getRunAndEmployees(supabase, id, true);
+    if (!pre.ok) {
+      return json(pre.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: pre.error, debug: pre.debug });
+    }
+
+    const seededMode = Boolean(pre?.seededMode);
+    const blockingCount = Number(pre?.exceptions?.blockingCount ?? 0);
+
+    if (seededMode) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Approval blocked. This run is not fully calculated. Run full compute first.",
+        seededMode: true,
+        exceptions: pre.exceptions,
+      });
+    }
+
+    if (blockingCount > 0) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Approval blocked. Fix blocking exceptions first.",
+        seededMode: false,
+        exceptions: pre.exceptions,
+      });
+    }
+
+    const { error: upErr } = await supabase
+      .from("payroll_runs")
+      .update({ status: "approved" })
+      .eq("id", id)
+      .eq("company_id", companyId);
+
+    if (upErr) {
+      return json(500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: upErr.message });
+    }
+
+    const post = await getRunAndEmployees(supabase, id, false);
+    if (!post.ok) {
+      return json(post.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: post.error });
+    }
+
+    return json(200, {
+      ok: true,
+      debugSource: "payroll_run_route_rls_v1",
+      action: "approve",
+      run: post.run,
+      employees: post.employees,
+      totals: post.totals,
+      seededMode: post.seededMode,
+      exceptions: post.exceptions,
+    });
+  }
+
+  const items = Array.isArray(body?.items) ? body.items : [];
+  if (items.length === 0) {
+    return json(400, {
+      ok: false,
+      error: "Nothing to update. Expected { items: [...] } or { action: 'approve'|'recalculate'|'compute_full' }",
+    });
+  }
+
+  const results: any[] = [];
+
+  for (const it of items) {
+    const rowId = String(it?.id || "").trim();
+    if (!rowId) continue;
+
+    const gross = Number(toNumberSafe(it?.gross).toFixed(2));
+    const deductions = Number(toNumberSafe(it?.deductions).toFixed(2));
+    const net = Number(toNumberSafe(it?.net).toFixed(2));
+
+    const r = await updateRunEmployeeRow(supabase, id, rowId, gross, deductions, net);
+    results.push({ id: rowId, ok: r.ok, ...(r.ok ? {} : { error: (r as any).error }) });
+  }
+
+  const totals: any = await refreshRunTotalsFromAttachments(supabase, id, companyId);
+  if (!totals?.ok) {
+    return json(totals?.status || 500, {
+      ok: false,
+      debugSource: "payroll_run_route_rls_v1",
+      error: `Updated rows, but failed to refresh totals: ${totals?.error || "unknown error"}`,
       updateResults: results,
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      {
-        ok: false,
-        debugSource: "payroll_run_route_admin_v7_no_legacy_fallback",
-        error: err?.message ?? "Unexpected error",
-      },
-      { status: 500 }
-    );
   }
+
+  const result = await getRunAndEmployees(supabase, id, false);
+  if (!result.ok) {
+    return json(result.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: result.error, updateResults: results });
+  }
+
+  return json(200, {
+    ok: true,
+    debugSource: "payroll_run_route_rls_v1",
+    run: result.run,
+    employees: result.employees,
+    totals: result.totals,
+    seededMode: result.seededMode,
+    exceptions: result.exceptions,
+    updateResults: results,
+  });
 }

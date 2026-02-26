@@ -1,6 +1,11 @@
-// C:\Users\adamm\Projects\wageflow01\app\api\employees\[id]\leaver\route.ts
+// C:\Projects\wageflow01\app\api\employees\[id]\leaver\route.ts
+
 import { NextResponse } from "next/server";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+import { getServerSupabase } from "@/lib/supabase/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type LeaverOtherLine = {
   description: string;
@@ -18,28 +23,29 @@ type LeaverPayload = {
   other_deductions: LeaverOtherLine[];
 };
 
-function badRequest(message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status: 400 });
-}
-
-function serverMisconfig(message: string) {
-  return NextResponse.json({ ok: false, error: message }, { status: 500 });
-}
-
-function getSupabaseAdmin(): SupabaseClient<any> | null {
-  const url =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_URL ||
-    "";
-
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-
-  if (!url || !serviceKey) return null;
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
+function json(status: number, body: any) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
   });
+}
+
+function isUuid(s: string) {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
+    s
+  );
+}
+
+async function getActiveCompanyIdFromCookies(): Promise<string | null> {
+  const jar = await cookies();
+  const v =
+    jar.get("active_company_id")?.value ??
+    jar.get("company_id")?.value ??
+    null;
+
+  if (!v) return null;
+  const trimmed = String(v).trim();
+  return isUuid(trimmed) ? trimmed : null;
 }
 
 function toNumberOrNull(v: any): number | null {
@@ -48,128 +54,158 @@ function toNumberOrNull(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function normalizeLines(input: any): LeaverOtherLine[] {
+  const raw = Array.isArray(input) ? input : [];
+  return raw
+    .map((l: any) => ({
+      description: typeof l?.description === "string" ? l.description.trim() : "",
+      amount: toNumberOrNull(l?.amount),
+    }))
+    .filter((l: LeaverOtherLine) => l.description || l.amount !== null);
+}
+
+async function requireAuthAndCompany() {
+  const companyId = await getActiveCompanyIdFromCookies();
+  if (!companyId) {
+    return { ok: false as const, res: json(400, { ok: false, code: "NO_COMPANY", message: "No active company selected." }) };
+  }
+
+  const supabase = await getServerSupabase();
+
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  const user = userData?.user ?? null;
+
+  if (userErr || !user) {
+    return { ok: false as const, res: json(401, { ok: false, code: "UNAUTHENTICATED", message: "Sign in required." }) };
+  }
+
+  const { data: membership, error: memErr } = await supabase
+    .from("company_memberships")
+    .select("role")
+    .eq("company_id", companyId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (memErr) {
+    return {
+      ok: false as const,
+      res: json(500, {
+        ok: false,
+        code: "MEMBERSHIP_CHECK_FAILED",
+        message: "Could not validate company membership.",
+      }),
+    };
+  }
+
+  if (!membership) {
+    return {
+      ok: false as const,
+      res: json(403, {
+        ok: false,
+        code: "FORBIDDEN",
+        message: "You do not have access to the active company.",
+      }),
+    };
+  }
+
+  return { ok: true as const, supabase, userId: user.id, companyId, role: String(membership.role || "member") };
+}
+
+function isStaffRole(role: string) {
+  return ["owner", "admin", "manager", "processor"].includes(String(role || "").toLowerCase());
+}
+
 export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   const params = await context.params;
-  const employeeId = params?.id;
-  if (!employeeId) return badRequest("Missing employee id");
+  const employeeId = String(params?.id || "").trim();
 
-  const supabaseAdmin = getSupabaseAdmin();
-  if (!supabaseAdmin) {
-    return serverMisconfig(
-      "Server is missing Supabase configuration. Set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY."
-    );
+  if (!employeeId || !isUuid(employeeId)) {
+    return json(400, { ok: false, code: "BAD_EMPLOYEE_ID", message: "Missing or invalid employee id." });
   }
 
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("employees")
-      .select(
-        `
-        id,
-        status,
-        leaving_date,
-        final_pay_date,
-        leaver_reason,
-        pay_after_leaving,
-        leaver_holiday_days,
-        leaver_holiday_amount,
-        leaver_other_json
+  const gate = await requireAuthAndCompany();
+  if (!gate.ok) return gate.res;
+
+  const { supabase, companyId } = gate;
+
+  const { data, error } = await supabase
+    .from("employees")
+    .select(
       `
-      )
-      .eq("id", employeeId)
-      .single();
+      id,
+      status,
+      leaving_date,
+      final_pay_date,
+      leaver_reason,
+      pay_after_leaving,
+      leaver_holiday_days,
+      leaver_holiday_amount,
+      leaver_other_json
+    `
+    )
+    .eq("id", employeeId)
+    .eq("company_id", companyId)
+    .maybeSingle();
 
-    const row: any = data;
-
-    if (error || !row) {
-      return NextResponse.json(
-        { ok: false, error: "Employee not found" },
-        { status: 404 }
-      );
-    }
-
-    const otherJson = row.leaver_other_json || {};
-    const otherEarnings = Array.isArray(otherJson.other_earnings)
-      ? otherJson.other_earnings
-      : [];
-    const otherDeductions = Array.isArray(otherJson.other_deductions)
-      ? otherJson.other_deductions
-      : [];
-
-    const payload: LeaverPayload = {
-      leaving_date: row.leaving_date || null,
-      final_pay_date: row.final_pay_date || null,
-      leaver_reason: row.leaver_reason || null,
-      pay_after_leaving: !!row.pay_after_leaving,
-      holiday_days:
-        typeof row.leaver_holiday_days === "number"
-          ? row.leaver_holiday_days
-          : null,
-      holiday_amount:
-        typeof row.leaver_holiday_amount === "number"
-          ? row.leaver_holiday_amount
-          : null,
-      other_earnings: otherEarnings,
-      other_deductions: otherDeductions,
-    };
-
-    return NextResponse.json({ ok: true, leaver: payload });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: String(e?.message || e) },
-      { status: 500 }
-    );
+  if (error) {
+    return json(500, { ok: false, code: "DB_ERROR", message: "Could not load employee leaver details." });
   }
+
+  if (!data) {
+    return json(404, { ok: false, code: "NOT_FOUND", message: "Employee not found for this company." });
+  }
+
+  const row: any = data;
+  const otherJson = row.leaver_other_json || {};
+  const otherEarnings = Array.isArray(otherJson.other_earnings) ? otherJson.other_earnings : [];
+  const otherDeductions = Array.isArray(otherJson.other_deductions) ? otherJson.other_deductions : [];
+
+  const payload: LeaverPayload = {
+    leaving_date: row.leaving_date || null,
+    final_pay_date: row.final_pay_date || null,
+    leaver_reason: row.leaver_reason || null,
+    pay_after_leaving: !!row.pay_after_leaving,
+    holiday_days: typeof row.leaver_holiday_days === "number" ? row.leaver_holiday_days : null,
+    holiday_amount: typeof row.leaver_holiday_amount === "number" ? row.leaver_holiday_amount : null,
+    other_earnings: otherEarnings,
+    other_deductions: otherDeductions,
+  };
+
+  return json(200, { ok: true, leaver: payload });
 }
 
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
   const params = await context.params;
-  const employeeId = params?.id;
-  if (!employeeId) return badRequest("Missing employee id");
+  const employeeId = String(params?.id || "").trim();
 
-  const supabaseAdmin = getSupabaseAdmin();
-  if (!supabaseAdmin) {
-    return serverMisconfig(
-      "Server is missing Supabase configuration. Set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY."
-    );
+  if (!employeeId || !isUuid(employeeId)) {
+    return json(400, { ok: false, code: "BAD_EMPLOYEE_ID", message: "Missing or invalid employee id." });
   }
 
-  let body: any;
+  const gate = await requireAuthAndCompany();
+  if (!gate.ok) return gate.res;
+
+  if (!isStaffRole(gate.role)) {
+    return json(403, { ok: false, code: "INSUFFICIENT_ROLE", message: "You do not have permission to mark leavers." });
+  }
+
+  let body: any = null;
   try {
     body = await req.json();
   } catch {
-    return badRequest("Invalid JSON body");
+    return json(400, { ok: false, code: "BAD_JSON", message: "Invalid JSON body." });
   }
 
-  const rawLeavingDate = body.leaving_date;
-  const rawFinalPayDate = body.final_pay_date;
-  const rawReason =
-    typeof body.leaver_reason === "string" ? body.leaver_reason : "";
-  const rawPayAfterLeaving = !!body.pay_after_leaving;
+  const rawLeavingDate = body?.leaving_date;
+  const rawFinalPayDate = body?.final_pay_date;
+  const rawReason = typeof body?.leaver_reason === "string" ? body.leaver_reason.trim() : "";
+  const rawPayAfterLeaving = !!body?.pay_after_leaving;
 
-  const holidayDays = toNumberOrNull(body.holiday_days);
-  const holidayAmount = toNumberOrNull(body.holiday_amount);
+  const holidayDays = toNumberOrNull(body?.holiday_days);
+  const holidayAmount = toNumberOrNull(body?.holiday_amount);
 
-  const rawOtherEarnings = Array.isArray(body.other_earnings)
-    ? body.other_earnings
-    : [];
-  const rawOtherDeductions = Array.isArray(body.other_deductions)
-    ? body.other_deductions
-    : [];
-
-  const normalisedOtherEarnings: LeaverOtherLine[] = rawOtherEarnings
-    .map((l: any) => ({
-      description: typeof l?.description === "string" ? l.description.trim() : "",
-      amount: toNumberOrNull(l?.amount),
-    }))
-    .filter((l: LeaverOtherLine) => l.description || l.amount !== null);
-
-  const normalisedOtherDeductions: LeaverOtherLine[] = rawOtherDeductions
-    .map((l: any) => ({
-      description: typeof l?.description === "string" ? l.description.trim() : "",
-      amount: toNumberOrNull(l?.amount),
-    }))
-    .filter((l: LeaverOtherLine) => l.description || l.amount !== null);
+  const normalisedOtherEarnings = normalizeLines(body?.other_earnings);
+  const normalisedOtherDeductions = normalizeLines(body?.other_deductions);
 
   const leaverOtherJson = {
     other_earnings: normalisedOtherEarnings,
@@ -187,26 +223,23 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     leaver_other_json: leaverOtherJson,
   };
 
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("employees")
-      .update(updatePayload)
-      .eq("id", employeeId)
-      .select("id")
-      .single();
+  const { supabase, companyId } = gate;
 
-    if (error || !data) {
-      return NextResponse.json(
-        { ok: false, error: error?.message || "Failed to update employee" },
-        { status: 500 }
-      );
-    }
+  const { data, error } = await supabase
+    .from("employees")
+    .update(updatePayload)
+    .eq("id", employeeId)
+    .eq("company_id", companyId)
+    .select("id")
+    .maybeSingle();
 
-    return NextResponse.json({ ok: true, id: (data as any).id });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: String(e?.message || e) },
-      { status: 500 }
-    );
+  if (error) {
+    return json(500, { ok: false, code: "UPDATE_FAILED", message: "Failed to update employee leaver details." });
   }
+
+  if (!data) {
+    return json(404, { ok: false, code: "NOT_FOUND", message: "Employee not found for this company." });
+  }
+
+  return json(200, { ok: true, id: (data as any).id });
 }

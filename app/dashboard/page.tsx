@@ -1,113 +1,74 @@
-/* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\page.tsx
+// C:\Projects\wageflow01\app\dashboard\page.tsx
 
-import Link from "next/link"
-import { cookies } from "next/headers"
-import { Inter } from "next/font/google"
-import { createClient } from "@supabase/supabase-js"
-import PageTemplate from "@/components/layout/PageTemplate"
-import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner"
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { Inter } from "next/font/google";
+import PageTemplate from "@/components/layout/PageTemplate";
+import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
+import { getServerSupabase } from "@/lib/supabase/server";
 
-export const dynamic = "force-dynamic"
-export const revalidate = 0
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const inter = Inter({
   subsets: ["latin"],
   display: "swap",
-})
+});
 
 type Counts = {
-  employeeCount: number
-  payrollRunCount: number
-  absenceRecordCount: number
-}
-
-function isDynamicServerUsage(err: any): boolean {
-  const digest = err?.digest
-  const msg = String(err?.message || "")
-  const desc = String(err?.description || "")
-  return (
-    digest === "DYNAMIC_SERVER_USAGE" ||
-    msg.includes("Dynamic server usage") ||
-    desc.includes("Dynamic server usage")
-  )
-}
+  employeeCount: number;
+  payrollRunCount: number;
+  absenceRecordCount: number;
+};
 
 function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
     s
-  )
+  );
 }
 
 async function getActiveCompanyId(): Promise<string | null> {
-  const jar = await cookies()
-  const v =
-    jar.get("active_company_id")?.value ??
-    jar.get("company_id")?.value ??
-    null
+  const jar = await cookies();
+  const v = jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
 
-  if (!v) return null
-  const trimmed = String(v).trim()
-  return isUuid(trimmed) ? trimmed : null
+  if (!v) return null;
+
+  const trimmed = String(v).trim();
+  return isUuid(trimmed) ? trimmed : null;
 }
 
-function createAdminClient() {
-  const url = process.env.SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+async function getCountsForCompany(companyId: string): Promise<Counts> {
+  const supabase = await getServerSupabase();
 
-  if (!url || !serviceKey) {
-    throw new Error("dashboard: missing Supabase env")
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  const user = userData?.user ?? null;
+
+  if (userErr || !user) {
+    return { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0 };
   }
 
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  })
-}
+  const { data: membership, error: memErr } = await supabase
+    .from("company_memberships")
+    .select("role")
+    .eq("company_id", companyId)
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-async function getCounts(activeCompanyId: string | null): Promise<Counts> {
-  try {
-    if (!activeCompanyId) {
-      return { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0 }
-    }
-
-    const supabase = createAdminClient()
-
-    const [employeesRes, payrollRunsRes, absencesRes] = await Promise.all([
-      supabase
-        .from("employees")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", activeCompanyId),
-      supabase
-        .from("payroll_runs")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", activeCompanyId),
-      supabase
-        .from("absences")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", activeCompanyId),
-    ])
-
-    if (employeesRes.error && !isDynamicServerUsage(employeesRes.error)) {
-      console.error("dashboard: employee count error", employeesRes.error)
-    }
-    if (payrollRunsRes.error && !isDynamicServerUsage(payrollRunsRes.error)) {
-      console.error("dashboard: payroll run count error", payrollRunsRes.error)
-    }
-    if (absencesRes.error && !isDynamicServerUsage(absencesRes.error)) {
-      console.error("dashboard: absence count error", absencesRes.error)
-    }
-
-    return {
-      employeeCount: employeesRes.count ?? 0,
-      payrollRunCount: payrollRunsRes.count ?? 0,
-      absenceRecordCount: absencesRes.count ?? 0,
-    }
-  } catch (err) {
-    if (!isDynamicServerUsage(err)) {
-      console.error("dashboard: getCounts error", err)
-    }
-    return { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0 }
+  if (memErr || !membership) {
+    return { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0 };
   }
+
+  const [employeesRes, payrollRunsRes, absencesRes] = await Promise.all([
+    supabase.from("employees").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+    supabase.from("payroll_runs").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+    supabase.from("absences").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+  ]);
+
+  return {
+    employeeCount: employeesRes.count ?? 0,
+    payrollRunCount: payrollRunsRes.count ?? 0,
+    absenceRecordCount: absencesRes.count ?? 0,
+  };
 }
 
 function StatValue(props: { label: string; value: string | number }) {
@@ -118,7 +79,7 @@ function StatValue(props: { label: string; value: string | number }) {
         {props.value}
       </div>
     </div>
-  )
+  );
 }
 
 function StatTile(props: { label: string; value: string | number }) {
@@ -129,7 +90,7 @@ function StatTile(props: { label: string; value: string | number }) {
     >
       <StatValue label={props.label} value={props.value} />
     </div>
-  )
+  );
 }
 
 function GreyTile(props: { title: string; description?: string; href?: string }) {
@@ -148,25 +109,36 @@ function GreyTile(props: { title: string; description?: string; href?: string })
         <div className="mt-auto" />
       </div>
     </div>
-  )
+  );
 
-  if (!props.href) return body
+  if (!props.href) return body;
 
   return (
     <Link href={props.href} className="block transition-transform hover:-translate-y-0.5">
       {body}
     </Link>
-  )
+  );
 }
 
 export default async function DashboardPage() {
-  const companyId = await getActiveCompanyId()
-  const counts = await getCounts(companyId)
+  const companyId = await getActiveCompanyId();
+  const counts = companyId
+    ? await getCountsForCompany(companyId)
+    : { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0 };
 
   return (
     <PageTemplate title="Dashboard" currentSection="dashboard">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
         <ActiveCompanyBanner />
+
+        {!companyId ? (
+          <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
+            <div className="text-sm font-semibold text-neutral-900">No active company selected</div>
+            <div className="mt-1 text-sm text-neutral-700">
+              Select a company, then return to the Dashboard.
+            </div>
+          </div>
+        ) : null}
 
         <div className="grid grid-rows-2 gap-3 flex-1 min-h-0">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 h-full min-h-0">
@@ -200,5 +172,5 @@ export default async function DashboardPage() {
         </div>
       </div>
     </PageTemplate>
-  )
+  );
 }
