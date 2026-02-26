@@ -1,39 +1,24 @@
-/* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\api\payroll\[id]\attach-candidates\route.ts
+﻿// C:\Projects\wageflow01\app\api\payroll\[id]\attach-candidates\route.ts
+
+// @ts-nocheck
 
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-function getSupabaseUrl(): string {
-  return (
-    process.env.SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_PUBLIC_URL ||
-    ""
-  );
-}
-
-function createAdminClient() {
-  const url = getSupabaseUrl();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error("payroll/[id]/attach-candidates: missing Supabase env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
-}
 
 type RouteParams = {
   params: Promise<{
     id: string;
   }>;
 };
+
+function statusFromErr(err: any, fallback = 500): number {
+  const s = Number(err?.status);
+  if (s === 400 || s === 401 || s === 403 || s === 404 || s === 409) return s;
+  return fallback;
+}
 
 function isUuid(s: any) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
@@ -70,6 +55,13 @@ function cleanEmail(v: any) {
 }
 
 export async function GET(_req: Request, { params }: RouteParams) {
+  const supabase = await createClient();
+
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  }
+
   const resolvedParams = await params;
   const runId = String(resolvedParams?.id ?? "").trim();
 
@@ -80,27 +72,36 @@ export async function GET(_req: Request, { params }: RouteParams) {
     );
   }
 
-  const supabase = createAdminClient();
-
   const { data: runRow, error: runError } = await supabase
     .from("payroll_runs")
-    .select("*")
+    .select("id, company_id, frequency, pay_frequency, payFrequency")
     .eq("id", runId)
     .maybeSingle();
 
-  if (runError || !runRow) {
+  if (runError) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "RUN_LOAD_FAILED",
+        message: "Failed to load payroll run.",
+        details: runError?.message ?? null,
+      },
+      { status: statusFromErr(runError) }
+    );
+  }
+
+  if (!runRow) {
     return NextResponse.json(
       {
         ok: false,
         error: "RUN_NOT_FOUND",
         message: "Payroll run not found.",
-        details: runError?.message ?? null,
       },
       { status: 404 }
     );
   }
 
-  const companyId = pickFirst(runRow.company_id, runRow.companyId, null);
+  const companyId = pickFirst(runRow.company_id, null);
   const runFrequencyRaw = pickFirst(runRow.frequency, runRow.pay_frequency, runRow.payFrequency, null);
   const runFrequency = normalizeFrequency(runFrequencyRaw);
 
@@ -135,15 +136,41 @@ export async function GET(_req: Request, { params }: RouteParams) {
         message: "Failed to check existing attached employees for this run.",
         details: existingError.message,
       },
-      { status: 500 }
+      { status: statusFromErr(existingError) }
     );
   }
 
-  const existingIds = new Set((existingRows ?? []).map((r: any) => String(r?.employee_id ?? "").trim()).filter(Boolean));
+  const existingIds = new Set(
+    (existingRows ?? []).map((r: any) => String(r?.employee_id ?? "").trim()).filter(Boolean)
+  );
 
   const { data: employeeRows, error: employeesError } = await supabase
     .from("employees")
-    .select("*")
+    .select(
+      [
+        "id",
+        "company_id",
+        "status",
+        "pay_frequency",
+        "frequency",
+        "payFrequency",
+        "payFrequencyUsed",
+        "first_name",
+        "firstName",
+        "last_name",
+        "lastName",
+        "full_name",
+        "fullName",
+        "employee_number",
+        "payroll_number",
+        "employeeNumber",
+        "payrollNumber",
+        "email",
+        "employee_email",
+        "work_email",
+        "personal_email",
+      ].join(",")
+    )
     .eq("company_id", companyId);
 
   if (employeesError) {
@@ -154,7 +181,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
         message: "Failed to load employees for this company.",
         details: employeesError.message,
       },
-      { status: 500 }
+      { status: statusFromErr(employeesError) }
     );
   }
 
