@@ -1,40 +1,34 @@
-/* C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\page.tsx */
+// C:\Projects\wageflow01\app\dashboard\employees\[id]\page.tsx
 
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { unstable_noStore as noStore } from "next/cache";
-import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
-const MISSING = "\u2014";
-
-function getSupabaseUrl(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
-}
-
-function createAdminClient() {
-  const url = getSupabaseUrl();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error("employee details: missing Supabase env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
-}
+const MISSING = "—";
 
 function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
     String(s || "")
   );
+}
+
+async function getActiveCompanyId(): Promise<string | null> {
+  const jar = await cookies();
+  const v =
+    jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+
+  if (!v) return null;
+
+  const trimmed = String(v).trim();
+  return isUuid(trimmed) ? trimmed : null;
 }
 
 function safeStr(v: any) {
@@ -112,8 +106,8 @@ function aeStatus(dobISO: any, annualSalary: any) {
 }
 
 type EmployeeRow = {
-  id?: string | null; // uuid in most environments
-  employee_id?: string | null; // legacy text key in some environments
+  id?: string | null;
+  employee_id?: string | null;
   company_id?: string | null;
 
   employee_number?: string | null;
@@ -122,6 +116,10 @@ type EmployeeRow = {
   email?: string | null;
 
   ni_number?: string | null;
+  ni?: string | null;
+  ni_number_formatted?: string | null;
+  national_insurance_number?: string | null;
+
   pay_frequency?: string | null;
 
   status?: string | null;
@@ -163,11 +161,19 @@ function normalizeAddress(address: any) {
   const parsed = tryParseJsonObject(address);
   const a = parsed || address || {};
 
-  const line1 = (a as any).line1 ?? (a as any).address_line1 ?? (a as any).line_1 ?? null;
-  const line2 = (a as any).line2 ?? (a as any).address_line2 ?? (a as any).line_2 ?? null;
-  const townCity = (a as any).town_city ?? (a as any).city ?? (a as any).town ?? (a as any).locality ?? null;
+  const line1 =
+    (a as any).line1 ?? (a as any).address_line1 ?? (a as any).line_1 ?? null;
+  const line2 =
+    (a as any).line2 ?? (a as any).address_line2 ?? (a as any).line_2 ?? null;
+  const townCity =
+    (a as any).town_city ??
+    (a as any).city ??
+    (a as any).town ??
+    (a as any).locality ??
+    null;
   const county = (a as any).county ?? (a as any).region ?? null;
-  const postcode = (a as any).postcode ?? (a as any).post_code ?? (a as any).zip ?? null;
+  const postcode =
+    (a as any).postcode ?? (a as any).post_code ?? (a as any).zip ?? null;
   const country = (a as any).country ?? null;
 
   const parts = [line1, line2, townCity, county, postcode, country]
@@ -192,7 +198,9 @@ function pillClass(base: string) {
 function cardBox(title: string, children: any) {
   return (
     <div className="rounded-lg border border-neutral-300 bg-white p-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-600">{title}</div>
+      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-600">
+        {title}
+      </div>
       <div className="mt-1 text-sm text-neutral-900">{children}</div>
     </div>
   );
@@ -203,14 +211,49 @@ function looksLikeMissingColumn(err: any, column: string) {
   return msg.includes("column") && msg.includes(column.toLowerCase());
 }
 
-export default async function EmployeeDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EmployeeDetailsPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   noStore();
 
-  const jar = await cookies();
+  const activeCompanyId = await getActiveCompanyId();
+  if (!activeCompanyId) {
+    redirect("/dashboard/companies");
+  }
 
-  const activeCompanyId = jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+  const supabase = await createClient();
 
-  if (!activeCompanyId || !isUuid(String(activeCompanyId))) {
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  const user = userData?.user ?? null;
+
+  if (userErr || !user) {
+    return (
+      <PageTemplate title="Employee" currentSection="employees">
+        <div className="flex flex-col gap-3 flex-1 min-h-0">
+          <ActiveCompanyBanner />
+          <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
+            <div className="text-sm font-semibold text-neutral-900">
+              Sign in required
+            </div>
+            <div className="mt-1 text-sm text-neutral-700">
+              Please sign in again.
+            </div>
+          </div>
+        </div>
+      </PageTemplate>
+    );
+  }
+
+  const { data: membership, error: memErr } = await supabase
+    .from("company_memberships")
+    .select("role")
+    .eq("company_id", activeCompanyId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (memErr || !membership) {
     redirect("/dashboard/companies");
   }
 
@@ -218,12 +261,12 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
   const routeId = String(resolvedParams?.id || "").trim();
   if (!routeId) redirect("/dashboard/employees");
 
-  const supabase = createAdminClient();
-
-  // Use select("*") so demo schemas with missing optional columns do not explode.
   const selectCols = "*";
 
-  async function fetchBy(col: "id" | "employee_id" | "employee_number", value: string) {
+  async function fetchBy(
+    col: "id" | "employee_id" | "employee_number",
+    value: string
+  ) {
     return await supabase
       .from("employees")
       .select(selectCols)
@@ -235,13 +278,11 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
   let employee: EmployeeRow | null = null;
   let error: any = null;
 
-  // 1) Prefer id lookup when the route looks like a uuid.
   if (isUuid(routeId)) {
     const r1 = await fetchBy("id", routeId);
     employee = (r1.data as any) ?? null;
     error = r1.error ?? null;
 
-    // If id lookup didn’t find anything, try employee_id but only if that column exists.
     if (!employee) {
       const r2 = await fetchBy("employee_id", routeId);
       if (!r2.error || !looksLikeMissingColumn(r2.error, "employee_id")) {
@@ -250,14 +291,12 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
       }
     }
   } else {
-    // 2) Non-uuid route. Try employee_id first, but ignore the "missing column" error on demo schema.
     const r1 = await fetchBy("employee_id", routeId);
     if (!r1.error || !looksLikeMissingColumn(r1.error, "employee_id")) {
       employee = (r1.data as any) ?? null;
       error = r1.error ?? null;
     }
 
-    // 3) Last resort: try employee_number if someone routed by Emp No.
     if (!employee) {
       const r2 = await fetchBy("employee_number", routeId);
       employee = (r2.data as any) ?? null;
@@ -272,12 +311,17 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
           <ActiveCompanyBanner />
           <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
             <div className="px-6 py-10 text-center bg-white">
-              <div className="text-2xl font-semibold text-neutral-900">Employee Not Found</div>
+              <div className="text-2xl font-semibold text-neutral-900">
+                Employee Not Found
+              </div>
               <div className="mt-2 text-sm text-neutral-700">
-                The employee with ID "{routeId}" could not be found for the active company.
+                The employee with ID "{routeId}" could not be found for the active
+                company.
               </div>
               {error ? (
-                <div className="mt-3 text-xs text-red-700">{String(error?.message || "Lookup error")}</div>
+                <div className="mt-3 text-xs text-red-700">
+                  {String(error?.message || "Lookup error")}
+                </div>
               ) : null}
               <div className="mt-6">
                 <Link
@@ -294,7 +338,9 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
     );
   }
 
-  const fullName = `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim() || "Unnamed employee";
+  const fullName =
+    `${employee.first_name ?? ""} ${employee.last_name ?? ""}`.trim() ||
+    "Unnamed employee";
 
   const preferredId = String(employee.id || "").trim();
   const legacyId = String(employee.employee_id || "").trim();
@@ -310,6 +356,13 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
   const ae = aeStatus(employee.date_of_birth, employee.annual_salary);
   const addr = normalizeAddress(employee.address);
 
+  const niDisplay =
+    employee.ni_number ??
+    employee.ni ??
+    employee.national_insurance_number ??
+    employee.ni_number_formatted ??
+    null;
+
   return (
     <PageTemplate title="Employee" currentSection="employees">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
@@ -323,7 +376,7 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
                 {employee.employee_number ? (
                   <span className="text-neutral-700">
                     {" "}
-                    {"\u00b7"} Emp {employee.employee_number}
+                    {"·"} Emp {employee.employee_number}
                   </span>
                 ) : null}
               </div>
@@ -369,15 +422,19 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
 
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
-            <div className="text-sm font-semibold text-neutral-900">Basic information</div>
-            <div className="text-xs text-neutral-700">Core identity fields and HMRC basics.</div>
+            <div className="text-sm font-semibold text-neutral-900">
+              Basic information
+            </div>
+            <div className="text-xs text-neutral-700">
+              Core identity fields and HMRC basics.
+            </div>
           </div>
 
           <div className="p-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {cardBox("Employee number", safeStr(employee.employee_number))}
               {cardBox("Email", safeStr(employee.email))}
-              {cardBox("NI number", safeStr(employee.ni_number))}
+              {cardBox("NI number", safeStr(niDisplay))}
               {cardBox("Date of birth", fmtDate(employee.date_of_birth))}
             </div>
           </div>
@@ -385,8 +442,12 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
 
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
-            <div className="text-sm font-semibold text-neutral-900">Employment</div>
-            <div className="text-xs text-neutral-700">Role, dates, and pay frequency.</div>
+            <div className="text-sm font-semibold text-neutral-900">
+              Employment
+            </div>
+            <div className="text-xs text-neutral-700">
+              Role, dates, and pay frequency.
+            </div>
           </div>
 
           <div className="p-4">
@@ -404,7 +465,9 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
             <div className="text-sm font-semibold text-neutral-900">Pay</div>
-            <div className="text-xs text-neutral-700">Salary, hourly, and hours per week.</div>
+            <div className="text-xs text-neutral-700">
+              Salary, hourly, and hours per week.
+            </div>
           </div>
 
           <div className="p-4">
@@ -413,20 +476,24 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
               {cardBox("Hourly rate", fmtMoney(employee.hourly_rate))}
               {cardBox(
                 "Hours per week",
-                employee.hours_per_week !== null && employee.hours_per_week !== undefined
+                employee.hours_per_week !== null &&
+                  employee.hours_per_week !== undefined
                   ? String(employee.hours_per_week)
                   : MISSING
               )}
             </div>
 
             <div className="mt-4 rounded-lg border border-neutral-300 bg-white p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-600">Auto-enrolment</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-600">
+                Auto-enrolment
+              </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span className={pillClass(ae.className)}>{ae.label}</span>
                 <span className="text-sm text-neutral-800">{ae.sub}</span>
               </div>
               <div className="mt-2 text-xs text-neutral-600">
-                This is a simple indicator. Final AE decisions should be validated during payroll processing.
+                This is a simple indicator. Final AE decisions should be validated
+                during payroll processing.
               </div>
             </div>
           </div>
@@ -435,7 +502,9 @@ export default async function EmployeeDetailsPage({ params }: { params: Promise<
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
             <div className="text-sm font-semibold text-neutral-900">Address</div>
-            <div className="text-xs text-neutral-700">Stored employee address (if provided).</div>
+            <div className="text-xs text-neutral-700">
+              Stored employee address (if provided).
+            </div>
           </div>
 
           <div className="p-4">

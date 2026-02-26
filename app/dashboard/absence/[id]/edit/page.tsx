@@ -1,9 +1,9 @@
-// C:\Projects\wageflow01\app\dashboard\absence\[id]\edit\page.tsx
+﻿// C:\Projects\wageflow01\app\dashboard\absence\[id]\edit\page.tsx
 /* @ts-nocheck */
 
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -12,6 +12,7 @@ import { formatUkDate } from "@/lib/formatUkDate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type AbsenceRow = {
   id: string;
@@ -31,15 +32,102 @@ type EmployeeRow = {
   [key: string]: any;
 };
 
-function getAdminClientOrNull() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+type AbsenceTypeItem = {
+  code: string;
+  label: string;
+  endpoint?: string;
+  category?: string;
+  paid_default?: boolean;
+  effective_from?: string | null;
+};
 
-  if (!url || !serviceKey) return null;
+function getSupabaseUrl(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
+}
 
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
+function getSupabaseAnonKey(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+}
+
+function readChunkedCookieValue(
+  all: { name: string; value: string }[],
+  baseName: string
+): string | null {
+  const exact = all.find((c) => c.name === baseName);
+  if (exact) return exact.value;
+
+  const parts = all
+    .filter((c) => c.name.startsWith(baseName + "."))
+    .map((c) => {
+      const m = c.name.match(/\.(\d+)$/);
+      const idx = m ? Number(m[1]) : 0;
+      return { idx, value: c.value };
+    })
+    .sort((a, b) => a.idx - b.idx);
+
+  if (parts.length === 0) return null;
+  return parts.map((p) => p.value).join("");
+}
+
+async function extractAccessTokenFromCookies(): Promise<string | null> {
+  try {
+    const jar = await cookies();
+    const all = jar.getAll();
+
+    const bases = new Set<string>();
+    for (const c of all) {
+      const n = c.name;
+      if (!n.includes("auth-token")) continue;
+      if (!n.startsWith("sb-") && !n.includes("sb-")) continue;
+      bases.add(n.replace(/\.\d+$/, ""));
+    }
+
+    for (const base of bases) {
+      const raw = readChunkedCookieValue(all as any, base);
+      if (!raw) continue;
+
+      const decoded = (() => {
+        try {
+          return decodeURIComponent(raw);
+        } catch {
+          return raw;
+        }
+      })();
+
+      try {
+        const obj = JSON.parse(decoded);
+        if (obj && typeof obj.access_token === "string") return obj.access_token;
+      } catch {}
+
+      try {
+        const asJson = Buffer.from(decoded, "base64").toString("utf8");
+        const obj = JSON.parse(asJson);
+        if (obj && typeof obj.access_token === "string") return obj.access_token;
+      } catch {}
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function createSupabaseRlsClientOrNull(): Promise<{ supabase: any; hasToken: boolean } | null> {
+  const url = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+  if (!url || !anonKey) return null;
+
+  const token = await extractAccessTokenFromCookies();
+
+  const opts: any = {
+    auth: { persistSession: false, autoRefreshToken: false },
+  };
+
+  if (token) {
+    opts.global = { headers: { Authorization: `Bearer ${token}` } };
+  }
+
+  return { supabase: createClient(url, anonKey, opts), hasToken: Boolean(token) };
 }
 
 function safeStr(v: unknown) {
@@ -53,34 +141,6 @@ function safeDateOrEmpty(v: unknown) {
 
 function isIsoDate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s);
-}
-
-function typeLabel(t: string | null | undefined): string {
-  const v = String(t ?? "").trim();
-  if (!v) return "Unknown";
-
-  switch (v) {
-    case "annual_leave":
-      return "Annual leave";
-    case "sickness":
-      return "Sickness";
-    case "maternity":
-      return "Maternity";
-    case "paternity":
-      return "Paternity";
-    case "shared_parental":
-      return "Shared parental";
-    case "adoption":
-      return "Adoption";
-    case "parental_bereavement":
-      return "Parental bereavement";
-    case "unpaid_leave":
-      return "Unpaid leave";
-    case "bereaved_partners_paternity":
-      return "Bereaved partner's paternity";
-    default:
-      return v.replaceAll("_", " ");
-  }
 }
 
 function statusLabel(s: string | null | undefined): string {
@@ -130,6 +190,57 @@ function employeeLabel(emp: EmployeeRow | undefined | null, fallback: string) {
   return fallback;
 }
 
+function fallbackAbsenceTypes(): AbsenceTypeItem[] {
+  return [
+    { code: "annual_leave", label: "Annual leave" },
+    { code: "sickness", label: "Sickness" },
+    { code: "maternity", label: "Maternity" },
+    { code: "paternity", label: "Paternity" },
+    { code: "shared_parental", label: "Shared parental leave" },
+    { code: "adoption", label: "Adoption" },
+    { code: "parental_bereavement", label: "Parental bereavement" },
+    { code: "unpaid_leave", label: "Unpaid leave" },
+    { code: "bereaved_partners_paternity", label: "Bereaved partner's paternity leave" },
+  ];
+}
+
+async function loadAbsenceTypesFromApi(): Promise<AbsenceTypeItem[] | null> {
+  try {
+    const h = await headers();
+    const host = h.get("x-forwarded-host") || h.get("host") || "";
+    if (!host) return null;
+
+    const proto =
+      h.get("x-forwarded-proto") ||
+      (host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https");
+
+    const baseUrl = `${proto}://${host}`;
+
+    const res = await fetch(`${baseUrl}/api/absence/types`, { cache: "no-store" });
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || data?.ok === false) return null;
+
+    const items = Array.isArray(data?.items) ? data.items : null;
+    if (!items) return null;
+
+    const cleaned: AbsenceTypeItem[] = items
+      .map((x: any) => ({
+        code: String(x?.code || "").trim(),
+        label: String(x?.label || x?.code || "").trim(),
+        endpoint: x?.endpoint,
+        category: x?.category,
+        paid_default: x?.paid_default,
+        effective_from: x?.effective_from ?? null,
+      }))
+      .filter((x: any) => x.code && x.label);
+
+    return cleaned.length ? cleaned : null;
+  } catch {
+    return null;
+  }
+}
+
 type SearchParamsRecord = Record<string, string | string[] | undefined>;
 
 type Props = {
@@ -149,7 +260,7 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
   const activeCompanyId =
     cookieStore.get("active_company_id")?.value ?? cookieStore.get("company_id")?.value ?? "";
 
-  const supabase = getAdminClientOrNull();
+  const client = await createSupabaseRlsClientOrNull();
 
   async function saveAbsenceAction(formData: FormData) {
     "use server";
@@ -161,12 +272,40 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
       "";
 
     if (!activeCompanyIdInner) {
-      redirect(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` + encodeURIComponent("No active company selected"));
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("No active company selected")
+      );
     }
 
-    const supabaseInner = getAdminClientOrNull();
-    if (!supabaseInner) {
-      redirect(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` + encodeURIComponent("Server config missing"));
+    const clientInner = await createSupabaseRlsClientOrNull();
+    if (!clientInner) {
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("Server config missing")
+      );
+    }
+
+    if (!clientInner.hasToken) {
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("Not signed in. Log in again.")
+      );
+    }
+
+    const supabaseInner = clientInner.supabase;
+
+    const { data: membership, error: memErr } = await supabaseInner
+      .from("company_memberships")
+      .select("role")
+      .eq("company_id", activeCompanyIdInner)
+      .maybeSingle();
+
+    if (memErr || !membership) {
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("You do not have access to this company.")
+      );
     }
 
     const first_day = safeStr(formData.get("first_day")).trim();
@@ -177,16 +316,25 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
     const status = safeStr(formData.get("status")).trim();
 
     if (!first_day || !isIsoDate(first_day)) {
-      redirect(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` + encodeURIComponent("Start date is required and must be a valid date"));
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("Start date is required and must be a valid date")
+      );
     }
 
     if (!last_day_expected || !isIsoDate(last_day_expected)) {
-      redirect(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` + encodeURIComponent("Expected end date is required and must be a valid date"));
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("Expected end date is required and must be a valid date")
+      );
     }
 
     const last_day_actual = last_day_actual_raw ? last_day_actual_raw : null;
     if (last_day_actual && !isIsoDate(last_day_actual)) {
-      redirect(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` + encodeURIComponent("Actual end date must be a valid date or left blank"));
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("Actual end date must be a valid date or left blank")
+      );
     }
 
     const updatePayload: Record<string, any> = {
@@ -209,19 +357,27 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
 
     if (error) {
       const msg = String(error.message || "Save failed");
-
       const code = String((error as any)?.code || "");
       const lower = msg.toLowerCase();
 
       if (code === "23P01" || lower.includes("absences_no_overlap_per_employee")) {
-        redirect(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` + encodeURIComponent("Save blocked: these dates overlap another absence for this employee."));
+        redirect(
+          `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+            encodeURIComponent("Save blocked: these dates overlap another absence for this employee.")
+        );
       }
 
-      redirect(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` + encodeURIComponent(msg));
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent(msg)
+      );
     }
 
     if (!data?.id) {
-      redirect(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` + encodeURIComponent("Nothing updated. Not found for this company."));
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("Nothing updated. Not found for this company.")
+      );
     }
 
     revalidatePath("/dashboard/absence/list");
@@ -255,8 +411,27 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
           <ActiveCompanyBanner />
           <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
             <div className="text-sm font-semibold text-neutral-900">No active company selected</div>
+            <div className="mt-1 text-sm text-neutral-700">Select a company on the Dashboard, then come back here.</div>
+            <div className="mt-4">
+              <Link href="/dashboard/absence/list" className="text-sm text-blue-700 underline">
+                Back to absence list
+              </Link>
+            </div>
+          </div>
+        </div>
+      </PageTemplate>
+    );
+  }
+
+  if (!client) {
+    return (
+      <PageTemplate title="Absence" currentSection="absence">
+        <div className="flex flex-col gap-3 flex-1 min-h-0">
+          <ActiveCompanyBanner />
+          <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
+            <div className="text-sm font-semibold text-neutral-900">Server config missing</div>
             <div className="mt-1 text-sm text-neutral-700">
-              Select a company on the Dashboard, then come back here.
+              SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are not set on the server.
             </div>
             <div className="mt-4">
               <Link href="/dashboard/absence/list" className="text-sm text-blue-700 underline">
@@ -269,19 +444,44 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
     );
   }
 
-  if (!supabase) {
+  if (!client.hasToken) {
     return (
       <PageTemplate title="Absence" currentSection="absence">
         <div className="flex flex-col gap-3 flex-1 min-h-0">
           <ActiveCompanyBanner />
           <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
-            <div className="text-sm font-semibold text-neutral-900">Server config missing</div>
-            <div className="mt-1 text-sm text-neutral-700">
-              SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set on the server.
-            </div>
+            <div className="text-sm font-semibold text-neutral-900">Not signed in</div>
+            <div className="mt-1 text-sm text-neutral-700">Log in again, then retry this page.</div>
             <div className="mt-4">
-              <Link href="/dashboard/absence/list" className="text-sm text-blue-700 underline">
-                Back to absence list
+              <Link href="/login" className="text-sm text-blue-700 underline">
+                Go to login
+              </Link>
+            </div>
+          </div>
+        </div>
+      </PageTemplate>
+    );
+  }
+
+  const supabase = client.supabase;
+
+  const { data: membership, error: memErr } = await supabase
+    .from("company_memberships")
+    .select("role")
+    .eq("company_id", activeCompanyId)
+    .maybeSingle();
+
+  if (memErr || !membership) {
+    return (
+      <PageTemplate title="Absence" currentSection="absence">
+        <div className="flex flex-col gap-3 flex-1 min-h-0">
+          <ActiveCompanyBanner />
+          <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
+            <div className="text-sm font-semibold text-neutral-900">Access blocked</div>
+            <div className="mt-1 text-sm text-neutral-700">You do not have access to the active company.</div>
+            <div className="mt-4">
+              <Link href="/dashboard/companies" className="text-sm text-blue-700 underline">
+                Go to Companies
               </Link>
             </div>
           </div>
@@ -337,6 +537,29 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
   const endExpectedIso = safeDateOrEmpty(absence?.last_day_expected);
   const endActualIso = safeDateOrEmpty(absence?.last_day_actual);
 
+  const apiTypes = await loadAbsenceTypesFromApi();
+  let types: AbsenceTypeItem[] = apiTypes && apiTypes.length ? apiTypes : fallbackAbsenceTypes();
+
+  const seen = new Set<string>();
+  types = types
+    .map((t) => ({ code: String(t.code || "").trim(), label: String(t.label || t.code || "").trim() }))
+    .filter((t) => {
+      if (!t.code || !t.label) return false;
+      if (seen.has(t.code)) return false;
+      seen.add(t.code);
+      return true;
+    });
+
+  const currentType = safeStr(absence?.type).trim();
+  if (currentType && !types.some((t) => t.code === currentType)) {
+    types = [{ code: currentType, label: currentType.replaceAll("_", " ") }, ...types];
+  }
+
+  const typeLabelMap: Record<string, string> = {};
+  for (const t of types) typeLabelMap[t.code] = t.label;
+
+  const currentTypeLabel = currentType ? typeLabelMap[currentType] || currentType.replaceAll("_", " ") : "Unknown";
+
   return (
     <PageTemplate title="Absence" currentSection="absence">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
@@ -360,14 +583,12 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
           </div>
 
           {!absence ? (
-            <div className="mt-4 text-sm text-neutral-700">
-              This absence could not be loaded for the active company.
-            </div>
+            <div className="mt-4 text-sm text-neutral-700">This absence could not be loaded for the active company.</div>
           ) : (
             <div className="mt-4">
               <div className="text-sm text-neutral-900 font-semibold">{employeeText}</div>
               <div className="mt-1 text-xs text-neutral-600">
-                Type: {typeLabel(absence.type)} | Status: {statusLabel(absence.status)}
+                Type: {currentTypeLabel} | Status: {statusLabel(absence.status)}
               </div>
 
               {editingLocked ? (
@@ -424,20 +645,16 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
                     <label className="block text-sm font-semibold text-neutral-900">Type</label>
                     <select
                       name="type"
-                      defaultValue={safeStr(absence.type) || ""}
+                      defaultValue={currentType || ""}
                       className="mt-2 w-full rounded-xl ring-1 ring-neutral-300 px-3 py-2 text-sm bg-white"
                       disabled={editingLocked}
                     >
                       <option value="">Unknown</option>
-                      <option value="annual_leave">Annual leave</option>
-                      <option value="sickness">Sickness</option>
-                      <option value="maternity">Maternity</option>
-                      <option value="paternity">Paternity</option>
-                      <option value="shared_parental">Shared parental</option>
-                      <option value="adoption">Adoption</option>
-                      <option value="parental_bereavement">Parental bereavement</option>
-                      <option value="unpaid_leave">Unpaid leave</option>
-                      <option value="bereaved_partners_paternity">Bereaved partner's paternity</option>
+                      {types.map((t) => (
+                        <option key={t.code} value={t.code}>
+                          {t.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
 

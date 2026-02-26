@@ -1,12 +1,14 @@
 /* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\leaver\page.tsx
+// C:\Projects\wageflow01\app\dashboard\employees\leaver\page.tsx
 
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type EmployeeRow = {
   id: string;
@@ -24,8 +26,8 @@ function getSupabaseUrl(): string {
   return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
 }
 
-function getSupabaseKey(): string {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+function getSupabaseAnonKey(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
 }
 
 function readChunkedCookieValue(
@@ -91,24 +93,47 @@ async function extractAccessTokenFromCookies(): Promise<string | null> {
   }
 }
 
-async function createSupabaseRequestClient() {
+async function createSupabaseRlsClientOrNull(): Promise<{ supabase: any; hasToken: boolean } | null> {
   const url = getSupabaseUrl();
-  const key = getSupabaseKey();
-  if (!url || !key) return null;
+  const anonKey = getSupabaseAnonKey();
+  if (!url || !anonKey) return null;
 
   const token = await extractAccessTokenFromCookies();
-  const opts: any = { auth: { persistSession: false, autoRefreshToken: false } };
-  if (token) opts.global = { headers: { Authorization: `Bearer ${token}` } };
 
-  return createClient(url, key, opts);
+  const opts: any = {
+    auth: { persistSession: false, autoRefreshToken: false },
+  };
+
+  if (token) {
+    opts.global = { headers: { Authorization: `Bearer ${token}` } };
+  }
+
+  return { supabase: createClient(url, anonKey, opts), hasToken: Boolean(token) };
 }
 
 async function loadEmployeesForCompany(
   companyId: string
 ): Promise<{ data: EmployeeRow[]; error: string | null }> {
   try {
-    const supabase = await createSupabaseRequestClient();
-    if (!supabase) return { data: [], error: "Supabase env missing" };
+    const client = await createSupabaseRlsClientOrNull();
+    if (!client) return { data: [], error: "Supabase env missing" };
+    if (!client.hasToken) return { data: [], error: "Not signed in. Log in again." };
+
+    const { supabase } = client;
+
+    const { data: membership, error: memErr } = await supabase
+      .from("company_memberships")
+      .select("role")
+      .eq("company_id", companyId)
+      .maybeSingle();
+
+    if (memErr) {
+      return { data: [], error: memErr.message || "Membership check failed" };
+    }
+
+    if (!membership) {
+      return { data: [], error: "You do not have access to this company." };
+    }
 
     const { data, error } = await supabase
       .from("employees")
@@ -117,13 +142,11 @@ async function loadEmployeesForCompany(
       .order("first_name", { ascending: true });
 
     if (error) {
-      console.error("leaver wizard: employee load error", error);
       return { data: [], error: error.message || "Failed to load employees" };
     }
 
     return { data: (data as EmployeeRow[]) || [], error: null };
   } catch (err: any) {
-    console.error("leaver wizard: unexpected error", err);
     return { data: [], error: err?.message || "Unexpected error loading employees" };
   }
 }
@@ -175,9 +198,7 @@ export default async function LeaverWizardEntryPage() {
 
         <div className="rounded-2xl ring-1 border bg-neutral-300 ring-neutral-400 border-neutral-400 p-4 overflow-x-auto">
           {error ? (
-            <div className="rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">
-              {error}
-            </div>
+            <div className="rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">{error}</div>
           ) : employees.length === 0 ? (
             <div className="text-sm text-neutral-800">
               No employees found for this company yet. Create an employee first using the New Employees Wizard.
@@ -198,7 +219,7 @@ export default async function LeaverWizardEntryPage() {
 
                   return (
                     <tr key={emp.id} className="border-b border-neutral-300 last:border-b-0 bg-neutral-100">
-                      <td className="px-3 py-2 align-middle">{emp.employee_number || "–"}</td>
+                      <td className="px-3 py-2 align-middle">{emp.employee_number || "-"}</td>
                       <td className="px-3 py-2 align-middle">{displayName}</td>
                       <td className="px-3 py-2 align-middle text-right">
                         <Link

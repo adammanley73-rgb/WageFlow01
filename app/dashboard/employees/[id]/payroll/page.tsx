@@ -1,5 +1,5 @@
 /* @ts-nocheck */
-/* C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\payroll\page.tsx */
+/* C:\Projects\wageflow01\app\dashboard\employees\[id]\payroll\page.tsx */
 
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -14,17 +15,71 @@ function getSupabaseUrl(): string {
   return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
 }
 
-function createAdminClient() {
-  const url = getSupabaseUrl();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+function getSupabaseAnonKey(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+}
 
-  if (!url || !serviceKey) {
-    throw new Error("employee payroll history: missing Supabase env");
+function readChunkedCookieValue(
+  all: { name: string; value: string }[],
+  baseName: string
+): string | null {
+  const exact = all.find((c) => c.name === baseName);
+  if (exact) return exact.value;
+
+  const parts = all
+    .filter((c) => c.name.startsWith(baseName + "."))
+    .map((c) => {
+      const m = c.name.match(/\.(\d+)$/);
+      const idx = m ? Number(m[1]) : 0;
+      return { idx, value: c.value };
+    })
+    .sort((a, b) => a.idx - b.idx);
+
+  if (parts.length === 0) return null;
+  return parts.map((p) => p.value).join("");
+}
+
+async function extractAccessTokenFromCookies(): Promise<string | null> {
+  try {
+    const jar = await cookies();
+    const all = jar.getAll();
+
+    const bases = new Set<string>();
+    for (const c of all) {
+      const n = c.name;
+      if (!n.includes("auth-token")) continue;
+      if (!n.startsWith("sb-") && !n.includes("sb-")) continue;
+      bases.add(n.replace(/\.\d+$/, ""));
+    }
+
+    for (const base of bases) {
+      const raw = readChunkedCookieValue(all as any, base);
+      if (!raw) continue;
+
+      const decoded = (() => {
+        try {
+          return decodeURIComponent(raw);
+        } catch {
+          return raw;
+        }
+      })();
+
+      try {
+        const obj = JSON.parse(decoded);
+        if (obj && typeof obj.access_token === "string") return obj.access_token;
+      } catch {}
+
+      try {
+        const asJson = Buffer.from(decoded, "base64").toString("utf8");
+        const obj = JSON.parse(asJson);
+        if (obj && typeof obj.access_token === "string") return obj.access_token;
+      } catch {}
+    }
+
+    return null;
+  } catch {
+    return null;
   }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
 }
 
 function isUuid(s: string) {
@@ -38,19 +93,18 @@ function looksTruncatedId(s: string) {
   if (!v) return false;
   if (v.includes("…")) return true;
   if (v.length < 30) return true;
-  // common “copied from UI” truncated patterns
   if (v.endsWith("-") && v.split("-").length < 5) return true;
   return false;
 }
 
 function safeStr(v: any) {
   const s = String(v ?? "").trim();
-  return s ? s : "—";
+  return s ? s : "-";
 }
 
 function fmtDate(d: any) {
   const s = String(d || "").trim();
-  if (!s) return "—";
+  if (!s) return "-";
   const dt = new Date(s);
   if (!Number.isFinite(dt.getTime())) return s;
   return new Intl.DateTimeFormat("en-GB", {
@@ -62,7 +116,7 @@ function fmtDate(d: any) {
 
 function fmtMoney(n: any) {
   const num = Number(n);
-  if (!Number.isFinite(num)) return "—";
+  if (!Number.isFinite(num)) return "-";
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
@@ -101,7 +155,7 @@ function extractPeriod(run: any) {
     run?.to ??
     null;
 
-  if (!start && !end) return "—";
+  if (!start && !end) return "-";
   if (start && end) return `${fmtDate(start)} to ${fmtDate(end)}`;
   return start ? `From ${fmtDate(start)}` : `To ${fmtDate(end)}`;
 }
@@ -123,77 +177,85 @@ function isMissingColumn(err: any) {
   return code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
 }
 
-async function queryEmployee(
-  supabase: ReturnType<typeof createAdminClient>,
-  companyId: string,
-  whereCol: string,
-  whereVal: string,
-  useCompanyFilter: boolean
-) {
-  let q = supabase.from("employees").select("*");
+async function createSupabaseRlsClientOrNull(): Promise<{ supabase: any; hasToken: boolean } | null> {
+  const url = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+  if (!url || !anonKey) return null;
 
-  if (useCompanyFilter) {
-    q = q.eq("company_id", companyId);
+  const token = await extractAccessTokenFromCookies();
+
+  const opts: any = {
+    auth: { persistSession: false, autoRefreshToken: false },
+  };
+
+  if (token) {
+    opts.global = { headers: { Authorization: `Bearer ${token}` } };
   }
 
-  const { data, error } = await q.eq(whereCol, whereVal).maybeSingle();
+  return { supabase: createClient(url, anonKey, opts), hasToken: Boolean(token) };
+}
+
+async function assertCompanyMembershipOrRedirect(supabase: any, companyId: string) {
+  const { data, error } = await supabase
+    .from("company_memberships")
+    .select("role")
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  if (error) {
+    redirect("/dashboard/companies");
+  }
+
+  if (!data) {
+    redirect("/dashboard/companies");
+  }
+}
+
+async function queryEmployee(
+  supabase: any,
+  companyId: string,
+  whereCol: string,
+  whereVal: string
+) {
+  const { data, error } = await supabase
+    .from("employees")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq(whereCol, whereVal)
+    .maybeSingle();
 
   return { employee: (data as any) ?? null, error: error ?? null };
 }
 
 async function loadEmployeeForCompany(
-  supabase: ReturnType<typeof createAdminClient>,
+  supabase: any,
   companyId: string,
   routeId: string
 ): Promise<{ employee: any | null; error: any | null }> {
   const rid = String(routeId || "").trim();
   if (!rid) return { employee: null, error: null };
 
-  const attempts: Array<{ col: string; val: string; companyFilter: boolean }> = [];
+  const attempts: Array<{ col: string; val: string }> = [];
 
-  // Prefer id lookup if route param is a UUID
   if (isUuid(rid)) {
-    attempts.push({ col: "id", val: rid, companyFilter: true });
-    attempts.push({ col: "employee_id", val: rid, companyFilter: true });
+    attempts.push({ col: "id", val: rid });
+    attempts.push({ col: "employee_id", val: rid });
   } else {
-    attempts.push({ col: "employee_id", val: rid, companyFilter: true });
-  }
-
-  // Fallback: try without company filter if demo schema lacks company_id
-  if (isUuid(rid)) {
-    attempts.push({ col: "id", val: rid, companyFilter: false });
-    attempts.push({ col: "employee_id", val: rid, companyFilter: false });
-  } else {
-    attempts.push({ col: "employee_id", val: rid, companyFilter: false });
+    attempts.push({ col: "employee_id", val: rid });
   }
 
   let lastErr: any | null = null;
 
   for (const a of attempts) {
-    const { employee, error } = await queryEmployee(supabase, companyId, a.col, a.val, a.companyFilter);
+    const { employee, error } = await queryEmployee(supabase, companyId, a.col, a.val);
 
     if (error) {
       lastErr = error;
-
-      // If the WHERE column is missing, move to the next strategy
       if (isMissingColumn(error)) continue;
-
-      // If company filter column is missing, try again without it
-      if (a.companyFilter && String(error?.message || "").toLowerCase().includes("company_id") && isMissingColumn(error)) {
-        continue;
-      }
-
-      // Other errors, continue but keep lastErr for display
       continue;
     }
 
     if (employee) {
-      // If we had to drop the company filter, still try to enforce it when possible
-      if (a.companyFilter === false && employee?.company_id && String(employee.company_id) !== String(companyId)) {
-        lastErr = { message: "Employee found but does not belong to the active company." };
-        continue;
-      }
-
       return { employee, error: null };
     }
   }
@@ -202,7 +264,7 @@ async function loadEmployeeForCompany(
 }
 
 async function loadRuns(
-  supabase: ReturnType<typeof createAdminClient>,
+  supabase: any,
   companyId: string
 ): Promise<{ runs: any[]; error: any | null }> {
   const { data, error } = await supabase
@@ -216,7 +278,7 @@ async function loadRuns(
 }
 
 async function findEmployeeTotalsInRun(
-  supabase: ReturnType<typeof createAdminClient>,
+  supabase: any,
   runId: string,
   candidateEmployeeIds: string[]
 ): Promise<{
@@ -241,7 +303,6 @@ async function findEmployeeTotalsInRun(
     };
   }
 
-  // Strategy A: payroll_run_items
   {
     const { data, error } = await supabase
       .from("payroll_run_items")
@@ -280,7 +341,6 @@ async function findEmployeeTotalsInRun(
     }
   }
 
-  // Strategy B: payroll_run_employees
   {
     const { data, error } = await supabase
       .from("payroll_run_employees")
@@ -359,7 +419,14 @@ export default async function EmployeePayrollHistoryPage({
   const routeId = String(resolvedParams?.id || "").trim();
   if (!routeId) redirect("/dashboard/employees");
 
-  const supabase = createAdminClient();
+  const client = await createSupabaseRlsClientOrNull();
+  if (!client || !client.hasToken) {
+    redirect("/login");
+  }
+
+  const supabase = client.supabase;
+
+  await assertCompanyMembershipOrRedirect(supabase, String(activeCompanyId));
 
   const { employee, error: empErr } = await loadEmployeeForCompany(
     supabase,
@@ -532,8 +599,7 @@ export default async function EmployeePayrollHistoryPage({
             <div className="p-6 bg-white">
               <div className="text-base font-semibold text-neutral-900">Payroll history is not wired yet</div>
               <div className="mt-2 text-sm text-neutral-700">
-                This route is now correct and styled properly. If you see this message, your payroll tables or columns do not
-                match the expected names (payroll_runs plus either payroll_run_items or payroll_run_employees).
+                If you see this message, your payroll tables or columns do not match the expected names (payroll_runs plus either payroll_run_items or payroll_run_employees).
               </div>
               {tableErr ? (
                 <div className="mt-3 text-xs text-red-700">
@@ -623,7 +689,7 @@ export default async function EmployeePayrollHistoryPage({
               </table>
 
               <div className="px-4 py-3 text-xs text-neutral-600 bg-white">
-                Note: if your totals live in a different table, this will show “No runs yet” until we map the correct table and columns.
+                Note: if your totals live in a different table, this will show "No runs yet" until we map the correct table and columns.
               </div>
             </div>
           )}
