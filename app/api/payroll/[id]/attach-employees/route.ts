@@ -1,36 +1,23 @@
-/* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\api\payroll\[id]\attach-employees\route.ts
+﻿// C:\Projects\wageflow01\app\api\payroll\[id]\attach-employees\route.ts
+
+// @ts-nocheck
 
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 
-function getSupabaseUrl(): string {
-  return (
-    process.env.SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_PUBLIC_URL ||
-    ""
-  );
-}
-
-function createAdminClient() {
-  const url = getSupabaseUrl();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error("payroll/[id]/attach-employees: missing Supabase env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
-}
+export const dynamic = "force-dynamic";
 
 type RouteParams = {
   params: Promise<{
     id: string;
   }>;
 };
+
+function statusFromErr(err: any, fallback = 500): number {
+  const s = Number(err?.status);
+  if (s === 400 || s === 401 || s === 403 || s === 404 || s === 409) return s;
+  return fallback;
+}
 
 function isUuid(s: any) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
@@ -68,12 +55,9 @@ function isMissingColumnError(err: any) {
   const code = String(err?.code ?? "");
   const msg = String(err?.message ?? "").toLowerCase();
 
-  // Postgres missing column
   if (code === "42703") return true;
   if (msg.includes('column "') && msg.includes("does not exist")) return true;
 
-  // PostgREST / Supabase schema cache missing column
-  // Example: "Could not find the 'tax_basis_used' column of 'payroll_run_employees' in the schema cache"
   if (code.toLowerCase().startsWith("pgrst")) return true;
   if (msg.includes("schema cache") && msg.includes("could not find") && msg.includes("column")) return true;
 
@@ -83,11 +67,9 @@ function isMissingColumnError(err: any) {
 function missingColumnName(err: any): string | null {
   const msg = String(err?.message ?? "");
 
-  // Postgres style: column "x" does not exist
   const m1 = msg.match(/column\s+"([^"]+)"\s+does not exist/i);
   if (m1?.[1]) return m1[1];
 
-  // PostgREST style: Could not find the 'x' column of 'y' in the schema cache
   const m2 = msg.match(/could not find the '([^']+)' column of/i);
   if (m2?.[1]) return m2[1];
 
@@ -163,14 +145,19 @@ function defaultNiCategory(emp: any): string {
   const age = computeAgeYears(emp?.date_of_birth ?? emp?.dateOfBirth ?? null);
   if (age == null) return "A";
 
-  // Conservative, simple default:
-  // treat 66+ as "over SPA" for defaulting purposes (admin can override).
   if (age >= 66) return "C";
 
   return "A";
 }
 
 export async function POST(_req: Request, { params }: RouteParams) {
+  const supabase = await createClient();
+
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  }
+
   const resolvedParams = await params;
   const runId = String(resolvedParams?.id ?? "").trim();
 
@@ -181,28 +168,33 @@ export async function POST(_req: Request, { params }: RouteParams) {
     );
   }
 
-  const supabase = createAdminClient();
-
-  // 1) Load run (schema tolerant)
+  // 1) Load run (RLS-scoped)
   const { data: runRow, error: runError } = await supabase
     .from("payroll_runs")
     .select("*")
     .eq("id", runId)
     .maybeSingle();
 
-  if (runError || !runRow) {
+  if (runError) {
     return NextResponse.json(
       {
         ok: false,
-        error: "RUN_NOT_FOUND",
-        message: "Payroll run not found.",
+        error: "RUN_LOAD_FAILED",
+        message: "Failed to load payroll run.",
         details: runError?.message ?? null,
       },
+      { status: statusFromErr(runError) }
+    );
+  }
+
+  if (!runRow) {
+    return NextResponse.json(
+      { ok: false, error: "RUN_NOT_FOUND", message: "Payroll run not found." },
       { status: 404 }
     );
   }
 
-  const companyId = runRow.company_id ?? runRow.companyId ?? null;
+  const companyId = String(runRow.company_id ?? runRow.companyId ?? "").trim();
   const runFrequencyRaw = runRow.frequency ?? runRow.pay_frequency ?? runRow.payFrequency ?? null;
   const runFrequency = normalizeFrequency(runFrequencyRaw);
 
@@ -232,7 +224,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
     );
   }
 
-  // 2) Load employees for company (schema tolerant)
+  // 2) Load employees for company (RLS-scoped)
   const { data: employeeRows, error: employeesError } = await supabase
     .from("employees")
     .select("*")
@@ -246,7 +238,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
         message: "Failed to load employees for this company.",
         details: employeesError.message,
       },
-      { status: 500 }
+      { status: statusFromErr(employeesError) }
     );
   }
 
@@ -256,7 +248,6 @@ export async function POST(_req: Request, { params }: RouteParams) {
   const eligibleEmployees = allEmployees
     .filter((emp) => {
       const status = String(emp?.status ?? "").trim().toLowerCase();
-      // treat empty as active for safety in demo data, but warn elsewhere via UI later
       const isActive = !status || status === "active";
       if (!isActive) return false;
 
@@ -269,7 +260,6 @@ export async function POST(_req: Request, { params }: RouteParams) {
     .map((emp) => {
       const employeeUuid = isUuid(emp?.id) ? String(emp.id) : null;
       const employeeKey = String(emp?.employee_id ?? "").trim() || employeeUuid || "";
-
       return { emp, employeeUuid, employeeKey };
     })
     .filter((x) => Boolean(x.employeeUuid) && Boolean(x.employeeKey));
@@ -300,12 +290,11 @@ export async function POST(_req: Request, { params }: RouteParams) {
         message: "Failed to check existing employees already attached to this run.",
         details: existingError.message,
       },
-      { status: 500 }
+      { status: statusFromErr(existingError) }
     );
   }
 
   const existingIds = new Set((existingRows ?? []).map((row: any) => String(row.employee_id)));
-
   const toAttach = eligibleEmployees.filter((x) => !existingIds.has(String(x.employeeUuid)));
 
   if (toAttach.length === 0) {
@@ -321,10 +310,9 @@ export async function POST(_req: Request, { params }: RouteParams) {
     );
   }
 
-  // 4) Enforce your rule: user must apply pending/approved settings before attaching
+  // 4) Enforce rule: apply pending/approved settings before attaching
   const employeeKeys = Array.from(new Set(toAttach.map((x) => x.employeeKey)));
 
-  // chunk 'in' queries to be safe
   async function loadPendingOrApproved(keys: string[]) {
     const results: any[] = [];
     for (let i = 0; i < keys.length; i += 200) {
@@ -356,7 +344,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
         message: "Failed to check pending payroll setting changes.",
         details: pendingCheck.error.message ?? String(pendingCheck.error),
       },
-      { status: 500 }
+      { status: statusFromErr(pendingCheck.error) }
     );
   }
 
@@ -424,7 +412,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
         message: "Failed to load applied payroll settings for employees.",
         details: appliedRes.error.message ?? String(appliedRes.error),
       },
-      { status: 500 }
+      { status: statusFromErr(appliedRes.error) }
     );
   }
 
@@ -486,13 +474,9 @@ export async function POST(_req: Request, { params }: RouteParams) {
       pay_basis_used: payBasisUsed,
       hours_per_week_used: hoursUsed,
 
-      // New column (if present)
       tax_basis_used: taxBasisUsed,
-
-      // Optional link back to settings history row (if column exists)
       settings_history_id_used: settingsHistoryIdUsed,
 
-      // Provide values that satisfy stricter schemas (NOT NULL columns)
       basic_pay: 0,
       overtime_pay: 0,
       bonus_pay: 0,
@@ -508,12 +492,10 @@ export async function POST(_req: Request, { params }: RouteParams) {
       gross_pay: 0,
       net_pay: 0,
 
-      // Some schemas also have these
       ni_employee: 0,
       ni_employer: 0,
       manual_override: false,
 
-      // IMPORTANT: must satisfy payroll_run_employees_calc_mode_chk in your DB
       calc_mode: "uncomputed",
 
       pay_after_leaving: false,
@@ -528,6 +510,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
         as_of_date: asOfDate,
         tax_basis_used: taxBasisUsed,
         employee_key: employeeKey,
+        attach_mode: "due",
       },
 
       created_at: now,
@@ -537,7 +520,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
     return row;
   });
 
-  // 7) Insert with missing-column strip retries (schema tolerant)
+  // 7) Insert (schema tolerant)
   const insertRes = await insertWithMissingColumnStrip(supabase, "payroll_run_employees", rowsToInsert);
 
   if (!insertRes.ok) {
@@ -549,13 +532,17 @@ export async function POST(_req: Request, { params }: RouteParams) {
         details: insertRes.error?.message ?? String(insertRes.error),
         strippedColumns: insertRes.stripped,
       },
-      { status: 500 }
+      { status: statusFromErr(insertRes.error) }
     );
   }
 
-  // 8) Mark run as attached_all_due_employees (if column exists)
-  // Use schema-tolerant update by attempting the update and ignoring missing-column errors.
-  const upd = await supabase.from("payroll_runs").update({ attached_all_due_employees: true }).eq("id", runId);
+  // 8) Mark run attached_all_due_employees (if possible)
+  const upd = await supabase
+    .from("payroll_runs")
+    .update({ attached_all_due_employees: true })
+    .eq("id", runId)
+    .select("id")
+    .maybeSingle();
 
   if (upd.error && !isMissingColumnError(upd.error)) {
     return NextResponse.json(
@@ -566,7 +553,20 @@ export async function POST(_req: Request, { params }: RouteParams) {
         details: upd.error.message ?? String(upd.error),
         attachedCount: rowsToInsert.length,
       },
-      { status: 500 }
+      { status: statusFromErr(upd.error) }
+    );
+  }
+
+  // If RLS blocks the update, surface a clean forbidden
+  if (!upd.error && !upd.data?.id) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "FORBIDDEN",
+        message: "Employees were attached, but you do not have permission to update the run metadata.",
+        attachedCount: rowsToInsert.length,
+      },
+      { status: 403 }
     );
   }
 

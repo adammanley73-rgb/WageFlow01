@@ -1,36 +1,23 @@
+﻿// C:\Projects\wageflow01\app\api\payroll\[id]\attach-selected\route.ts
+
 // @ts-nocheck
-// C:\Users\adamm\Projects\wageflow01\app\api\payroll\[id]\attach-selected\route.ts
 
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 
-function getSupabaseUrl(): string {
-  return (
-    process.env.SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.SUPABASE_PUBLIC_URL ||
-    ""
-  );
-}
-
-function createAdminClient() {
-  const url = getSupabaseUrl();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error("payroll/[id]/attach-selected: missing Supabase env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
-}
+export const dynamic = "force-dynamic";
 
 type RouteParams = {
   params: Promise<{
     id: string;
   }>;
 };
+
+function statusFromErr(err: any, fallback = 500): number {
+  const s = Number(err?.status);
+  if (s === 400 || s === 401 || s === 403 || s === 404 || s === 409) return s;
+  return fallback;
+}
 
 function isUuid(s: any) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
@@ -187,6 +174,13 @@ async function loadEmployeesByIds(supabase: any, companyId: string, ids: string[
 }
 
 export async function POST(req: Request, { params }: RouteParams) {
+  const supabase = await createClient();
+
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  }
+
   const resolvedParams = await params;
   const runId = String(resolvedParams?.id ?? "").trim();
 
@@ -233,22 +227,27 @@ export async function POST(req: Request, { params }: RouteParams) {
     );
   }
 
-  const supabase = createAdminClient();
-
   const { data: runRow, error: runError } = await supabase
     .from("payroll_runs")
     .select("*")
     .eq("id", runId)
     .maybeSingle();
 
-  if (runError || !runRow) {
+  if (runError) {
     return NextResponse.json(
       {
         ok: false,
-        error: "RUN_NOT_FOUND",
-        message: "Payroll run not found.",
+        error: "RUN_LOAD_FAILED",
+        message: "Failed to load payroll run.",
         details: runError?.message ?? null,
       },
+      { status: statusFromErr(runError) }
+    );
+  }
+
+  if (!runRow) {
+    return NextResponse.json(
+      { ok: false, error: "RUN_NOT_FOUND", message: "Payroll run not found." },
       { status: 404 }
     );
   }
@@ -299,7 +298,7 @@ export async function POST(req: Request, { params }: RouteParams) {
         message: "Failed to load selected employees for this company.",
         details: employeesRes.error.message ?? String(employeesRes.error),
       },
-      { status: 500 }
+      { status: statusFromErr(employeesRes.error) }
     );
   }
 
@@ -365,7 +364,7 @@ export async function POST(req: Request, { params }: RouteParams) {
         message: "Failed to check existing employees already attached to this run.",
         details: existingError.message,
       },
-      { status: 500 }
+      { status: statusFromErr(existingError) }
     );
   }
 
@@ -422,7 +421,7 @@ export async function POST(req: Request, { params }: RouteParams) {
         message: "Failed to check pending payroll setting changes.",
         details: pendingCheck.error.message ?? String(pendingCheck.error),
       },
-      { status: 500 }
+      { status: statusFromErr(pendingCheck.error) }
     );
   }
 
@@ -463,6 +462,7 @@ export async function POST(req: Request, { params }: RouteParams) {
             "student_loan_plan",
             "postgrad_loan",
             "status",
+            "created_at",
           ].join(",")
         )
         .eq("company_id", companyIdStr)
@@ -489,7 +489,7 @@ export async function POST(req: Request, { params }: RouteParams) {
         message: "Failed to load applied payroll settings for employees.",
         details: appliedRes.error.message ?? String(appliedRes.error),
       },
-      { status: 500 }
+      { status: statusFromErr(appliedRes.error) }
     );
   }
 
@@ -606,7 +606,7 @@ export async function POST(req: Request, { params }: RouteParams) {
         details: insertRes.error?.message ?? String(insertRes.error),
         strippedColumns: insertRes.stripped,
       },
-      { status: 500 }
+      { status: statusFromErr(insertRes.error) }
     );
   }
 
@@ -625,7 +625,7 @@ export async function POST(req: Request, { params }: RouteParams) {
           details: upd.error.message ?? String(upd.error),
           attachedCount: rowsToInsert.length,
         },
-        { status: 500 }
+        { status: statusFromErr(upd.error) }
       );
     }
   }
