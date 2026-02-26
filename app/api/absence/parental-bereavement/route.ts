@@ -1,8 +1,9 @@
 // C:\Projects\wageflow01\app\api\absence\parental-bereavement\route.ts
+// @ts-nocheck
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,15 +15,10 @@ function json(status: number, body: any) {
   });
 }
 
-function getAdminClientOrThrow() {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error("Server config missing. SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set.");
-  }
-
-  return createClient(url, serviceKey, { auth: { persistSession: false } });
+function statusFromErr(err: any, fallback = 500): number {
+  const s = Number(err?.status);
+  if (s === 400 || s === 401 || s === 403 || s === 404 || s === 409) return s;
+  return fallback;
 }
 
 function isOverlapError(err: any) {
@@ -58,6 +54,13 @@ function rangesOverlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
 }
 
 export async function POST(req: Request) {
+  const supabase = await createClient();
+
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return json(401, { ok: false, code: "UNAUTHENTICATED", message: "Sign in required." });
+  }
+
   let body: any = null;
 
   try {
@@ -68,14 +71,36 @@ export async function POST(req: Request) {
 
   const cookieStore = await cookies();
   const activeCompanyId =
-    cookieStore.get("active_company_id")?.value ?? cookieStore.get("company_id")?.value ?? "";
+    String(body?.companyId ?? body?.company_id ?? "").trim() ||
+    cookieStore.get("active_company_id")?.value ||
+    cookieStore.get("company_id")?.value ||
+    "";
 
   if (!activeCompanyId) {
     return json(400, { ok: false, code: "NO_COMPANY", message: "No active company selected." });
   }
 
-  const employeeId = String(body?.employeeId || "").trim();
+  const employeeId = String(body?.employeeId ?? body?.employee_id ?? "").trim();
   if (!employeeId) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Missing employeeId." });
+
+  // Validate employee belongs to active company (RLS-scoped)
+  const { data: emp, error: empErr } = await supabase
+    .from("employees")
+    .select("id, company_id")
+    .eq("id", employeeId)
+    .maybeSingle();
+
+  if (empErr) {
+    return json(statusFromErr(empErr), { ok: false, code: "EMPLOYEE_LOAD_FAILED", message: "Could not load employee." });
+  }
+
+  if (!emp?.id || !emp?.company_id) {
+    return json(404, { ok: false, code: "EMPLOYEE_NOT_FOUND", message: "Employee not found." });
+  }
+
+  if (String(emp.company_id) !== String(activeCompanyId)) {
+    return json(403, { ok: false, code: "EMPLOYEE_NOT_IN_COMPANY", message: "Employee does not belong to the active company." });
+  }
 
   const eventDate = String(body?.eventDate || "").trim();
   if (!isIsoDate(eventDate)) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Invalid event date." });
@@ -136,13 +161,6 @@ export async function POST(req: Request) {
     status: "draft",
   }));
 
-  let supabase;
-  try {
-    supabase = getAdminClientOrThrow();
-  } catch (e: any) {
-    return json(500, { ok: false, code: "SERVER_MISCONFIGURED", message: e?.message || "Server config missing." });
-  }
-
   const { data, error } = await supabase.from("absences").insert(rowsToInsert).select("id");
 
   if (error) {
@@ -155,7 +173,7 @@ export async function POST(req: Request) {
       });
     }
 
-    return json(500, { ok: false, code: "DB_ERROR", message: error.message || "Insert failed." });
+    return json(statusFromErr(error), { ok: false, code: "DB_ERROR", message: error.message || "Insert failed." });
   }
 
   return json(200, { ok: true, ids: (data || []).map((r: any) => r.id) });

@@ -1,16 +1,27 @@
-/* @ts-nocheck */
-// app/api/_diag/env/route.ts
-import { NextResponse } from 'next/server';
+// C:\Projects\wageflow01\app\api\diag\route.ts
 
-export async function GET() {
-  const hasUrl = !!process.env.SUPABASE_URL && process.env.SUPABASE_URL!.startsWith('https://');
-  const hasSrv = !!process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY!.length > 40;
+import { NextResponse } from "next/server";
 
-  return NextResponse.json({
-    ok: hasUrl && hasSrv,
-    supabase_url_present: hasUrl,
-    service_role_present: hasSrv,
-  });
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function isLocalDev() {
+  const nodeEnv = String(process.env.NODE_ENV ?? "").toLowerCase();
+  const vercel = String(process.env.VERCEL ?? "").toLowerCase();
+  return nodeEnv === "development" && vercel !== "1" && vercel !== "true";
 }
 
+export async function GET() {
+  if (!isLocalDev()) {
+    return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
+  }
 
+  return NextResponse.json(
+    {
+      ok: true,
+      ts: new Date().toISOString(),
+      message: "diag enabled in local dev only",
+    },
+    { status: 200 }
+  );
+}
