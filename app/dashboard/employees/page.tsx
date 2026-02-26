@@ -4,30 +4,13 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
 import EmployeesSearchTable from "./EmployeesSearchTable";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-function getSupabaseUrl(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
-}
-
-function createAdminClient() {
-  const url = getSupabaseUrl();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceKey) {
-    throw new Error("employees: missing Supabase env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
-}
 
 type EmployeesPageProps = {
   searchParams?: Promise<{
@@ -39,7 +22,7 @@ type EmployeesPageProps = {
 
 function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
-    s
+    String(s || "")
   );
 }
 
@@ -60,13 +43,18 @@ function formatSupabaseError(err: any) {
   }
 }
 
-export default async function EmployeesPage({ searchParams }: EmployeesPageProps) {
+async function getActiveCompanyId(): Promise<string | null> {
   const jar = await cookies();
+  const v = jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+  if (!v) return null;
+  const trimmed = String(v).trim();
+  return isUuid(trimmed) ? trimmed : null;
+}
 
-  const activeCompanyId =
-    jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+export default async function EmployeesPage({ searchParams }: EmployeesPageProps) {
+  const activeCompanyId = await getActiveCompanyId();
 
-  if (!activeCompanyId || !isUuid(String(activeCompanyId))) {
+  if (!activeCompanyId) {
     redirect("/dashboard/companies");
   }
 
@@ -79,7 +67,55 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const sortDirection: "asc" | "desc" = directionParam === "desc" ? "desc" : "asc";
   const showLeavers = showLeaversParam === "1";
 
-  const supabase = createAdminClient();
+  const supabase = await createClient();
+
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  const user = userData?.user ?? null;
+
+  if (userErr || !user) {
+    return (
+      <PageTemplate title="Employees" currentSection="employees">
+        <div className="flex flex-col gap-3 flex-1 min-h-0">
+          <ActiveCompanyBanner />
+          <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
+            <div className="text-sm font-semibold text-neutral-900">Sign in required</div>
+            <div className="mt-1 text-sm text-neutral-700">Please sign in again.</div>
+          </div>
+        </div>
+      </PageTemplate>
+    );
+  }
+
+  const { data: membership, error: membershipErr } = await supabase
+    .from("company_memberships")
+    .select("role")
+    .eq("company_id", activeCompanyId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (membershipErr || !membership) {
+    return (
+      <PageTemplate title="Employees" currentSection="employees">
+        <div className="flex flex-col gap-3 flex-1 min-h-0">
+          <ActiveCompanyBanner />
+          <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
+            <div className="text-sm font-semibold text-neutral-900">Company access denied</div>
+            <div className="mt-1 text-sm text-neutral-700">
+              You do not have access to the active company. Re-select a company.
+            </div>
+            <div className="mt-4">
+              <Link
+                href="/dashboard/companies"
+                className="inline-flex items-center justify-center rounded-full border border-neutral-400 bg-white px-3 py-1 text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
+              >
+                Go to company select
+              </Link>
+            </div>
+          </div>
+        </div>
+      </PageTemplate>
+    );
+  }
 
   let employeesQuery = supabase
     .from("employees")
@@ -115,9 +151,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const hasAnyEmployees = employees.length > 0;
 
   const currentSortParam = sortKey === "number" ? "number" : "name";
-  const toggleShowLeaversHref = `/dashboard/employees?sort=${currentSortParam}&direction=${sortDirection}${
-    showLeavers ? "" : "&showLeavers=1"
-  }`;
+  const toggleShowLeaversHref = `/dashboard/employees?sort=${currentSortParam}&direction=${sortDirection}${showLeavers ? "" : "&showLeavers=1"}`;
 
   return (
     <PageTemplate title="Employees" currentSection="employees">
