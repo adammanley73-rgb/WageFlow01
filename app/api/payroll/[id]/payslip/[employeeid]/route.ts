@@ -1,31 +1,26 @@
-﻿// E:\Projects\wageflow01\app\api\payroll\[id]\payslip\[employeeId]\route.ts
-/* @ts-nocheck */
+﻿// C:\Projects\wageflow01\app\api\payroll\[id]\payslip\[employeeId]\route.ts
+
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 import { getSspAmountsForRun } from "@/lib/services/absenceService";
 import { calculatePay } from "@/lib/payroll/calculatePay";
 
-function createAdminClient() {
-  const url = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-  if (!url || !serviceKey) {
-    throw new Error("payslip route: missing Supabase env");
-  }
-
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
-}
-
-type RouteParams = {
-  params: Promise<{
-    id?: string;
-    runId?: string;
-    employeeId?: string;
-    employeeid?: string;
-  }>;
+type ParamsShape = {
+  id?: string;
+  runId?: string;
+  employeeId?: string;
+  employeeid?: string;
 };
+
+type RouteContext = {
+  params: Promise<ParamsShape>;
+};
+
+type DbRow = Record<string, unknown>;
 
 type NormalisedPayElement = {
   id: string;
@@ -42,7 +37,37 @@ type NormalisedPayElement = {
   description: string | null;
 };
 
-function normaliseSide(value: any): "earning" | "deduction" {
+type PayrollRunPayElementRow = {
+  id: string;
+  payroll_run_employee_id: string;
+  pay_element_type_id: string | null;
+  amount: number | null;
+  description_override: string | null;
+  taxable_for_paye_override: boolean | null;
+  nic_earnings_override: boolean | null;
+  pensionable_override: boolean | null;
+  ae_qualifying_override: boolean | null;
+};
+
+type PayElementTypeRow = {
+  id: string;
+  code: string | null;
+  name: string | null;
+  side: string | null;
+  taxable_for_paye: boolean | null;
+  nic_earnings: boolean | null;
+  pensionable_default: boolean | null;
+  ae_qualifying_default: boolean | null;
+  is_salary_sacrifice_type: boolean | null;
+};
+
+function isUuid(v: unknown): boolean {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
+    String(v ?? "").trim()
+  );
+}
+
+function normaliseSide(value: unknown): "earning" | "deduction" {
   const s = typeof value === "string" ? value.toLowerCase().trim() : "";
   return s === "deduction" ? "deduction" : "earning";
 }
@@ -51,7 +76,7 @@ function round2(n: number): number {
   return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 }
 
-function isIsoDate(s: any): boolean {
+function isIsoDate(s: unknown): boolean {
   return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
@@ -69,33 +94,28 @@ function addDaysIso(iso: string, days: number): string {
   return toIsoDate(d);
 }
 
-function safeNumber(x: any): number | null {
+function safeNumber(x: unknown): number | null {
   const n = Number(x);
   return Number.isFinite(n) ? n : null;
 }
 
-function isSspLike(e: { code?: any; name?: any; description?: any }) {
+function isSspLike(e: { code?: unknown; name?: unknown; description?: unknown }) {
   const code = String(e?.code || "").toUpperCase();
   const name = String(e?.name || "").toLowerCase();
   const desc = String(e?.description || "").toLowerCase();
   return code === "SSP" || code === "SSP1" || name.includes("statutory sick") || desc.includes("statutory sick");
 }
 
-function pickEarliestSicknessStart(sspForEmployee: any): string | null {
-  const abs = Array.isArray(sspForEmployee?.absences) ? sspForEmployee.absences : [];
+function pickEarliestSicknessStart(sspForEmployee: unknown): string | null {
+  const anySsp = sspForEmployee as { absences?: unknown } | null;
+  const abs = Array.isArray(anySsp?.absences) ? (anySsp?.absences as unknown[]) : [];
   const starts = abs
-    .map((a: any) => String(a?.sicknessStart || ""))
-    .filter((s: string) => isIsoDate(s))
-    .sort((a: string, b: string) => a.localeCompare(b));
+    .map((a) => String((a as any)?.sicknessStart || ""))
+    .filter((s) => isIsoDate(s))
+    .sort((a, b) => a.localeCompare(b));
   return starts.length ? starts[0] : null;
 }
 
-/**
- * Approx AWE for SSP cap:
- * - Uses payroll_runs.period_end as the "pay date proxy" for history.
- * - Looks back 8 weeks (56 days) ending the day before first sickness.
- * - AWE = total gross from matching runs / 8.
- */
 async function computeAweWeeklyForSspCap(
   supabase: any,
   companyId: string,
@@ -159,17 +179,24 @@ async function computeAweWeeklyForSspCap(
   };
 }
 
-async function loadPayslipPayload(runId: string, employeeId: string) {
-  const supabase = createAdminClient();
+function pickFirst(...values: unknown[]): string | null {
+  for (const v of values) {
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    return s;
+  }
+  return null;
+}
 
-  // 1) Load the run row
-  const { data: runRow, error: runError } = await supabase
+async function loadPayslipPayload(supabase: any, runId: string, employeeId: string) {
+  const { data: runRowRaw, error: runError } = await supabase
     .from("payroll_runs")
     .select("*")
     .eq("id", runId)
-    .single();
+    .maybeSingle();
 
-  if (runError || !runRow) {
+  if (runError || !runRowRaw) {
     return {
       ok: false,
       status: 404,
@@ -182,20 +209,35 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     } as const;
   }
 
-  const companyId = runRow["company_id"];
-  const frequency = runRow["frequency"] ?? null;
-  const periodStart = runRow["period_start"] ?? runRow["pay_period_start"] ?? null;
-  const periodEnd = runRow["period_end"] ?? runRow["pay_period_end"] ?? null;
+  const runRow = runRowRaw as DbRow;
 
-  // 2) Load the payroll_run_employees row for this run + employee
-  const { data: preRow, error: preError } = await supabase
+  const companyId = String(runRow["company_id"] ?? "").trim();
+  const frequency = (runRow["frequency"] ?? null) as unknown;
+
+  const periodStart = (runRow["period_start"] ?? runRow["pay_period_start"] ?? null) as unknown;
+  const periodEnd = (runRow["period_end"] ?? runRow["pay_period_end"] ?? null) as unknown;
+
+  if (!companyId || !isUuid(companyId)) {
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        ok: false,
+        error: "RUN_MISSING_COMPANY",
+        message: "Payroll run is missing a valid company_id for payslip.",
+        details: null,
+      },
+    } as const;
+  }
+
+  const { data: preRowRaw, error: preError } = await supabase
     .from("payroll_run_employees")
     .select("id, run_id, employee_id, gross_pay, net_pay, tax, ni_employee, ni_employer, pay_after_leaving")
     .eq("run_id", runId)
     .eq("employee_id", employeeId)
     .maybeSingle();
 
-  if (preError || !preRow) {
+  if (preError || !preRowRaw) {
     return {
       ok: false,
       status: 404,
@@ -208,9 +250,16 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     } as const;
   }
 
-  const preId = preRow["id"] as string;
+  const preRow = preRowRaw as DbRow;
+  const preId = String(preRow["id"] ?? "").trim();
+  if (!preId) {
+    return {
+      ok: false,
+      status: 500,
+      body: { ok: false, error: "BAD_PAYROLL_RUN_EMPLOYEE", message: "Payroll row is missing an id.", details: null },
+    } as const;
+  }
 
-  // 2b) Collect ALL payroll_run_employee ids for this run + employee
   let preIds: string[] = [preId];
 
   const { data: allPreRows, error: allPreError } = await supabase
@@ -220,18 +269,17 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     .eq("employee_id", employeeId);
 
   if (!allPreError && Array.isArray(allPreRows) && allPreRows.length > 0) {
-    const ids = allPreRows.map((r: any) => r.id).filter((v: any) => typeof v === "string");
+    const ids = allPreRows.map((r: any) => r?.id).filter((v: any) => typeof v === "string" && v.length > 0);
     if (ids.length > 0) preIds = ids;
   }
 
-  // 3) Load the company
-  const { data: companyRow, error: companyError } = await supabase
+  const { data: companyRowRaw, error: companyError } = await supabase
     .from("companies")
     .select("*")
     .eq("id", companyId)
     .maybeSingle();
 
-  if (companyError || !companyRow) {
+  if (companyError || !companyRowRaw) {
     return {
       ok: false,
       status: 500,
@@ -244,14 +292,15 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     } as const;
   }
 
-  // 4) Load the employee
-  const { data: employeeRow, error: employeeError } = await supabase
+  const companyRow = companyRowRaw as DbRow;
+
+  const { data: employeeRowRaw, error: employeeError } = await supabase
     .from("employees")
     .select("*")
     .eq("id", employeeId)
     .maybeSingle();
 
-  if (employeeError || !employeeRow) {
+  if (employeeError || !employeeRowRaw) {
     return {
       ok: false,
       status: 500,
@@ -264,29 +313,31 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     } as const;
   }
 
-  // 4b) Determine tax code from new starter or P45 data
+  const employeeRow = employeeRowRaw as DbRow;
+
   let starterTaxCode: string | null = null;
   try {
-    const { data: starterRow, error: starterError } = await supabase
+    const { data: starterRowRaw, error: starterError } = await supabase
       .from("employee_starters")
       .select("p45_provided, p45_present, starter_declaration, p45_tax_code")
       .eq("employee_id", employeeId)
       .maybeSingle();
 
-    let row = starterRow;
+    let row = starterRowRaw as any;
+
     if (!row && !starterError) {
-      const { data: legacyRow, error: legacyError } = await supabase
+      const { data: legacyRowRaw, error: legacyError } = await supabase
         .from("employee_starter_details")
         .select("p45_provided, p45_present, starter_declaration, p45_tax_code")
         .eq("employee_id", employeeId)
         .maybeSingle();
-      if (legacyRow && !legacyError) row = legacyRow;
+      if (legacyRowRaw && !legacyError) row = legacyRowRaw as any;
     }
 
     if (row) {
       const p45Provided = row.p45_provided ?? row.p45_present ?? false;
       if (p45Provided) {
-        const code = (row.p45_tax_code || "").trim();
+        const code = String(row.p45_tax_code || "").trim();
         if (code) starterTaxCode = code;
       } else {
         const decl = String(row.starter_declaration || "").toUpperCase();
@@ -299,7 +350,6 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     console.error("payslip route: error reading starter details", err);
   }
 
-  // 5) Load pay elements from payroll_run_pay_elements (source of truth)
   const elements: NormalisedPayElement[] = [];
 
   const { data: rawElementRows, error: elementsError } = await supabase
@@ -313,22 +363,21 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     console.error("payslip route: pay elements error", elementsError);
   }
 
-  const elementRows: any[] = Array.isArray(rawElementRows) ? rawElementRows : [];
+  const elementRows = (Array.isArray(rawElementRows) ? rawElementRows : []) as unknown as PayrollRunPayElementRow[];
 
-  // Lookup pay_element_types by id
-  const typeById: Record<string, any> = {};
+  const typeById: Record<string, PayElementTypeRow> = {};
 
   if (elementRows.length > 0) {
     const typeIds = Array.from(
       new Set(
         elementRows
-          .map((r: any) => r["pay_element_type_id"])
-          .filter((v: any) => typeof v === "string" && v.length > 0)
+          .map((r) => r.pay_element_type_id)
+          .filter((v): v is string => typeof v === "string" && v.length > 0)
       )
     );
 
     if (typeIds.length > 0) {
-      const { data: typeRows, error: typeError } = await supabase
+      const { data: typeRowsRaw, error: typeError } = await supabase
         .from("pay_element_types")
         .select(
           "id, code, name, side, taxable_for_paye, nic_earnings, pensionable_default, ae_qualifying_default, is_salary_sacrifice_type"
@@ -339,59 +388,50 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
         console.error("payslip route: pay element types error", typeError);
       }
 
-      if (typeRows) {
-        for (const t of typeRows as any[]) {
-          if (t.id) typeById[String(t.id)] = t;
-        }
+      const typeRows = (Array.isArray(typeRowsRaw) ? typeRowsRaw : []) as unknown as PayElementTypeRow[];
+      for (const t of typeRows) {
+        if (t?.id) typeById[String(t.id)] = t;
       }
     }
   }
 
   for (const row of elementRows) {
-    const master = typeById[String(row["pay_element_type_id"])] ?? null;
+    const master = row.pay_element_type_id ? typeById[String(row.pay_element_type_id)] : undefined;
 
-    const baseTaxable =
-      typeof master?.["taxable_for_paye"] === "boolean" ? master["taxable_for_paye"] : true;
-    const baseNi = typeof master?.["nic_earnings"] === "boolean" ? master["nic_earnings"] : true;
-    const basePensionable =
-      typeof master?.["pensionable_default"] === "boolean" ? master["pensionable_default"] : true;
-    const baseAe =
-      typeof master?.["ae_qualifying_default"] === "boolean" ? master["ae_qualifying_default"] : true;
+    const baseTaxable = typeof master?.taxable_for_paye === "boolean" ? master.taxable_for_paye : true;
+    const baseNi = typeof master?.nic_earnings === "boolean" ? master.nic_earnings : true;
+    const basePensionable = typeof master?.pensionable_default === "boolean" ? master.pensionable_default : true;
+    const baseAe = typeof master?.ae_qualifying_default === "boolean" ? master.ae_qualifying_default : true;
 
     const taxableForPaye =
-      typeof row["taxable_for_paye_override"] === "boolean"
-        ? row["taxable_for_paye_override"]
-        : baseTaxable;
-    const nicEarnings =
-      typeof row["nic_earnings_override"] === "boolean" ? row["nic_earnings_override"] : baseNi;
-    const pensionable =
-      typeof row["pensionable_override"] === "boolean" ? row["pensionable_override"] : basePensionable;
-    const aeQualifying =
-      typeof row["ae_qualifying_override"] === "boolean" ? row["ae_qualifying_override"] : baseAe;
+      typeof row.taxable_for_paye_override === "boolean" ? row.taxable_for_paye_override : baseTaxable;
+    const nicEarnings = typeof row.nic_earnings_override === "boolean" ? row.nic_earnings_override : baseNi;
+    const pensionable = typeof row.pensionable_override === "boolean" ? row.pensionable_override : basePensionable;
+    const aeQualifying = typeof row.ae_qualifying_override === "boolean" ? row.ae_qualifying_override : baseAe;
 
-    const normalised: NormalisedPayElement = {
-      id: row["id"],
-      typeId: master?.["id"] ?? "",
-      code: master?.["code"] ?? "",
-      name: master?.["name"] ?? "",
-      side: normaliseSide(master?.["side"]),
-      amount: Number(row["amount"] ?? 0),
+    elements.push({
+      id: String(row.id),
+      typeId: String(master?.id ?? ""),
+      code: String(master?.code ?? ""),
+      name: String(master?.name ?? ""),
+      side: normaliseSide(master?.side),
+      amount: Number(row.amount ?? 0),
       taxableForPaye,
       nicEarnings,
       pensionable,
       aeQualifying,
-      isSalarySacrificeType: Boolean(master?.["is_salary_sacrifice_type"] ?? false),
-      description: row["description_override"] ?? master?.["name"] ?? null,
-    };
-
-    elements.push(normalised);
+      isSalarySacrificeType: Boolean(master?.is_salary_sacrifice_type ?? false),
+      description: (row.description_override ?? master?.name ?? null) as string | null,
+    });
   }
 
-  // 6) SSP engine precheck (avoid slow compute when no sickness exists)
   let sspForEmployee: any = null;
   let sspEngineRan = false;
 
-  if (companyId && periodStart && periodEnd) {
+  const periodStartIso = String(periodStart ?? "").trim();
+  const periodEndIso = String(periodEnd ?? "").trim();
+
+  if (companyId && periodStartIso && periodEndIso) {
     try {
       let hasSickness = false;
 
@@ -399,8 +439,8 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
         .from("sickness_periods")
         .select("id")
         .eq("company_id", companyId)
-        .lte("start_date", periodEnd)
-        .gte("end_date", periodStart)
+        .lte("start_date", periodEndIso)
+        .gte("end_date", periodStartIso)
         .limit(1);
 
       if (!spErr && Array.isArray(spAny) && spAny.length > 0) hasSickness = true;
@@ -410,44 +450,31 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
           .from("absence_pay_schedules")
           .select("id, element_code")
           .eq("company_id", companyId)
-          .lte("pay_period_start", periodEnd)
-          .gte("pay_period_end", periodStart)
+          .lte("pay_period_start", periodEndIso)
+          .gte("pay_period_end", periodStartIso)
           .limit(1);
 
         if (!apsErr && Array.isArray(apsAny) && apsAny.length > 0) hasSickness = true;
       }
 
       if (hasSickness) {
-        const sspEmployeesRaw = await getSspAmountsForRun(companyId, periodStart, periodEnd);
+        const sspEmployeesRaw = await getSspAmountsForRun(companyId, periodStartIso, periodEndIso);
         const sspEmployees = Array.isArray(sspEmployeesRaw) ? sspEmployeesRaw : [];
         sspEngineRan = true;
 
         const matchKeys = new Set(
-          [String(employeeId), String(employeeRow?.employee_id || ""), String(employeeRow?.id || "")]
+          [String(employeeId), String(employeeRow?.["employee_id"] || ""), String(employeeRow?.["id"] || "")]
             .map((s) => s.trim())
             .filter((s) => s.length > 0)
         );
 
         sspForEmployee = sspEmployees.find((e: any) => matchKeys.has(String(e?.employeeId).trim())) ?? null;
-
-        if (sspForEmployee) {
-          console.log("payslip route: SSP engine result", {
-            runId,
-            employeeId,
-            totalQualifyingDays: sspForEmployee.totalQualifyingDays,
-            totalPayableDays: sspForEmployee.totalPayableDays,
-            dailyRate: sspForEmployee.dailyRate,
-            sspAmount: sspForEmployee.sspAmount,
-            packMeta: sspForEmployee.packMeta ? { taxYear: sspForEmployee.packMeta.taxYear } : null,
-          });
-        }
       }
     } catch (err) {
       console.error("payslip route: error computing SSP amounts", err);
     }
   }
 
-  // 6b) SSP injection and April 2026 reform cap (if enabled in Compliance Pack)
   let sspAdjusted = false;
   let sspDetails: any = null;
 
@@ -472,11 +499,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
 
     if (lowCapEnabled && lowPct !== null && weeklyFlat !== null && lowPct > 0 && lowPct < 1) {
       const firstSick = pickEarliestSicknessStart(sspForEmployee);
-      const referenceEnd = firstSick
-        ? addDaysIso(firstSick, -1)
-        : isIsoDate(periodEnd)
-          ? periodEnd
-          : null;
+      const referenceEnd = firstSick ? addDaysIso(firstSick, -1) : isIsoDate(periodEndIso) ? periodEndIso : null;
 
       if (referenceEnd && companyId) {
         try {
@@ -517,7 +540,6 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
       sspElem.amount = effectiveAmount;
       sspElem.name = "Statutory Sick Pay";
       sspElem.description = `${descBase}${descCap}${descRate}`;
-
       sspAdjusted = true;
     } else {
       elements.push({
@@ -534,7 +556,6 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
         isSalarySacrificeType: false,
         description: `${descBase}${descCap}${descRate}`,
       });
-
       sspAdjusted = true;
     }
 
@@ -550,19 +571,8 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
       warnings,
       source: "ssp_engine",
     };
-
-    console.log("payslip route: SSP element adjusted", {
-      runId,
-      employeeId,
-      payable,
-      dailyRateUsed: effectiveDailyRate,
-      amount: effectiveAmount,
-      capEnabled: lowCapEnabled,
-      capApplied,
-    });
   }
 
-  // 6c) If SSP engine returned nothing but an SSP element exists, expose basic SSP meta + force £ into description
   const sspElemStored = elements.find((e) => isSspLike(e));
   if (!sspDetails && sspElemStored) {
     const amt = round2(Number(sspElemStored.amount ?? 0));
@@ -589,8 +599,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     };
   }
 
-  // 7) Totals and flags, including final tax code resolution
-  const rawTaxCode = (employeeRow["tax_code"] || "").trim();
+  const rawTaxCode = String(employeeRow["tax_code"] ?? "").trim();
   const finalTaxCode = rawTaxCode || starterTaxCode || "1257L wk1/mth1";
 
   const grossStored = Number(preRow["gross_pay"] ?? 0);
@@ -617,7 +626,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     net = gross - deductions;
   } else {
     const canAutoCalc =
-      tax === 0 && Number.isFinite(grossStored) && grossStored > 0 && frequency === "monthly" && !!finalTaxCode;
+      tax === 0 && Number.isFinite(grossStored) && grossStored > 0 && String(frequency ?? "") === "monthly" && !!finalTaxCode;
 
     if (canAutoCalc) {
       try {
@@ -625,8 +634,8 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
         const ytdTaxPaidBefore = Number(employeeRow["ytd_tax"] ?? 0);
 
         const taxYear = (() => {
-          const src = periodStart ?? `${new Date().getFullYear()}-04-06`;
-          const yr = parseInt(String(src).slice(0, 4), 10);
+          const src = String(periodStart ?? "");
+          const yr = parseInt(src.slice(0, 4), 10);
           return Number.isFinite(yr) ? yr : undefined;
         })();
 
@@ -639,7 +648,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
           taxYear,
         });
 
-        const taxThisPeriod = Number(payResult.tax ?? 0);
+        const taxThisPeriod = Number((payResult as any)?.tax ?? 0);
 
         if (Number.isFinite(taxThisPeriod)) {
           tax = taxThisPeriod;
@@ -657,13 +666,13 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     }
   }
 
-  const payAfterLeaving = typeof preRow["pay_after_leaving"] === "boolean" ? preRow["pay_after_leaving"] : false;
+  const payAfterLeaving = typeof preRow["pay_after_leaving"] === "boolean" ? (preRow["pay_after_leaving"] as boolean) : false;
 
-  const firstName = employeeRow["first_name"] ?? "";
-  const lastName = employeeRow["last_name"] ?? "";
+  const firstName = String(employeeRow["first_name"] ?? "");
+  const lastName = String(employeeRow["last_name"] ?? "");
   const fullName = firstName && lastName ? `${firstName} ${lastName}` : firstName || lastName || "Unnamed employee";
 
-  const niNumber = employeeRow["ni_number"] ?? employeeRow["national_insurance_number"] ?? null;
+  const niNumber = (employeeRow["ni_number"] ?? employeeRow["national_insurance_number"] ?? null) as unknown;
 
   const companyPayload = {
     id: companyRow["id"],
@@ -674,7 +683,6 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
   };
 
   const initialTaxCode = rawTaxCode || null;
-  const computedTaxCode = finalTaxCode;
 
   const employeePayload = {
     id: employeeRow["id"],
@@ -684,7 +692,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     employeeNumber: employeeRow["employee_number"] ?? null,
     email: employeeRow["email"] ?? null,
     niNumber,
-    taxCode: computedTaxCode,
+    taxCode: finalTaxCode,
     raw: employeeRow,
   };
 
@@ -692,9 +700,9 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     id: runRow["id"],
     runNumber: runRow["run_number"] ?? runRow["run_name"] ?? null,
     runName: runRow["run_name"] ?? null,
-    frequency,
-    periodStart,
-    periodEnd,
+    frequency: frequency ?? null,
+    periodStart: periodStart ?? null,
+    periodEnd: periodEnd ?? null,
     payDate: runRow["pay_date"] ?? null,
     status: runRow["status"] ?? runRow["workflow_status"] ?? null,
     raw: runRow,
@@ -724,7 +732,7 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
     ssp: sspDetails,
     initialTaxCode,
     starterTaxCode,
-    finalTaxCode: computedTaxCode,
+    finalTaxCode,
   };
 
   return {
@@ -743,13 +751,20 @@ async function loadPayslipPayload(runId: string, employeeId: string) {
         flags: flagsPayload,
         payElements: payElementsPayload,
         meta: metaPayload,
-        taxCode: computedTaxCode,
+        taxCode: finalTaxCode,
       },
     },
   } as const;
 }
 
-export async function GET(_req: Request, context: RouteParams) {
+export async function GET(_req: Request, context: RouteContext) {
+  const supabase = await createClient();
+
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return NextResponse.json({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  }
+
   const params = await context.params;
 
   const runId = params.id ?? params.runId ?? null;
@@ -762,6 +777,6 @@ export async function GET(_req: Request, context: RouteParams) {
     );
   }
 
-  const result = await loadPayslipPayload(runId, employeeId);
+  const result = await loadPayslipPayload(supabase, String(runId), String(employeeId));
   return NextResponse.json(result.body, { status: result.status });
 }
