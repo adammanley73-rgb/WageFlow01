@@ -1,0 +1,20 @@
+name: no-ts-nocheck
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  check:
+    name: Block @ts-nocheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run checker
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File "scripts/check-no-ts-nocheck.ps1"
