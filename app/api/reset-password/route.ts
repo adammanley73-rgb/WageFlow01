@@ -1,25 +1,38 @@
-/* @ts-nocheck */
-import { NextResponse } from 'next/server';
-import { createResetToken } from '../../../lib/reset-store';
+// C:\Projects\wageflow01\app\api\reset-password\route.ts
+
+import { NextResponse } from "next/server";
+import { createResetToken } from "../../../lib/reset-store";
+
+export const runtime = "nodejs";
+
+type ResetBody = {
+  email?: unknown;
+};
 
 export async function POST(req: Request) {
   try {
-    const { email } = await req.json();
-    if (!email || typeof email !== 'string') {
-      return NextResponse.json({ ok: false, error: 'Email required' }, { status: 400 });
+    const body = (await req.json().catch(() => null)) as ResetBody | null;
+    const raw = body?.email;
+
+    if (!raw || typeof raw !== "string") {
+      return NextResponse.json({ ok: false, error: "Email required" }, { status: 400 });
+    }
+
+    const email = raw.toLowerCase().trim();
+    if (!email) {
+      return NextResponse.json({ ok: false, error: "Email required" }, { status: 400 });
     }
 
     // Always respond success to avoid email enumeration.
-    const appUrl = process.env.APP_URL || 'http://localhost:3000';
-    const token = createResetToken(email.toLowerCase().trim());
+    const appUrl = process.env.APP_URL || "http://localhost:3000";
+    const token = createResetToken(email);
     const link = `${appUrl}/reset-password/confirm?token=${encodeURIComponent(token)}`;
 
     // TODO: Implement email sending when needed
     console.log(`Reset link for ${email}: ${link}`);
 
     return NextResponse.json({ ok: true });
-  } catch (e) {
-    return NextResponse.json({ ok: false, error: 'Bad request' }, { status: 400 });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Bad request" }, { status: 400 });
   }
 }
-

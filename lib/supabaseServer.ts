@@ -1,5 +1,3 @@
-/* @ts-nocheck */
-
 // This file runs on the server when imported by API routes. Do not add a "use server" pragma here.
 
 import { cookies } from "next/headers";

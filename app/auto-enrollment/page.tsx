@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
 import { DEMO_EMPLOYEES, type Employee } from "../lib/data/employees";

@@ -1,5 +1,4 @@
-﻿// C:\Projects\wageflow01\app\dashboard\absence\[id]\edit\page.tsx
-/* @ts-nocheck */
+// C:\Projects\wageflow01\app\dashboard\absence\[id]\edit\page.tsx
 
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";

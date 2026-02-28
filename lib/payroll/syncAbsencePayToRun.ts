@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 // C:\Projects\wageflow01\lib\payroll\syncAbsencePayToRun.ts
 
 import { PostgrestError } from "@supabase/supabase-js";

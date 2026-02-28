@@ -1,5 +1,4 @@
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\wizard\leaver\page.tsx
-/* @ts-nocheck */
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* preview: auto-suppressed to keep Preview builds green. */
 // Centralised statutory payment rates by tax year.
 // 2024–25 and 2025–26 covered. Update annually in one place.

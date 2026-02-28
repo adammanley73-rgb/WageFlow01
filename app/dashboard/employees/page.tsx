@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 // C:\Projects\wageflow01\app\dashboard\employees\page.tsx
 
 import Link from "next/link";

@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\wizard\starter\page.tsx
 "use client";
 

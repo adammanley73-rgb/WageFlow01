@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* preview: auto-suppressed to keep Preview builds green. */
 // lib/types.ts
 // Shared payroll type definitions for stubs and preview builds.

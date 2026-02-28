@@ -1,11 +1,16 @@
-// C:\Users\adamm\Projects\wageflow01\app\api\admin\payroll\rederive-runs\route.ts
-/* @ts-nocheck */
+// C:\Projects\wageflow01\app\api\admin\payroll\rederive-runs\route.ts
 
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { getAdmin } from "@lib/admin";
 
-function json(data: any, status = 200) {
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+type JsonObject = Record<string, unknown>;
+
+function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
 }
 
@@ -15,7 +20,7 @@ function getInt(v: string | null, fallback: number) {
 }
 
 function isYmd(s: string | null) {
-  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(String(s));
+  return Boolean(s && /^\d{4}-\d{2}-\d{2}$/.test(String(s)));
 }
 
 function nowIso() {
@@ -28,7 +33,19 @@ function getFirstHeader(req: Request, name: string) {
   return String(v).split(",")[0].trim();
 }
 
-async function tryInsertLog(client: any, row: any): Promise<string | null> {
+function errMsg(e: unknown) {
+  return e instanceof Error ? e.message : String(e);
+}
+
+async function safeJson(res: Response): Promise<unknown> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function tryInsertLog(client: any, row: JsonObject): Promise<string | null> {
   try {
     const { data, error } = await client
       .from("payroll_rederive_attempts")
@@ -43,7 +60,7 @@ async function tryInsertLog(client: any, row: any): Promise<string | null> {
   }
 }
 
-async function tryUpdateLog(client: any, id: string, patch: any): Promise<void> {
+async function tryUpdateLog(client: any, id: string, patch: JsonObject): Promise<void> {
   try {
     await client.from("payroll_rederive_attempts").update(patch).eq("id", id);
   } catch {
@@ -55,15 +72,13 @@ export async function POST(req: Request) {
   const startedAt = nowIso();
   const packId = crypto.randomUUID();
 
-  let admin: any = null;
   let client: any = null;
   let companyId: string | null = null;
-
   let logId: string | null = null;
 
   try {
-    const headerKey = req.headers.get("x-wageflow-admin-key") || "";
-    const expectedKey = process.env.WAGEFLOW_ADMIN_REDERIVE_KEY || "";
+    const headerKey = String(req.headers.get("x-wageflow-admin-key") ?? "");
+    const expectedKey = String(process.env.WAGEFLOW_ADMIN_REDERIVE_KEY ?? "");
 
     if (!expectedKey || headerKey !== expectedKey) {
       return json(
@@ -77,20 +92,24 @@ export async function POST(req: Request) {
       );
     }
 
-    admin = await getAdmin();
-    if (!admin || !admin.client) {
+    const admin = await getAdmin();
+    if (!admin || !(admin as any).client) {
       return json(
         { ok: false, error: "ADMIN_UNAVAILABLE", message: "Admin client not available" },
         503
       );
     }
 
-    client = admin.client;
-    companyId = String(admin.companyId || "").trim() || null;
+    client = (admin as any).client;
+    companyId = String((admin as any).companyId ?? "").trim() || null;
 
     if (!companyId) {
       return json(
-        { ok: false, error: "COMPANY_CONTEXT_MISSING", message: "Company context not resolved" },
+        {
+          ok: false,
+          error: "COMPANY_CONTEXT_MISSING",
+          message: "Company context not resolved",
+        },
         503
       );
     }
@@ -100,7 +119,7 @@ export async function POST(req: Request) {
     const requestedLimit = getInt(url.searchParams.get("limit"), 50);
     const offset = getInt(url.searchParams.get("offset"), 0);
 
-    const dryRun = String(url.searchParams.get("dryRun") || "").toLowerCase() === "true";
+    const dryRun = String(url.searchParams.get("dryRun") ?? "").toLowerCase() === "true";
     const runId = url.searchParams.get("runId");
 
     const from = url.searchParams.get("from"); // YYYY-MM-DD (filters period_end >= from)
@@ -114,13 +133,14 @@ export async function POST(req: Request) {
     const HARD_MAX_LIMIT = 1000;
 
     const confirmHeaderName = "x-wageflow-rederive-confirm";
-    const confirmHeaderValue = req.headers.get(confirmHeaderName) || "";
-    const expectedConfirm =
-      (process.env.WAGEFLOW_ADMIN_REDERIVE_CONFIRM || "I_REALLY_MEAN_IT").trim();
+    const confirmHeaderValue = String(req.headers.get(confirmHeaderName) ?? "");
+    const expectedConfirm = String(
+      (process.env.WAGEFLOW_ADMIN_REDERIVE_CONFIRM || "I_REALLY_MEAN_IT").trim()
+    );
 
     if (requestedLimit > SAFE_LIMIT) {
       const okConfirm =
-        expectedConfirm.length > 0 && String(confirmHeaderValue).trim() === expectedConfirm;
+        expectedConfirm.length > 0 && confirmHeaderValue.trim() === expectedConfirm;
 
       if (!okConfirm) {
         return json(
@@ -158,7 +178,7 @@ export async function POST(req: Request) {
 
     const callerIp =
       getFirstHeader(req, "x-forwarded-for") || getFirstHeader(req, "x-real-ip") || "";
-    const userAgent = req.headers.get("user-agent") || "";
+    const userAgent = String(req.headers.get("user-agent") ?? "");
 
     logId = await tryInsertLog(client, {
       pack_id: packId,
@@ -186,7 +206,7 @@ export async function POST(req: Request) {
       results_json: null,
 
       caller_ip: callerIp || null,
-      user_agent: userAgent ? String(userAgent).slice(0, 500) : null,
+      user_agent: userAgent ? userAgent.slice(0, 500) : null,
       vercel_env: process.env.VERCEL_ENV || null,
       node_env: process.env.NODE_ENV || null,
     });
@@ -206,10 +226,13 @@ export async function POST(req: Request) {
             finished_at: nowIso(),
             ok: false,
             error_code: "RUN_LOOKUP_FAILED",
-            error_message: error.message,
+            error_message: String(error.message ?? "Lookup failed"),
           });
         }
-        return json({ ok: false, error: "RUN_LOOKUP_FAILED", message: error.message, packId }, 500);
+        return json(
+          { ok: false, error: "RUN_LOOKUP_FAILED", message: error.message, packId },
+          500
+        );
       }
 
       if (!data) {
@@ -221,7 +244,10 @@ export async function POST(req: Request) {
             error_message: "Payroll run not found",
           });
         }
-        return json({ ok: false, error: "RUN_NOT_FOUND", message: "Payroll run not found", packId }, 404);
+        return json(
+          { ok: false, error: "RUN_NOT_FOUND", message: "Payroll run not found", packId },
+          404
+        );
       }
 
       if (String(data.company_id) !== companyId) {
@@ -247,12 +273,8 @@ export async function POST(req: Request) {
         .eq("company_id", companyId)
         .order("period_end", { ascending: true });
 
-      if (isYmd(from)) {
-        q = q.gte("period_end", from);
-      }
-      if (isYmd(to)) {
-        q = q.lte("period_end", to);
-      }
+      if (isYmd(from)) q = q.gte("period_end", from);
+      if (isYmd(to)) q = q.lte("period_end", to);
 
       q = q.range(offset, offset + effectiveLimit - 1);
 
@@ -264,7 +286,7 @@ export async function POST(req: Request) {
             finished_at: nowIso(),
             ok: false,
             error_code: "RUN_LIST_FAILED",
-            error_message: error.message,
+            error_message: String(error.message ?? "List failed"),
           });
         }
         return json({ ok: false, error: "RUN_LIST_FAILED", message: error.message, packId }, 500);
@@ -305,7 +327,7 @@ export async function POST(req: Request) {
     let failed = 0;
 
     for (const run of runs) {
-      const id = String(run.id || "");
+      const id = String(run?.id ?? "");
       const target = new URL(`/api/payroll/${id}`, req.url);
 
       if (dryRun) {
@@ -326,14 +348,10 @@ export async function POST(req: Request) {
           body: JSON.stringify({ action: "recalculate" }),
         });
 
-        let body: any = null;
-        try {
-          body = await res.json();
-        } catch {
-          body = null;
-        }
+        const body = await safeJson(res);
+        const bodyObj = (body && typeof body === "object") ? (body as any) : null;
 
-        const ok = Boolean(body?.ok) && res.ok;
+        const ok = Boolean(bodyObj?.ok) && res.ok;
 
         if (ok) {
           succeeded += 1;
@@ -341,7 +359,7 @@ export async function POST(req: Request) {
             runId: id,
             ok: true,
             status: res.status,
-            debugSource: body?.debugSource ?? null,
+            debugSource: bodyObj?.debugSource ?? null,
           });
         } else {
           failed += 1;
@@ -349,18 +367,18 @@ export async function POST(req: Request) {
             runId: id,
             ok: false,
             status: res.status,
-            error: body?.error ?? body?.errorCode ?? "RECALC_FAILED",
-            message: body?.message ?? "Recalculate call failed",
+            error: bodyObj?.error ?? bodyObj?.errorCode ?? "RECALC_FAILED",
+            message: bodyObj?.message ?? "Recalculate call failed",
           });
         }
-      } catch (err: any) {
+      } catch (e: unknown) {
         failed += 1;
         results.push({
           runId: id,
           ok: false,
           status: 0,
           error: "FETCH_FAILED",
-          message: err?.message ?? String(err),
+          message: errMsg(e),
         });
       }
     }
@@ -399,7 +417,7 @@ export async function POST(req: Request) {
         "Use dryRun=true first. Then run in batches using limit/offset. You can also target a single runId. " +
         "If you request limit > 200 you must send x-wageflow-rederive-confirm.",
     });
-  } catch (err: any) {
+  } catch (e: unknown) {
     const finishedAt = nowIso();
 
     if (client && logId) {
@@ -407,7 +425,7 @@ export async function POST(req: Request) {
         finished_at: finishedAt,
         ok: false,
         error_code: "UNEXPECTED_ERROR",
-        error_message: err?.message ?? String(err),
+        error_message: errMsg(e),
       });
     }
 
@@ -416,7 +434,7 @@ export async function POST(req: Request) {
         ok: false,
         packId,
         error: "UNEXPECTED_ERROR",
-        message: err?.message ?? String(err),
+        message: errMsg(e),
       },
       500
     );

@@ -1,23 +1,40 @@
 // C:\Projects\wageflow01\app\api\absence\check-overlap\route.ts
-// @ts-nocheck
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+type CheckBody = {
+  employee_id?: unknown;
+  first_day?: unknown;
+};
 
 async function getCompanyIdFromCookies(): Promise<string | null> {
   const jar = await cookies();
-  return jar.get("active_company_id")?.value || jar.get("company_id")?.value || null;
+  const a = String(jar.get("active_company_id")?.value ?? "").trim();
+  if (a) return a;
+
+  const legacy = String(jar.get("company_id")?.value ?? "").trim();
+  if (legacy) return legacy;
+
+  return null;
 }
 
-function statusFromErr(err: any, fallback = 500): number {
-  const s = Number(err?.status);
-  if (s === 400 || s === 401 || s === 403 || s === 404 || s === 409) return s;
-  return fallback;
+function isIsoDateOnly(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+function toTrimmedString(v: unknown): string {
+  return typeof v === "string" ? v.trim() : String(v ?? "").trim();
+}
+
+function isStartWithinRange(start: string, rangeStart: string, rangeEnd: string): boolean {
+  // Safe because YYYY-MM-DD lexical order matches chronological order.
+  return start >= rangeStart && start <= rangeEnd;
 }
 
 // GET is intentionally a no-op to avoid Next trying to statically evaluate request.url.
@@ -42,12 +59,12 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json().catch(() => null);
+    const body = (await req.json().catch(() => null)) as CheckBody | null;
 
-    const employeeId = typeof body?.employee_id === "string" ? body.employee_id.trim() : "";
-    const firstDay = typeof body?.first_day === "string" ? body.first_day.trim() : "";
+    const employeeId = toTrimmedString(body?.employee_id);
+    const firstDay = toTrimmedString(body?.first_day);
 
-    if (!employeeId || !firstDay) {
+    if (!employeeId || !firstDay || !isIsoDateOnly(firstDay)) {
       return NextResponse.json({
         ok: true,
         code: "NO_CHECK",
@@ -110,19 +127,21 @@ export async function POST(req: Request) {
       });
     }
 
-    const newStart = firstDay;
-
     const conflicts =
-      rows
-        ?.map((row: any) => {
-          const end = row.last_day_actual || row.last_day_expected || row.first_day;
-          const overlaps = newStart >= row.first_day && newStart <= end;
+      (Array.isArray(rows) ? rows : [])
+        .map((row: any) => {
+          const rangeStart = toTrimmedString(row?.first_day);
+          const rangeEnd = toTrimmedString(row?.last_day_actual || row?.last_day_expected || row?.first_day);
+
+          if (!rangeStart || !rangeEnd || !isIsoDateOnly(rangeStart) || !isIsoDateOnly(rangeEnd)) return null;
+
+          const overlaps = isStartWithinRange(firstDay, rangeStart, rangeEnd);
           if (!overlaps) return null;
 
           return {
-            id: row.id,
-            startDate: row.first_day,
-            endDate: end,
+            id: row?.id ?? null,
+            startDate: rangeStart,
+            endDate: rangeEnd,
           };
         })
         .filter(Boolean) || [];
@@ -137,7 +156,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
+  } catch {
     return NextResponse.json({
       ok: true,
       code: "UNEXPECTED_ERROR",

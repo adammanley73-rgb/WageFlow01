@@ -1,5 +1,4 @@
 // C:\Projects\wageflow01\app\dashboard\absence\AbsenceEmployeeFilter.tsx
-/* @ts-nocheck */
 "use client";
 
 import React, { useMemo, useState } from "react";

@@ -1,4 +1,3 @@
-﻿/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\payroll\page.tsx
 
 import PageTemplate from "@/components/layout/PageTemplate";

@@ -1,5 +1,4 @@
-﻿// C:\Users\adamm\Projects\wageflowflow01\app\dashboard\absence\new\paternity\page.tsx
-/* @ts-nocheck */
+// C:\Users\adamm\Projects\wageflowflow01\app\dashboard\absence\new\paternity\page.tsx
 "use client";
 
 import React, { useState } from "react";

@@ -54,3 +54,7 @@ fix-git-exclude-public-assets.ps1
 _git-archives/
 
 *.bak-*
+
+# Local backups
+.backups/
+

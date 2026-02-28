@@ -1,5 +1,4 @@
-﻿// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\maternity\page.tsx
-/* @ts-nocheck */
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\maternity\page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";

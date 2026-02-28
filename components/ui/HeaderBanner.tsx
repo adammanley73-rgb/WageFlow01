@@ -1,4 +1,3 @@
-﻿/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\components\ui\HeaderBanner.tsx
 
 import Link from "next/link";

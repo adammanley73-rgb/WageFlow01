@@ -1,5 +1,4 @@
 // C:\Projects\wageflow01\app\dashboard\absence\new\page.tsx
-/* @ts-nocheck */
 
 import Link from "next/link";
 import PageTemplate from "@/components/layout/PageTemplate";
