@@ -1,54 +1,49 @@
 // C:\Projects\wageflow01\lib\supabase.ts
 
-/* preview: chainable stub so TypeScript + builds stay green */
+/**
+ * IMPORTANT
+ * This module must NOT provide a working Supabase client.
+ *
+ * Historically this file was a "preview chainable stub" that returned empty data with no errors.
+ * That is extremely dangerous because it can silently mask real database failures.
+ *
+ * Correct imports:
+ * - Server code (API routes, server components): import from "@/lib/supabase/server"
+ * - Browser/client components: import from "@/lib/supabase/client"
+ *
+ * If anything imports "@/lib/supabase", it should fail loudly so we can fix the import.
+ */
 
-type QueryResult<T> = { data: T; error: null };
+const ERR =
+  'Do not import Supabase from "@/lib/supabase". ' +
+  'Use "@/lib/supabase/server" for server code or "@/lib/supabase/client" for client code.';
 
-function makeBuilder() {
-  const resultList: QueryResult<any[]> = { data: [], error: null };
-  const resultSingle: QueryResult<any | null> = { data: null, error: null };
-
-  const b: any = {};
-
-  const chain = () => b;
-
-  // builders (return builder, not Promise)
-  b.select = (..._a: any[]) => b;
-  b.insert = (..._a: any[]) => b;
-  b.update = (..._a: any[]) => b;
-  b.upsert = (..._a: any[]) => b;
-  b.delete = (..._a: any[]) => b;
-
-  // filters / modifiers
-  b.eq = chain;
-  b.neq = chain;
-  b.in = chain;
-  b.like = chain;
-  b.ilike = chain;
-  b.gte = chain;
-  b.lte = chain;
-  b.gt = chain;
-  b.lt = chain;
-  b.or = chain;
-  b.match = chain;
-
-  b.order = chain;
-  b.range = chain;
-  b.limit = chain;
-
-  // typing helpers used in some codebases
-  b.returns = (..._a: any[]) => b;
-
-  // terminal methods
-  b.single = async (..._a: any[]) => resultSingle;
-  b.maybeSingle = async (..._a: any[]) => resultSingle;
-
-  // make it awaitable (await builder -> { data, error })
-  b.then = (resolve: any, reject: any) => Promise.resolve(resultList).then(resolve, reject);
-
-  return b;
+function hardFail(): never {
+  throw new Error(ERR);
 }
 
-export const supabase = {
-  from: (..._a: any[]) => makeBuilder(),
-};
+// Keep these exports so TypeScript compiles while we refactor imports.
+// Any runtime use will fail loudly.
+export const supabase: any = new Proxy(
+  {},
+  {
+    get() {
+      return hardFail;
+    },
+    apply() {
+      return hardFail();
+    },
+  }
+);
+
+export function createClient(): never {
+  return hardFail();
+}
+
+export function getServerSupabase(): never {
+  return hardFail();
+}
+
+export const supabaseServer = supabase;
+
+export default supabase;
