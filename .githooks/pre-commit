@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+PATTERN='@ts-nocheck'
+
+FILES=$(git diff --cached --name-only --diff-filter=ACM)
+HIT=0
+
+for f in $FILES; do
+  case "$f" in
+    app/*|components/*|lib/*|src/*)
+      if git grep -n --cached "$PATTERN" -- "$f" >/dev/null 2>&1; then
+        HIT=1
+      fi
+    ;;
+  esac
+done
+
+if [ "$HIT" -eq 1 ]; then
+  echo "ERROR: @ts-nocheck detected in staged code. Remove it before committing."
+  for f in $FILES; do
+    case "$f" in
+      app/*|components/*|lib/*|src/*)
+        git grep -n --cached "$PATTERN" -- "$f" || true
+      ;;
+    esac
+  done
+  exit 1
+fi
+
+exit 0
