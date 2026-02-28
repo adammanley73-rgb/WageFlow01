@@ -1,4 +1,3 @@
-﻿/* @ts-nocheck */
 /**
  * Preview-safe SPBP shim.
  * Accepts both {awe} and {weeklyEarnings}. Extra keys ignored.

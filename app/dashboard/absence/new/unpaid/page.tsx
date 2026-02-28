@@ -1,5 +1,4 @@
 // C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\new\unpaid\page.tsx
-/* @ts-nocheck */
 "use client";
 
 import React, { useEffect, useState } from "react";

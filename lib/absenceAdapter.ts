@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* preview: auto-suppressed to keep Preview builds green. */
 // Adapter over your existing lib/absenceStore.ts with a safe localStorage fallback.
 // This lets the UI work now without changing your current store.

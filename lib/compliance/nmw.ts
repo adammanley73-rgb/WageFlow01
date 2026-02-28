@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\lib\compliance\nmw.ts
 //
 // National Minimum Wage / National Living Wage helper.

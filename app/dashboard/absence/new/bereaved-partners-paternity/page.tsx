@@ -1,5 +1,4 @@
 // C:\Projects\wageflow01\app\dashboard\absence\new\bereaved-partners-paternity\page.tsx
-/* @ts-nocheck */
 "use client";
 
 import React, { useEffect, useState } from "react";

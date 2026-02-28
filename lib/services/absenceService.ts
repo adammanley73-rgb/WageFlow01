@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\lib\services\absenceService.ts
 
 import { getAdmin } from "@lib/admin";

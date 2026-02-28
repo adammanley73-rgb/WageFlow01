@@ -1,18 +1,29 @@
-﻿/* @ts-nocheck */
-// C:\Projects\wageflow01\app\api\absence\types\route.ts
+﻿// C:\Projects\wageflow01\app\api\absence\types\route.ts
 
 import { NextResponse } from "next/server";
 import { env } from "@lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+type AbsenceTypeItem = {
+  code: string;
+  label: string;
+  endpoint: string;
+  category: string;
+  paid_default: boolean;
+  effective_from: string | null;
+};
+
+function disabledOnPreview() {
+  return NextResponse.json({ ok: false, error: "absence/types disabled on preview" }, { status: 404 });
+}
 
 export async function GET() {
-  if (env.preview) {
-    return NextResponse.json({ ok: false, error: "absence/types disabled on preview" }, { status: 404 });
-  }
+  if (env.preview) return disabledOnPreview();
 
-  const items = [
+  const items: AbsenceTypeItem[] = [
     {
       code: "annual_leave",
       label: "Annual leave",
@@ -91,8 +102,6 @@ export async function GET() {
 }
 
 export async function POST() {
-  if (env.preview) {
-    return NextResponse.json({ ok: false, error: "absence/types disabled on preview" }, { status: 404 });
-  }
+  if (env.preview) return disabledOnPreview();
   return NextResponse.json({ ok: false, error: "not implemented" }, { status: 501 });
 }

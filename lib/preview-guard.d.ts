@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* preview: auto-suppressed to keep Preview builds green. */
 // Preview-only type guard so accidental imports don't explode the build.
 /* eslint-disable @typescript-eslint/no-explicit-any */

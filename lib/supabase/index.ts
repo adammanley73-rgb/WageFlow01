@@ -1,5 +1,4 @@
 // lib/supabase/index.ts
-/* @ts-nocheck */
 /*
   One function: createClient()
   - In the browser, returns a browser Supabase client.

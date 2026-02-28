@@ -1,4 +1,3 @@
-// @ts-nocheck
 // lib/employeeStore.ts
 // Pathetic, but effective: process-level memory store for dev.
 

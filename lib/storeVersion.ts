@@ -1,4 +1,3 @@
-﻿/* @ts-nocheck */
 /**
  * Preview-safe shim for absence storage and version helpers.
  * Exports expected by pages:

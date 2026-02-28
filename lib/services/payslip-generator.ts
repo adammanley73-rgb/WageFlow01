@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* preview: auto-suppressed to keep Preview builds green. */
 // C:\Users\adamm\Projects\wageflow01\lib\services\payslip-generator.ts
 // Preview-safe stub with lazy import. Suppress type resolution on jspdf.

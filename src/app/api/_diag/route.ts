@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 /* E:\Projects\wageflow01\src\app\api\_diag\route.ts */
 
 import { NextResponse } from "next/server";

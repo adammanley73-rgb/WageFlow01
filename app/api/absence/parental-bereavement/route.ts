@@ -1,5 +1,4 @@
 // C:\Projects\wageflow01\app\api\absence\parental-bereavement\route.ts
-// @ts-nocheck
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -7,36 +6,61 @@ import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-function json(status: number, body: any) {
-  return NextResponse.json(body, {
-    status,
-    headers: { "Cache-Control": "no-store" },
-  });
+type BlockIn = {
+  startDate?: unknown;
+  start_date?: unknown;
+  endDate?: unknown;
+  end_date?: unknown;
+};
+
+type BodyIn = {
+  companyId?: unknown;
+  company_id?: unknown;
+  employeeId?: unknown;
+  employee_id?: unknown;
+  eventDate?: unknown;
+  event_date?: unknown;
+  leaveOption?: unknown;
+  leave_option?: unknown;
+  blocks?: unknown;
+  notes?: unknown;
+};
+
+function json(status: number, body: unknown) {
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
-function statusFromErr(err: any, fallback = 500): number {
-  const s = Number(err?.status);
+function statusFromErr(err: unknown, fallback = 500): number {
+  const anyErr = err as { status?: unknown } | null;
+  const s = Number(anyErr?.status);
   if (s === 400 || s === 401 || s === 403 || s === 404 || s === 409) return s;
   return fallback;
 }
 
-function isOverlapError(err: any) {
-  const code = err?.code ? String(err.code) : "";
+function isOverlapError(err: unknown) {
+  const anyErr = err as { code?: unknown; message?: unknown } | null;
+
+  const code = anyErr?.code ? String(anyErr.code) : "";
   if (code === "23P01") return true;
 
-  const msg = err?.message ? String(err.message).toLowerCase() : "";
+  const msg = anyErr?.message ? String(anyErr.message).toLowerCase() : "";
   if (msg.includes("absences_no_overlap_per_employee")) return true;
 
   return false;
 }
 
-function isIsoDate(s: string) {
+function isIsoDateOnly(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
 }
 
-function toUtcDate(s: string) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || "").trim());
+function toTrimmedString(v: unknown): string {
+  return typeof v === "string" ? v.trim() : String(v ?? "").trim();
+}
+
+function toUtcDate(dateOnlyIso: string) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateOnlyIso || "").trim());
   if (!m) return null;
   const y = Number(m[1]);
   const mo = Number(m[2]);
@@ -61,17 +85,19 @@ export async function POST(req: Request) {
     return json(401, { ok: false, code: "UNAUTHENTICATED", message: "Sign in required." });
   }
 
-  let body: any = null;
-
+  let body: BodyIn | null = null;
   try {
-    body = await req.json();
+    body = (await req.json().catch(() => null)) as BodyIn | null;
   } catch {
+    body = null;
+  }
+  if (!body) {
     return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Invalid JSON body." });
   }
 
   const cookieStore = await cookies();
   const activeCompanyId =
-    String(body?.companyId ?? body?.company_id ?? "").trim() ||
+    toTrimmedString(body.companyId ?? body.company_id ?? "") ||
     cookieStore.get("active_company_id")?.value ||
     cookieStore.get("company_id")?.value ||
     "";
@@ -80,15 +106,17 @@ export async function POST(req: Request) {
     return json(400, { ok: false, code: "NO_COMPANY", message: "No active company selected." });
   }
 
-  const employeeId = String(body?.employeeId ?? body?.employee_id ?? "").trim();
-  if (!employeeId) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Missing employeeId." });
+  const employeeId = toTrimmedString(body.employeeId ?? body.employee_id ?? "");
+  if (!employeeId) {
+    return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Missing employeeId." });
+  }
 
   // Validate employee belongs to active company (RLS-scoped)
   const { data: emp, error: empErr } = await supabase
     .from("employees")
     .select("id, company_id")
     .eq("id", employeeId)
-    .maybeSingle();
+    .maybeSingle<{ id: string; company_id: string | null }>();
 
   if (empErr) {
     return json(statusFromErr(empErr), { ok: false, code: "EMPLOYEE_LOAD_FAILED", message: "Could not load employee." });
@@ -102,17 +130,24 @@ export async function POST(req: Request) {
     return json(403, { ok: false, code: "EMPLOYEE_NOT_IN_COMPANY", message: "Employee does not belong to the active company." });
   }
 
-  const eventDate = String(body?.eventDate || "").trim();
-  if (!isIsoDate(eventDate)) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Invalid event date." });
+  const eventDate = toTrimmedString(body.eventDate ?? body.event_date ?? "");
+  if (!isIsoDateOnly(eventDate)) {
+    return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Invalid event date. Use YYYY-MM-DD." });
+  }
 
   const ev = toUtcDate(eventDate);
-  if (!ev) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Invalid event date." });
+  if (!ev) {
+    return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Invalid event date." });
+  }
 
+  // 56 weeks = 56 * 7 days
   const limit = addDaysUtc(ev, 56 * 7);
 
-  const leaveOption = String(body?.leaveOption || "one_week");
+  const leaveOption = toTrimmedString(body.leaveOption ?? body.leave_option ?? "one_week") || "one_week";
 
-  const blocks = Array.isArray(body?.blocks) ? body.blocks : [];
+  const blocksRaw = body.blocks;
+  const blocks = Array.isArray(blocksRaw) ? (blocksRaw as BlockIn[]) : [];
+
   if (leaveOption === "two_weeks_separate" && blocks.length !== 2) {
     return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Two blocks are required for two separate weeks." });
   }
@@ -123,20 +158,28 @@ export async function POST(req: Request) {
   const parsedBlocks: { startStr: string; endStr: string; start: Date; end: Date }[] = [];
 
   for (const b of blocks) {
-    const startStr = String(b?.startDate || "").trim();
-    const endStr = String(b?.endDate || "").trim();
+    const startStr = toTrimmedString(b?.startDate ?? b?.start_date ?? "");
+    const endStr = toTrimmedString(b?.endDate ?? b?.end_date ?? "");
 
-    if (!isIsoDate(startStr) || !isIsoDate(endStr)) {
-      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Block dates must be valid." });
+    if (!isIsoDateOnly(startStr) || !isIsoDateOnly(endStr)) {
+      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Block dates must be valid YYYY-MM-DD." });
     }
 
     const start = toUtcDate(startStr);
     const end = toUtcDate(endStr);
-    if (!start || !end) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Block dates must be valid." });
+    if (!start || !end) {
+      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Block dates must be valid." });
+    }
 
-    if (end < start) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Block end date cannot be before start date." });
-    if (start < ev) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Leave must start on or after the event date." });
-    if (end > limit) return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Leave must finish within 56 weeks of the event date." });
+    if (end < start) {
+      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Block end date cannot be before start date." });
+    }
+    if (start < ev) {
+      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Leave must start on or after the event date." });
+    }
+    if (end > limit) {
+      return json(400, { ok: false, code: "VALIDATION_ERROR", message: "Leave must finish within 56 weeks of the event date." });
+    }
 
     parsedBlocks.push({ startStr, endStr, start, end });
   }
@@ -147,8 +190,8 @@ export async function POST(req: Request) {
     }
   }
 
-  const rawNotes = body?.notes ? String(body.notes) : "";
-  const combinedNotes = rawNotes ? `Event date: ${eventDate}. ${rawNotes}` : `Event date: ${eventDate}.`;
+  const notes = body.notes == null ? "" : typeof body.notes === "string" ? body.notes.trim() : String(body.notes).trim();
+  const combinedNotes = notes ? `Event date: ${eventDate}. ${notes}` : `Event date: ${eventDate}.`;
 
   const rowsToInsert = parsedBlocks.map((b) => ({
     company_id: activeCompanyId,
@@ -156,7 +199,7 @@ export async function POST(req: Request) {
     type: "parental_bereavement",
     first_day: b.startStr,
     last_day_expected: b.endStr,
-    last_day_actual: null,
+    last_day_actual: null as string | null,
     reference_notes: combinedNotes,
     status: "draft",
   }));
@@ -168,13 +211,14 @@ export async function POST(req: Request) {
       return json(409, {
         ok: false,
         code: "ABSENCE_DATE_OVERLAP",
-        message:
-          "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
+        message: "These dates overlap another existing absence for this employee. Change the dates or cancel the other absence.",
       });
     }
 
-    return json(statusFromErr(error), { ok: false, code: "DB_ERROR", message: error.message || "Insert failed." });
+    return json(statusFromErr(error), { ok: false, code: "DB_ERROR", message: (error as any)?.message || "Insert failed." });
   }
 
-  return json(200, { ok: true, ids: (data || []).map((r: any) => r.id) });
+  const ids = Array.isArray(data) ? data.map((r: any) => r?.id).filter(Boolean) : [];
+
+  return json(200, { ok: true, ids });
 }

@@ -1,5 +1,4 @@
 // C:\Projects\wageflow01\app\dashboard\employees\EmployeesSearchTable.tsx
-/* @ts-nocheck */
 "use client";
 
 import React, { useMemo, useState } from "react";

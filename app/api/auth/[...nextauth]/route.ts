@@ -1,26 +1,34 @@
-/* @ts-nocheck */
-import NextAuth, { type NextAuthOptions } from 'next-auth';
-import CredentialsProvider from 'next-auth/providers/credentials';
+// C:\Projects\wageflow01\app\api\auth\[...nextauth]\route.ts
+
+import NextAuth, { type NextAuthOptions } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const DEMO_EMAIL = "demo@wageflow.com";
+const DEMO_PASSWORD = "demo123";
 
 const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
-      id: 'credentials',
-      name: 'Credentials',
+      id: "credentials",
+      name: "Credentials",
       credentials: {
-        email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' },
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const email = credentials?.email?.toString() ?? '';
-        const password = credentials?.password?.toString() ?? '';
+        const email = typeof credentials?.email === "string" ? credentials.email.trim().toLowerCase() : "";
+        const password = typeof credentials?.password === "string" ? credentials.password : "";
 
         // Demo user for client testing
-        if (email === 'demo@wageflow.com' && password === 'demo123') {
+        if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
           return {
-            id: '1',
-            email: 'demo@wageflow.com',
-            name: 'Demo User',
+            id: "1",
+            email: DEMO_EMAIL,
+            name: "Demo User",
           };
         }
 
@@ -30,21 +38,25 @@ const authOptions: NextAuthOptions = {
     }),
   ],
   pages: {
-    signIn: '/login',
+    signIn: "/login",
   },
   session: {
-    strategy: 'jwt',
+    strategy: "jwt",
   },
   callbacks: {
     async jwt({ token, user }) {
-      if (user?.id) token.id = user.id;
+      if (user?.id) {
+        (token as Record<string, unknown>).id = String(user.id);
+      }
       return token;
     },
     async session({ session, token }) {
-      // Ensure session.user exists and attach id
       const user = (session.user ?? {}) as Record<string, unknown>;
-      if (token?.id) user.id = token.id as string;
+      const id = (token as Record<string, unknown>)?.id;
+
+      if (id) user.id = String(id);
       session.user = user as typeof session.user;
+
       return session;
     },
   },
@@ -53,5 +65,3 @@ const authOptions: NextAuthOptions = {
 const handler = NextAuth(authOptions);
 
 export { handler as GET, handler as POST };
-
-

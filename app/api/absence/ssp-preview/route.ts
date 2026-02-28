@@ -1,55 +1,23 @@
-/* @ts-nocheck */
-// C:\Users\adamm\Projects\wageflow01\app\api\absence\ssp-preview\route.ts
+// C:\Projects\wageflow01\app\api\absence\ssp-preview\route.ts
 
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
-
+import { createClient } from "@/lib/supabase/server";
 import { getSspPlansForRun } from "@/lib/services/absenceService";
 
-async function getSupabaseServerClient() {
-  const cookieStore = await cookies();
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  }
-
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options: CookieOptions) {
-        cookieStore.set({ name, value, ...options });
-      },
-      remove(name: string, options: CookieOptions) {
-        cookieStore.set({ name, value: "", ...options, maxAge: 0 });
-      },
-    },
-  });
-}
-
-function isIsoDate(s: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s);
-}
-
-function readNumberParam(searchParams: URLSearchParams, key: string) {
-  const raw = searchParams.get(key);
-  if (raw === null) return null;
-  const v = Number(raw);
-  if (!Number.isFinite(v)) return null;
-  return v;
+function isIsoDateOnly(s: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
 }
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
-  const companyId = searchParams.get("companyId");
-  const startDate = searchParams.get("start");
-  const endDate = searchParams.get("end");
+  const companyId = String(searchParams.get("companyId") ?? "").trim();
+  const startDate = String(searchParams.get("start") ?? "").trim();
+  const endDate = String(searchParams.get("end") ?? "").trim();
 
   const dailyRateRaw = searchParams.get("dailyRate");
   const qualifyingDaysRaw = searchParams.get("qualifyingDaysPerWeek");
@@ -59,20 +27,15 @@ export async function GET(req: Request) {
       {
         ok: false,
         error: "missing_params",
-        message:
-          "Missing required query params. Expected companyId, start, and end (YYYY-MM-DD).",
+        message: "Missing required query params. Expected companyId, start, and end (YYYY-MM-DD).",
       },
       { status: 400 }
     );
   }
 
-  if (!isIsoDate(startDate) || !isIsoDate(endDate)) {
+  if (!isIsoDateOnly(startDate) || !isIsoDateOnly(endDate)) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: "invalid_dates",
-        message: "Invalid start/end date. Use YYYY-MM-DD.",
-      },
+      { ok: false, error: "invalid_dates", message: "Invalid start/end date. Use YYYY-MM-DD." },
       { status: 400 }
     );
   }
@@ -94,7 +57,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const supabase = await getSupabaseServerClient();
+    const supabase = await createClient();
 
     const { data: userRes, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userRes?.user) {
@@ -106,7 +69,7 @@ export async function GET(req: Request) {
 
     let dailyRate: number;
     let dailyRateSource: "override" | "compliance_pack";
-    let packMeta: any = null;
+    let packMeta: Record<string, unknown> | null = null;
 
     if (dailyRateRaw !== null) {
       const parsed = Number(dailyRateRaw);
@@ -132,32 +95,32 @@ export async function GET(req: Request) {
 
       if (packErr) {
         return NextResponse.json(
-          { ok: false, error: "pack_rpc_failed", message: packErr.message, details: packErr },
+          { ok: false, error: "pack_rpc_failed", message: packErr.message },
           { status: 500 }
         );
       }
 
       const pack = Array.isArray(packData) ? packData[0] : packData;
-      if (!pack?.config?.rates?.ssp_weekly_flat) {
+      const weeklyFlatRaw = pack?.config?.rates?.ssp_weekly_flat;
+
+      if (weeklyFlatRaw == null) {
         return NextResponse.json(
           {
             ok: false,
             error: "pack_missing_ssp_rate",
             message: `Compliance pack missing rates.ssp_weekly_flat for date ${packDate}`,
-            pack,
           },
           { status: 500 }
         );
       }
 
-      const weeklyFlat = Number(pack.config.rates.ssp_weekly_flat);
+      const weeklyFlat = Number(weeklyFlatRaw);
       if (!Number.isFinite(weeklyFlat) || weeklyFlat <= 0) {
         return NextResponse.json(
           {
             ok: false,
             error: "invalid_pack_ssp_rate",
             message: `Invalid SSP weekly flat rate in compliance pack for date ${packDate}`,
-            pack,
           },
           { status: 500 }
         );
@@ -167,9 +130,9 @@ export async function GET(req: Request) {
       dailyRateSource = "compliance_pack";
       packMeta = {
         packDateUsed: packDate,
-        taxYear: pack.tax_year,
-        label: pack.label,
-        packId: pack.id,
+        taxYear: pack?.tax_year ?? null,
+        label: pack?.label ?? null,
+        packId: pack?.id ?? null,
         weeklyFlat,
         qualifyingDaysPerWeek,
       };
@@ -177,23 +140,24 @@ export async function GET(req: Request) {
 
     const plans = await getSspPlansForRun(companyId, startDate, endDate);
 
-    const employees = plans.map((plan) => {
-      const sspAmount = Number((plan.totalPayableDays * dailyRate).toFixed(2));
+    const employees = (Array.isArray(plans) ? plans : []).map((plan: any) => {
+      const payableDays = Number(plan?.totalPayableDays) || 0;
+      const sspAmount = Number((payableDays * dailyRate).toFixed(2));
 
       return {
-        employeeId: plan.employeeId,
-        totalQualifyingDays: plan.totalQualifyingDays,
-        totalPayableDays: plan.totalPayableDays,
+        employeeId: plan?.employeeId ?? null,
+        totalQualifyingDays: plan?.totalQualifyingDays ?? 0,
+        totalPayableDays: payableDays,
         dailyRate,
         dailyRateSource,
         ...(packMeta ? { packMeta } : {}),
         sspAmount,
-        absences: plan.absences,
+        absences: plan?.absences ?? [],
       };
     });
 
     const totalSsp = Number(
-      employees.reduce((sum, e) => sum + (Number(e.sspAmount) || 0), 0).toFixed(2)
+      employees.reduce((sum: number, e: any) => sum + (Number(e?.sspAmount) || 0), 0).toFixed(2)
     );
 
     return NextResponse.json(
@@ -215,14 +179,11 @@ export async function GET(req: Request) {
       },
       { status: 200 }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("ssp-preview API error", err);
+    const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      {
-        ok: false,
-        error: "server_error",
-        message: err?.message || "Unexpected error while computing SSP preview for this run.",
-      },
+      { ok: false, error: "server_error", message: msg || "Unexpected error while computing SSP preview for this run." },
       { status: 500 }
     );
   }

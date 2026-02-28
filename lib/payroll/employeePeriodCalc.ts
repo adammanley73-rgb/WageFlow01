@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 // C:\Users\adamm\Projects\wageflow01\lib\payroll\employeePeriodCalc.ts
 //
 // Helper to calculate a single employee's pay for one payroll run period,

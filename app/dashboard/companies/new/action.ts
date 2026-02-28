@@ -1,5 +1,4 @@
 // app/dashboard/companies/new/actions.ts
-/* @ts-nocheck */
 "use server";
 
 import { cookies } from "next/headers";

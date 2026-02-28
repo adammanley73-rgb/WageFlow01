@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 /**
  * Preview-safe SPBP shim (Statutory Parental Bereavement Pay).
  * Purpose: unblock builds and previews. This is NOT production logic.

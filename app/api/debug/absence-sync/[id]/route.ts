@@ -1,4 +1,3 @@
-/* @ts-nocheck */
 /* C:\Projects\wageflow01\app\api\debug\absence-sync\[id]\route.ts */
 
 import { NextResponse } from "next/server";
