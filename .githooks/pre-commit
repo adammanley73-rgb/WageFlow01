@@ -1,30 +1,57 @@
 #!/bin/sh
 set -eu
 
-PATTERN='@ts-nocheck'
+TS_NOCHECK='@ts-nocheck'
+BAD_SUPABASE='@/lib/supabase'
+ALLOW_SUPABASE_FILE='lib/supabase.ts'
 
 FILES=$(git diff --cached --name-only --diff-filter=ACM)
-HIT=0
+HIT_TS=0
+HIT_SUPA=0
 
 for f in $FILES; do
   case "$f" in
     app/*|components/*|lib/*|src/*)
-      if git grep -n --cached "$PATTERN" -- "$f" >/dev/null 2>&1; then
-        HIT=1
+      if git grep -n --cached "$TS_NOCHECK" -- "$f" >/dev/null 2>&1; then
+        HIT_TS=1
+      fi
+
+      if [ "$f" != "$ALLOW_SUPABASE_FILE" ]; then
+        if git grep -n --cached "$BAD_SUPABASE" -- "$f" >/dev/null 2>&1; then
+          HIT_SUPA=1
+        fi
       fi
     ;;
   esac
 done
 
-if [ "$HIT" -eq 1 ]; then
-  echo "ERROR: @ts-nocheck detected in staged code. Remove it before committing."
+if [ "$HIT_TS" -eq 1 ] || [ "$HIT_SUPA" -eq 1 ]; then
+  echo "ERROR: pre-commit checks failed."
+
+  if [ "$HIT_TS" -eq 1 ]; then
+    echo " - @ts-nocheck detected in staged code. Remove it before committing."
+  fi
+
+  if [ "$HIT_SUPA" -eq 1 ]; then
+    echo " - Bad import detected: @/lib/supabase"
+    echo "   Use @/lib/supabase/server (server) or @/lib/supabase/client (client)."
+    echo "   Only lib/supabase.ts may mention this string."
+  fi
+
   for f in $FILES; do
     case "$f" in
       app/*|components/*|lib/*|src/*)
-        git grep -n --cached "$PATTERN" -- "$f" || true
+        if [ "$HIT_TS" -eq 1 ]; then
+          git grep -n --cached "$TS_NOCHECK" -- "$f" || true
+        fi
+
+        if [ "$f" != "$ALLOW_SUPABASE_FILE" ] && [ "$HIT_SUPA" -eq 1 ]; then
+          git grep -n --cached "$BAD_SUPABASE" -- "$f" || true
+        fi
       ;;
     esac
   done
+
   exit 1
 fi
 
