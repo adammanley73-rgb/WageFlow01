@@ -56,13 +56,26 @@ function isApproveRole(role: string) {
   return ["owner", "admin", "manager"].includes(String(role || "").toLowerCase());
 }
 
+function isConfirmTrue(v: any): boolean {
+  if (v === true) return true;
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "true" || s === "1" || s === "yes" || s === "y";
+}
+
 async function requireUser() {
   const supabase = await getServerSupabase();
   const { data, error } = await supabase.auth.getUser();
 
   const user = data?.user ?? null;
   if (error || !user) {
-    return { ok: false as const, res: json(401, { ok: false, code: "UNAUTHENTICATED", message: "Sign in required." }) };
+    return {
+      ok: false as const,
+      res: json(401, {
+        ok: false,
+        code: "UNAUTHENTICATED",
+        message: "Sign in required.",
+      }),
+    };
   }
 
   return { ok: true as const, supabase, user };
@@ -130,7 +143,6 @@ async function loadAttachments(
 ) {
   const attempts: any[] = [];
 
-  // Prefer binding to company_id if the column exists
   const a = await supabase
     .from("payroll_run_employees")
     .select("*")
@@ -158,10 +170,10 @@ async function loadAttachments(
     },
   });
 
-  // Fallback if company_id column does not exist
   const msg = String(a.error.message || "").toLowerCase();
   const missingCol =
-    a.error.code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
+    a.error.code === "42703" ||
+    (msg.includes("column") && msg.includes("does not exist"));
 
   if (missingCol) {
     const b = await supabase
@@ -191,7 +203,13 @@ async function loadAttachments(
     });
   }
 
-  return { ok: false as const, tableUsed: null, whereColumn: null, rows: [], attempts };
+  return {
+    ok: false as const,
+    tableUsed: null,
+    whereColumn: null,
+    rows: [],
+    attempts,
+  };
 }
 
 function buildEmployeeRow(att: any, emp: any) {
@@ -204,8 +222,8 @@ function buildEmployeeRow(att: any, emp: any) {
       emp?.name,
       [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
       [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-      "â€”"
-    ) || "â€”"
+      "—"
+    ) || "—"
   );
 
   const employeeNumber = String(
@@ -216,11 +234,11 @@ function buildEmployeeRow(att: any, emp: any) {
       emp?.payrollNumber,
       emp?.payroll_no,
       emp?.payrollNo,
-      "â€”"
-    ) || "â€”"
+      "—"
+    ) || "—"
   );
 
-  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "â€”") || "â€”");
+  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "—") || "—");
 
   const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
   const tax = toNumberSafe(pickFirst(att?.tax, 0));
@@ -231,7 +249,9 @@ function buildEmployeeRow(att: any, emp: any) {
   const otherDeductions = toNumberSafe(pickFirst(att?.other_deductions, 0));
   const aoe = toNumberSafe(pickFirst(att?.attachment_of_earnings, 0));
 
-  const deductions = Number((tax + employeeNi + pensionEmployee + otherDeductions + aoe).toFixed(2));
+  const deductions = Number(
+    (tax + employeeNi + pensionEmployee + otherDeductions + aoe).toFixed(2)
+  );
   const net = toNumberSafe(pickFirst(att?.net_pay, att?.netPay, gross - deductions));
 
   const safeId = String(pickFirst(att?.id, "") || "");
@@ -294,8 +314,8 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
         emp?.name,
         [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
         [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-        "â€”"
-      ) || "â€”"
+        "—"
+      ) || "—"
     );
 
     const codes: string[] = [];
@@ -336,7 +356,12 @@ async function getRunAndEmployees(
   const runRes = await loadRun(supabase, runId);
   if (!runRes.ok) {
     debug.stage.runFetch = { ok: false, error: runRes.error };
-    return { ok: false as const, status: runRes.status, error: runRes.error, debug: includeDebug ? debug : undefined };
+    return {
+      ok: false as const,
+      status: runRes.status,
+      error: runRes.error,
+      debug: includeDebug ? debug : undefined,
+    };
   }
 
   const run = runRes.run;
@@ -418,7 +443,10 @@ async function getRunAndEmployees(
     totals,
     seededMode,
     exceptions,
-    attachmentsMeta: { tableUsed: attachTry.tableUsed, whereColumn: attachTry.whereColumn },
+    attachmentsMeta: {
+      tableUsed: attachTry.tableUsed,
+      whereColumn: attachTry.whereColumn,
+    },
     debug: includeDebug ? debug : undefined,
   };
 }
@@ -446,7 +474,12 @@ async function fetchRunStatusAndFlag(supabase: any, runId: string, companyId: st
   if (a.error) {
     attempts.push({
       cols: "id,company_id,status,attached_all_due_employees",
-      error: { code: a.error.code, message: a.error.message, details: a.error.details, hint: a.error.hint },
+      error: {
+        code: a.error.code,
+        message: a.error.message,
+        details: a.error.details,
+        hint: a.error.hint,
+      },
     });
   }
 
@@ -469,7 +502,12 @@ async function fetchRunStatusAndFlag(supabase: any, runId: string, companyId: st
     if (b.error) {
       attempts.push({
         cols: "id,company_id,status",
-        error: { code: b.error.code, message: b.error.message, details: b.error.details, hint: b.error.hint },
+        error: {
+          code: b.error.code,
+          message: b.error.message,
+          details: b.error.details,
+          hint: b.error.hint,
+        },
       });
     }
   }
@@ -499,7 +537,16 @@ async function restoreAttachedAllDueEmployeesIfNeeded(
     .eq("company_id", companyId);
 
   if (error) {
-    return { ok: false, restored: false, error: { code: error.code, message: error.message, details: error.details, hint: error.hint } };
+    return {
+      ok: false,
+      restored: false,
+      error: {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      },
+    };
   }
 
   return { ok: true, restored: true, before, after };
@@ -508,7 +555,12 @@ async function restoreAttachedAllDueEmployeesIfNeeded(
 async function refreshRunTotalsFromAttachments(supabase: any, runId: string, companyId: string) {
   const attachTry = await loadAttachments(supabase, runId, companyId);
   if (!attachTry.ok) {
-    return { ok: false, status: 500, error: "Failed to read payroll_run_employees for totals refresh.", debug: { attempts: attachTry.attempts } };
+    return {
+      ok: false,
+      status: 500,
+      error: "Failed to read payroll_run_employees for totals refresh.",
+      debug: { attempts: attachTry.attempts },
+    };
   }
 
   const rr = Array.isArray(attachTry.rows) ? attachTry.rows : [];
@@ -542,13 +594,23 @@ async function refreshRunTotalsFromAttachments(supabase: any, runId: string, com
     return { ok: false, status: 500, error: runUpErr.message };
   }
 
-  return { ok: true, status: 200, tableUsed: "payroll_run_employees", whereColumn: attachTry.whereColumn };
+  return {
+    ok: true,
+    status: 200,
+    tableUsed: "payroll_run_employees",
+    whereColumn: attachTry.whereColumn,
+  };
 }
 
 async function setGrossOnlyCalcForRun(supabase: any, runId: string, companyId: string) {
   const attachTry = await loadAttachments(supabase, runId, companyId);
   if (!attachTry.ok) {
-    return { ok: false, status: 500, error: "Failed to load payroll_run_employees for gross-only recalculation.", debug: { attempts: attachTry.attempts } };
+    return {
+      ok: false,
+      status: 500,
+      error: "Failed to load payroll_run_employees for gross-only recalculation.",
+      debug: { attempts: attachTry.attempts },
+    };
   }
 
   const rr = Array.isArray(attachTry.rows) ? attachTry.rows : [];
@@ -684,8 +746,11 @@ export async function GET(req: Request, { params }: Ctx) {
     });
   }
 
-  // membership check for role, used only to control debug detail and PATCH behaviour later
-  const roleRes = await getRoleForCompany(supabase, String((result.run as any).company_id), gate.user.id);
+  const roleRes = await getRoleForCompany(
+    supabase,
+    String((result.run as any).company_id),
+    gate.user.id
+  );
   const role = roleRes.ok ? roleRes.role : "member";
 
   const allowDebug = includeDebug && ["owner", "admin"].includes(role.toLowerCase());
@@ -720,12 +785,22 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const action = normalizeAction(body?.action);
 
   const runRes = await loadRun(supabase, id);
-  if (!runRes.ok) return json(runRes.status, { ok: false, debugSource: "payroll_run_route_rls_v1", error: runRes.error });
+  if (!runRes.ok) {
+    return json(runRes.status, {
+      ok: false,
+      debugSource: "payroll_run_route_rls_v1",
+      error: runRes.error,
+    });
+  }
 
   const run = runRes.run;
   const companyId = String(run?.company_id || "").trim();
   if (!companyId || !isUuid(companyId)) {
-    return json(500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: "Payroll run is missing a valid company_id." });
+    return json(500, {
+      ok: false,
+      debugSource: "payroll_run_route_rls_v1",
+      error: "Payroll run is missing a valid company_id.",
+    });
   }
 
   const roleRes = await getRoleForCompany(supabase, companyId, userId);
@@ -733,8 +808,50 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const role = roleRes.role;
 
   if (!isStaffRole(role)) {
-    return json(403, { ok: false, code: "INSUFFICIENT_ROLE", message: "You do not have permission to modify payroll runs." });
+    return json(403, {
+      ok: false,
+      code: "INSUFFICIENT_ROLE",
+      message: "You do not have permission to modify payroll runs.",
+    });
   }
+
+  const statusNow = String(run?.status || "").trim().toLowerCase();
+
+  const isStartProcessing = [
+    "start_processing",
+    "start-processing",
+    "begin_processing",
+    "begin-processing",
+  ].includes(action);
+
+  const isMarkRtiSubmitted = [
+    "mark_rti_submitted",
+    "mark-rti-submitted",
+    "mark_rti",
+    "mark-rti",
+    "submit_rti",
+    "submit-rti",
+    "rti_submitted",
+    "rti-submitted",
+  ].includes(action);
+
+  const isMarkCompleted = [
+    "mark_completed",
+    "mark-completed",
+    "mark_complete",
+    "mark-complete",
+    "complete",
+    "completed",
+  ].includes(action);
+
+  const isCancelRun = [
+    "cancel_run",
+    "cancel-run",
+    "cancel",
+    "cancelled",
+    "mark_cancelled",
+    "mark-cancelled",
+  ].includes(action);
 
   const isComputeFull =
     action === "compute_full" ||
@@ -743,9 +860,266 @@ export async function PATCH(req: Request, { params }: Ctx) {
     action === "fullcompute" ||
     action === "compute";
 
+  if (isStartProcessing) {
+    if (statusNow !== "draft") {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Start processing is only allowed for draft runs.",
+        runStatus: statusNow,
+      });
+    }
+
+    const wf = await WorkflowService.changeStatus({
+      client: supabase,
+      runId: id,
+      companyId,
+      newStatus: "processing",
+      userId,
+      comment: "Started processing payroll run",
+      automated: false,
+    });
+
+    if (!wf.success) {
+      const msg = String(wf.error || "Failed to start processing run");
+      const isTransition = msg.toLowerCase().includes("cannot change");
+      return json(isTransition ? 409 : 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: msg,
+      });
+    }
+
+    const post = await getRunAndEmployees(supabase, id, false);
+    if (!post.ok) {
+      return json(post.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: post.error,
+      });
+    }
+
+    return json(200, {
+      ok: true,
+      debugSource: "payroll_run_route_rls_v1",
+      action: "start_processing",
+      run: post.run,
+      employees: post.employees,
+      totals: post.totals,
+      seededMode: post.seededMode,
+      exceptions: post.exceptions,
+    });
+  }
+
+  if (isMarkRtiSubmitted) {
+    if (!isApproveRole(role)) {
+      return json(403, {
+        ok: false,
+        code: "INSUFFICIENT_ROLE",
+        message: "You do not have permission to mark RTI submitted.",
+      });
+    }
+
+    if (!isConfirmTrue(body?.confirm)) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        code: "CONFIRM_REQUIRED",
+        message: "Confirmation required to mark RTI submitted.",
+        action: "mark_rti_submitted",
+        required: true,
+      });
+    }
+
+    if (statusNow !== "approved") {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Mark RTI submitted is only allowed for approved runs.",
+        runStatus: statusNow,
+      });
+    }
+
+    const wf = await WorkflowService.changeStatus({
+      client: supabase,
+      runId: id,
+      companyId,
+      newStatus: "rti_submitted",
+      userId,
+      comment: "Marked RTI submitted",
+      automated: false,
+    });
+
+    if (!wf.success) {
+      const msg = String(wf.error || "Failed to mark RTI submitted");
+      const isTransition = msg.toLowerCase().includes("cannot change");
+      return json(isTransition ? 409 : 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: msg,
+      });
+    }
+
+    const post = await getRunAndEmployees(supabase, id, false);
+    if (!post.ok) {
+      return json(post.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: post.error,
+      });
+    }
+
+    return json(200, {
+      ok: true,
+      debugSource: "payroll_run_route_rls_v1",
+      action: "mark_rti_submitted",
+      run: post.run,
+      employees: post.employees,
+      totals: post.totals,
+      seededMode: post.seededMode,
+      exceptions: post.exceptions,
+    });
+  }
+
+  if (isMarkCompleted) {
+    if (!isApproveRole(role)) {
+      return json(403, {
+        ok: false,
+        code: "INSUFFICIENT_ROLE",
+        message: "You do not have permission to mark completed.",
+      });
+    }
+
+    if (!isConfirmTrue(body?.confirm)) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        code: "CONFIRM_REQUIRED",
+        message: "Confirmation required to mark completed.",
+        action: "mark_completed",
+        required: true,
+      });
+    }
+
+    if (statusNow !== "rti_submitted") {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Mark completed is only allowed for RTI submitted runs.",
+        runStatus: statusNow,
+      });
+    }
+
+    const wf = await WorkflowService.changeStatus({
+      client: supabase,
+      runId: id,
+      companyId,
+      newStatus: "completed",
+      userId,
+      comment: "Marked payroll run completed",
+      automated: false,
+    });
+
+    if (!wf.success) {
+      const msg = String(wf.error || "Failed to mark completed");
+      const isTransition = msg.toLowerCase().includes("cannot change");
+      return json(isTransition ? 409 : 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: msg,
+      });
+    }
+
+    const post = await getRunAndEmployees(supabase, id, false);
+    if (!post.ok) {
+      return json(post.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: post.error,
+      });
+    }
+
+    return json(200, {
+      ok: true,
+      debugSource: "payroll_run_route_rls_v1",
+      action: "mark_completed",
+      run: post.run,
+      employees: post.employees,
+      totals: post.totals,
+      seededMode: post.seededMode,
+      exceptions: post.exceptions,
+    });
+  }
+
+  if (isCancelRun) {
+    if (!isConfirmTrue(body?.confirm)) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        code: "CONFIRM_REQUIRED",
+        message: "Confirmation required to cancel a payroll run.",
+        action: "cancel_run",
+        required: true,
+      });
+    }
+
+    if (!(statusNow === "draft" || statusNow === "processing")) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Cancel is only allowed for draft or processing runs.",
+        runStatus: statusNow,
+      });
+    }
+
+    const wf = await WorkflowService.changeStatus({
+      client: supabase,
+      runId: id,
+      companyId,
+      newStatus: "cancelled",
+      userId,
+      comment: "Cancelled payroll run",
+      automated: false,
+    });
+
+    if (!wf.success) {
+      const msg = String(wf.error || "Failed to cancel run");
+      const isTransition = msg.toLowerCase().includes("cannot change");
+      return json(isTransition ? 409 : 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: msg,
+      });
+    }
+
+    const post = await getRunAndEmployees(supabase, id, false);
+    if (!post.ok) {
+      return json(post.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: post.error,
+      });
+    }
+
+    return json(200, {
+      ok: true,
+      debugSource: "payroll_run_route_rls_v1",
+      action: "cancel_run",
+      run: post.run,
+      employees: post.employees,
+      totals: post.totals,
+      seededMode: post.seededMode,
+      exceptions: post.exceptions,
+    });
+  }
+
   if (action === "recalculate") {
     if (String(run?.status || "").toLowerCase() !== "draft") {
-      return json(409, { ok: false, debugSource: "payroll_run_route_rls_v1", error: "Recalculate is only allowed for draft runs." });
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Recalculate is only allowed for draft runs.",
+      });
     }
 
     const pre = await fetchRunStatusAndFlag(supabase, id, companyId);
@@ -760,12 +1134,21 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     const rec: any = await setGrossOnlyCalcForRun(supabase, id, companyId);
     if (!rec?.ok) {
-      return json(rec?.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: rec?.error || "Recalculate failed", ...(rec?.debug ? { debug: rec.debug } : {}) });
+      return json(rec?.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: rec?.error || "Recalculate failed",
+        ...(rec?.debug ? { debug: rec.debug } : {}),
+      });
     }
 
     const totalsRefresh: any = await refreshRunTotalsFromAttachments(supabase, id, companyId);
     if (!totalsRefresh?.ok) {
-      return json(totalsRefresh?.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: totalsRefresh?.error || "Totals refresh failed" });
+      return json(totalsRefresh?.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: totalsRefresh?.error || "Totals refresh failed",
+      });
     }
 
     const postFlag = await fetchRunStatusAndFlag(supabase, id, companyId);
@@ -780,7 +1163,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     const result = await getRunAndEmployees(supabase, id, false);
     if (!result.ok) {
-      return json(result.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: result.error });
+      return json(result.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: result.error,
+      });
     }
 
     return json(200, {
@@ -808,12 +1195,22 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   if (isComputeFull) {
     if (String(run?.status || "").toLowerCase() !== "draft") {
-      return json(409, { ok: false, debugSource: "payroll_run_route_rls_v1", error: "Full compute is only allowed for draft runs.", runStatus: String(run?.status || "").toLowerCase() });
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Full compute is only allowed for draft runs.",
+        runStatus: String(run?.status || "").toLowerCase(),
+      });
     }
 
     const pre = await getRunAndEmployees(supabase, id, true);
     if (!pre.ok) {
-      return json(pre.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: pre.error, debug: pre.debug });
+      return json(pre.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: pre.error,
+        debug: pre.debug,
+      });
     }
 
     const blockingCount = Number(pre?.exceptions?.blockingCount ?? 0);
@@ -828,7 +1225,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     const hasEmployees = Array.isArray(pre?.employees) && pre.employees.length > 0;
     if (!hasEmployees) {
-      return json(409, { ok: false, debugSource: "payroll_run_route_rls_v1", error: "Full compute blocked. No attached employees were found for this run." });
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Full compute blocked. No attached employees were found for this run.",
+      });
     }
 
     const flagPre = await fetchRunStatusAndFlag(supabase, id, companyId);
@@ -858,7 +1259,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     const post = await getRunAndEmployees(supabase, id, false);
     if (!post.ok) {
-      return json(post.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: post.error });
+      return json(post.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: post.error,
+      });
     }
 
     if (post.ok && Boolean(post.seededMode)) {
@@ -904,12 +1309,21 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   if (action === "approve") {
     if (!isApproveRole(role)) {
-      return json(403, { ok: false, code: "INSUFFICIENT_ROLE", message: "You do not have permission to approve payroll runs." });
+      return json(403, {
+        ok: false,
+        code: "INSUFFICIENT_ROLE",
+        message: "You do not have permission to approve payroll runs.",
+      });
     }
 
     const pre = await getRunAndEmployees(supabase, id, true);
     if (!pre.ok) {
-      return json(pre.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: pre.error, debug: pre.debug });
+      return json(pre.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: pre.error,
+        debug: pre.debug,
+      });
     }
 
     const seededMode = Boolean(pre?.seededMode);
@@ -948,12 +1362,20 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (!wf.success) {
       const msg = String(wf.error || "Failed to approve run");
       const isTransition = msg.toLowerCase().includes("cannot change");
-      return json(isTransition ? 409 : 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: msg });
+      return json(isTransition ? 409 : 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: msg,
+      });
     }
 
     const post = await getRunAndEmployees(supabase, id, false);
     if (!post.ok) {
-      return json(post.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: post.error });
+      return json(post.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: post.error,
+      });
     }
 
     return json(200, {
@@ -972,7 +1394,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (items.length === 0) {
     return json(400, {
       ok: false,
-      error: "Nothing to update. Expected { items: [...] } or { action: 'approve'|'recalculate'|'compute_full' }",
+      error:
+        "Nothing to update. Expected { items: [...] } or { action: 'approve'|'recalculate'|'compute_full'|'start_processing'|'mark_rti_submitted'|'mark_completed'|'cancel_run' }",
     });
   }
 
@@ -1002,7 +1425,12 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   const result = await getRunAndEmployees(supabase, id, false);
   if (!result.ok) {
-    return json(result.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: result.error, updateResults: results });
+    return json(result.status || 500, {
+      ok: false,
+      debugSource: "payroll_run_route_rls_v1",
+      error: result.error,
+      updateResults: results,
+    });
   }
 
   return json(200, {

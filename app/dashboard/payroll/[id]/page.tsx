@@ -49,6 +49,16 @@ type ApiResponse = {
   };
 };
 
+type ConfirmAction = "mark_rti_submitted" | "mark_completed" | "cancel_run";
+
+type ConfirmConfig = {
+  action: ConfirmAction;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+};
+
 function gbp(n: number) {
   const safe = Number.isFinite(n) ? n : 0;
   return safe.toLocaleString("en-GB", { style: "currency", currency: "GBP" });
@@ -246,9 +256,7 @@ function extractCodes(x: any): string[] {
   if (x?.warning_code) out.push(String(x.warning_code));
   if (x?.blocking_code) out.push(String(x.blocking_code));
 
-  const clean = out
-    .map((c) => String(c || "").trim())
-    .filter(Boolean);
+  const clean = out.map((c) => String(c || "").trim()).filter(Boolean);
 
   return Array.from(new Set(clean));
 }
@@ -266,7 +274,19 @@ export default function PayrollRunDetailPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const [actionBusy, setActionBusy] = useState<null | "save" | "approve" | "recalc" | "supp" | "attach" | "attachSelected">(null);
+  const [actionBusy, setActionBusy] = useState<
+    | null
+    | "save"
+    | "approve"
+    | "recalc"
+    | "supp"
+    | "attach"
+    | "attachSelected"
+    | "start_processing"
+    | "mark_rti_submitted"
+    | "mark_completed"
+    | "cancel_run"
+  >(null);
 
   const [dirty, setDirty] = useState<boolean>(false);
   const [validation, setValidation] = useState<Record<string, string>>({});
@@ -289,6 +309,9 @@ export default function PayrollRunDetailPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [attachSearch, setAttachSearch] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+
+  const [confirmOpen, setConfirmOpen] = useState<boolean>(false);
+  const [confirmCfg, setConfirmCfg] = useState<ConfirmConfig | null>(null);
 
   const load = async () => {
     setApprovedMsg(null);
@@ -541,7 +564,12 @@ export default function PayrollRunDetailPage() {
     return { blocks, warns };
   }, [exceptionItems]);
 
+  const hasErrors = Object.keys(validation).length > 0;
+  const saving = actionBusy !== null;
+
   const onChangeCell = (id: string, field: "gross" | "deductions" | "net", value: string) => {
+    if (!canEditRun) return;
+
     setRows((prev) =>
       prev.map((r) => {
         if (r.id !== id) return r;
@@ -578,8 +606,26 @@ export default function PayrollRunDetailPage() {
     setValidation(v);
   }, [rows]);
 
-  const hasErrors = Object.keys(validation).length > 0;
-  const saving = actionBusy !== null;
+  const patchRunAction = async (action: string, confirm?: boolean) => {
+    if (!runId) throw new Error("Missing run id.");
+
+    const payload: any = { action };
+    if (confirm === true) payload.confirm = true;
+
+    const res = await fetch(`/api/payroll/${runId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const j: any = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(j?.message || j?.error || `Action failed: ${action}`);
+    }
+
+    return j as ApiResponse;
+  };
 
   const saveChanges = async () => {
     try {
@@ -681,6 +727,69 @@ export default function PayrollRunDetailPage() {
     } finally {
       setActionBusy(null);
     }
+  };
+
+  const startProcessing = async () => {
+    try {
+      setActionBusy("start_processing");
+      setErr(null);
+      setApprovedMsg(null);
+
+      const j = await patchRunAction("start_processing");
+      setData(j);
+
+      const mapped = mapEmployees(j?.employees);
+      setRows(mapped);
+
+      setDirty(false);
+      setValidation({});
+      setApprovedMsg("Processing started.");
+    } catch (e: any) {
+      setErr(e?.message || "Start processing failed");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const confirmAndRun = async (cfg: ConfirmConfig) => {
+    try {
+      setActionBusy(cfg.action);
+      setErr(null);
+      setApprovedMsg(null);
+
+      const j = await patchRunAction(cfg.action, true);
+      setData(j);
+
+      const mapped = mapEmployees(j?.employees);
+      setRows(mapped);
+
+      setDirty(false);
+      setValidation({});
+
+      if (cfg.action === "mark_rti_submitted") setApprovedMsg("Marked RTI submitted.");
+      if (cfg.action === "mark_completed") setApprovedMsg("Marked completed.");
+      if (cfg.action === "cancel_run") setApprovedMsg("Run cancelled.");
+
+      setConfirmOpen(false);
+      setConfirmCfg(null);
+    } catch (e: any) {
+      setErr(e?.message || "Action failed");
+      setConfirmOpen(false);
+      setConfirmCfg(null);
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const openConfirm = (cfg: ConfirmConfig) => {
+    setConfirmCfg(cfg);
+    setConfirmOpen(true);
+  };
+
+  const closeConfirm = () => {
+    if (actionBusy === "mark_rti_submitted" || actionBusy === "mark_completed" || actionBusy === "cancel_run") return;
+    setConfirmOpen(false);
+    setConfirmCfg(null);
   };
 
   const createSupplementaryRun = async () => {
@@ -893,15 +1002,16 @@ export default function PayrollRunDetailPage() {
   const kindChip = isSupplementary ? "SUPPLEMENTARY" : "PRIMARY";
 
   const showCreateSupplementaryButton =
-    !loading &&
-    !isSupplementary &&
-    !!runId &&
-    parentIsCompleted &&
-    frequencyAllowsSupp &&
-    suppCheck.checked &&
-    !suppCheck.open;
+    !loading && !isSupplementary && !!runId && parentIsCompleted && frequencyAllowsSupp && suppCheck.checked && !suppCheck.open;
 
   const canShowAttachButtons = !loading && !!runId && canEditRun;
+
+  const canStartProcessing = !loading && !!runId && !saving && statusLower === "draft" && !dirty && !hasErrors;
+  const canMarkRtiSubmitted = !loading && !!runId && !saving && statusLower === "approved" && !dirty;
+  const canMarkCompleted = !loading && !!runId && !saving && statusLower === "rti_submitted" && !dirty;
+  const canCancelRun = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
+
+  const recalcAllowed = !loading && !!runId && !saving && statusLower === "draft";
 
   const filteredCandidates = useMemo(() => {
     const q = String(attachSearch || "").trim().toLowerCase();
@@ -1022,6 +1132,95 @@ export default function PayrollRunDetailPage() {
                 Back to Runs
               </Link>
 
+              <button
+                type="button"
+                onClick={startProcessing}
+                disabled={!canStartProcessing}
+                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                style={{
+                  backgroundColor: "#334155",
+                  opacity: !canStartProcessing ? 0.6 : 1,
+                  cursor: !canStartProcessing ? "not-allowed" : "pointer",
+                }}
+                title={
+                  dirty ? "Save or discard edits before changing status." : statusLower !== "draft" ? "Draft only." : "Move this run into processing."
+                }
+              >
+                {actionBusy === "start_processing" ? "Working..." : "Start processing"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  openConfirm({
+                    action: "mark_rti_submitted",
+                    title: "Mark RTI submitted",
+                    message:
+                      "This moves the run to RTI submitted. Make sure you have actually sent the FPS/EPS from your RTI queue before doing this.",
+                    confirmLabel: "Mark RTI submitted",
+                    danger: false,
+                  })
+                }
+                disabled={!canMarkRtiSubmitted}
+                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                style={{
+                  backgroundColor: "var(--wf-blue)",
+                  opacity: !canMarkRtiSubmitted ? 0.6 : 1,
+                  cursor: !canMarkRtiSubmitted ? "not-allowed" : "pointer",
+                }}
+                title={dirty ? "Save or discard edits before changing status." : statusLower !== "approved" ? "Approved only." : "Confirm RTI submission."}
+              >
+                {actionBusy === "mark_rti_submitted" ? "Working..." : "Mark RTI submitted"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  openConfirm({
+                    action: "mark_completed",
+                    title: "Mark completed",
+                    message:
+                      "This marks the run as completed. After this, edits should stop and any corrections should be done via supplementary runs.",
+                    confirmLabel: "Mark completed",
+                    danger: false,
+                  })
+                }
+                disabled={!canMarkCompleted}
+                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                style={{
+                  backgroundColor: "#059669",
+                  opacity: !canMarkCompleted ? 0.6 : 1,
+                  cursor: !canMarkCompleted ? "not-allowed" : "pointer",
+                }}
+                title={dirty ? "Save or discard edits before changing status." : statusLower !== "rti_submitted" ? "RTI submitted only." : "Confirm completion."}
+              >
+                {actionBusy === "mark_completed" ? "Working..." : "Mark completed"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  openConfirm({
+                    action: "cancel_run",
+                    title: "Cancel payroll run",
+                    message:
+                      "This cancels the run. Use this only for the wrong frequency, wrong period, or a run that should not exist. Cancelled runs stay visible for recordkeeping.",
+                    confirmLabel: "Cancel run",
+                    danger: true,
+                  })
+                }
+                disabled={!canCancelRun}
+                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                style={{
+                  backgroundColor: "#991b1b",
+                  opacity: !canCancelRun ? 0.6 : 1,
+                  cursor: !canCancelRun ? "not-allowed" : "pointer",
+                }}
+                title={dirty ? "Save or discard edits before changing status." : !(statusLower === "draft" || statusLower === "processing") ? "Draft or processing only." : "Cancel this run."}
+              >
+                {actionBusy === "cancel_run" ? "Working..." : "Cancel"}
+              </button>
+
               {showCreateSupplementaryButton ? (
                 <button
                   type="button"
@@ -1100,14 +1299,14 @@ export default function PayrollRunDetailPage() {
               <button
                 type="button"
                 onClick={recalculateRun}
-                disabled={saving || loading || !runId}
+                disabled={!recalcAllowed}
                 className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                 style={{
                   backgroundColor: "var(--wf-blue)",
-                  opacity: saving || loading || !runId ? 0.6 : 1,
-                  cursor: saving || loading || !runId ? "not-allowed" : "pointer",
+                  opacity: !recalcAllowed ? 0.6 : 1,
+                  cursor: !recalcAllowed ? "not-allowed" : "pointer",
                 }}
-                title="Run calculation pipeline for this run"
+                title={statusLower !== "draft" ? "Calculation is draft-only." : "Run calculation pipeline for this run"}
               >
                 {actionBusy === "recalc" ? "Calculating..." : "Run calculation"}
               </button>
@@ -1166,6 +1365,12 @@ export default function PayrollRunDetailPage() {
               Approve stays disabled until employees load.
             </div>
           ) : null}
+
+          {!canEditRun && !loading ? (
+            <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold text-slate-700">
+              This run is locked because it is {statusText}. Edits are disabled.
+            </div>
+          ) : null}
         </div>
 
         <div
@@ -1175,9 +1380,7 @@ export default function PayrollRunDetailPage() {
           <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col">
               <div className="text-base font-extrabold text-slate-900">Exceptions</div>
-              <div className="text-sm text-slate-700">
-                {loading ? "Loading..." : `${blockingCount} blocking, ${warningCount} warnings`}
-              </div>
+              <div className="text-sm text-slate-700">{loading ? "Loading..." : `${blockingCount} blocking, ${warningCount} warnings`}</div>
             </div>
 
             <button
@@ -1201,8 +1404,7 @@ export default function PayrollRunDetailPage() {
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
                 <div className="text-sm font-extrabold text-slate-900">How to use this</div>
                 <div className="mt-1 text-sm text-slate-700">
-                  Blocking items must be fixed before approval. Warnings are allowed, but you should review them.
-                  Zero gross employees can be valid, for example tax rebates, so they stay as warnings.
+                  Blocking items must be fixed before approval. Warnings are allowed, but you should review them. Zero gross employees can be valid, for example tax rebates, so they stay as warnings.
                 </div>
               </div>
 
@@ -1228,10 +1430,7 @@ export default function PayrollRunDetailPage() {
                         <div key={`blk-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span
-                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
-                              style={chip.style}
-                            >
+                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
                               {chip.label}
                             </span>
                           </div>
@@ -1257,9 +1456,7 @@ export default function PayrollRunDetailPage() {
                                 Fix on employee file
                               </Link>
                             ) : (
-                              <span className="text-xs font-semibold text-slate-600">
-                                Missing employee_id in exception payload.
-                              </span>
+                              <span className="text-xs font-semibold text-slate-600">Missing employee_id in exception payload.</span>
                             )}
                           </div>
                         </div>
@@ -1285,10 +1482,7 @@ export default function PayrollRunDetailPage() {
                         <div key={`wrn-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span
-                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
-                              style={chip.style}
-                            >
+                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
                               {chip.label}
                             </span>
                           </div>
@@ -1421,8 +1615,13 @@ export default function PayrollRunDetailPage() {
 
                         <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
                           <input
+                            disabled={!canEditRun}
                             className={`${inter.className} h-10 w-28 rounded-xl border border-slate-300 px-3 text-right text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
-                            style={{ color: "var(--wf-blue)" }}
+                            style={{
+                              color: "var(--wf-blue)",
+                              opacity: !canEditRun ? 0.6 : 1,
+                              cursor: !canEditRun ? "not-allowed" : "text",
+                            }}
                             type="number"
                             step="0.01"
                             value={Number.isFinite(r.gross) ? r.gross : 0}
@@ -1432,8 +1631,13 @@ export default function PayrollRunDetailPage() {
 
                         <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
                           <input
+                            disabled={!canEditRun}
                             className={`${inter.className} h-10 w-28 rounded-xl border border-slate-300 px-3 text-right text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
-                            style={{ color: "var(--wf-blue)" }}
+                            style={{
+                              color: "var(--wf-blue)",
+                              opacity: !canEditRun ? 0.6 : 1,
+                              cursor: !canEditRun ? "not-allowed" : "text",
+                            }}
                             type="number"
                             step="0.01"
                             value={Number.isFinite(r.deductions) ? r.deductions : 0}
@@ -1444,8 +1648,13 @@ export default function PayrollRunDetailPage() {
                         <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
                           <div className="flex flex-col gap-1">
                             <input
+                              disabled={!canEditRun}
                               className={`${inter.className} h-10 w-28 rounded-xl border border-slate-300 px-3 text-right text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
-                              style={{ color: "var(--wf-blue)" }}
+                              style={{
+                                color: "var(--wf-blue)",
+                                opacity: !canEditRun ? 0.6 : 1,
+                                cursor: !canEditRun ? "not-allowed" : "text",
+                              }}
                               type="number"
                               step="0.01"
                               value={Number.isFinite(r.net) ? r.net : 0}
@@ -1481,14 +1690,14 @@ export default function PayrollRunDetailPage() {
           <button
             type="button"
             onClick={saveChanges}
-            disabled={!dirty || hasErrors || saving || rows.length === 0}
+            disabled={!canEditRun || !dirty || hasErrors || saving || rows.length === 0}
             className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
             style={{
-              backgroundColor: !dirty || hasErrors || saving || rows.length === 0 ? "var(--wf-blue)" : "#059669",
-              opacity: !dirty || hasErrors || saving || rows.length === 0 ? 0.6 : 1,
-              cursor: !dirty || hasErrors || saving || rows.length === 0 ? "not-allowed" : "pointer",
+              backgroundColor: !canEditRun || !dirty || hasErrors || saving || rows.length === 0 ? "var(--wf-blue)" : "#059669",
+              opacity: !canEditRun || !dirty || hasErrors || saving || rows.length === 0 ? 0.6 : 1,
+              cursor: !canEditRun || !dirty || hasErrors || saving || rows.length === 0 ? "not-allowed" : "pointer",
             }}
-            title={rows.length === 0 ? "No employee rows loaded for this run" : "Save employee row changes"}
+            title={!canEditRun ? "Run is locked." : rows.length === 0 ? "No employee rows loaded for this run" : "Save employee row changes"}
           >
             {actionBusy === "save" ? "Saving..." : "Save Changes"}
           </button>
@@ -1508,6 +1717,63 @@ export default function PayrollRunDetailPage() {
             {actionBusy === "approve" ? "Working..." : "Approve run"}
           </button>
         </div>
+
+        {confirmOpen && confirmCfg ? (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+            <div className="w-full max-w-xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
+              <div className="px-5 py-4 flex items-center justify-between border-b border-neutral-200">
+                <div className="text-base font-extrabold text-slate-900">{confirmCfg.title}</div>
+                <button
+                  type="button"
+                  onClick={closeConfirm}
+                  disabled={actionBusy === confirmCfg.action}
+                  className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{
+                    backgroundColor: "var(--wf-blue)",
+                    opacity: actionBusy === confirmCfg.action ? 0.6 : 1,
+                    cursor: actionBusy === confirmCfg.action ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="px-5 py-4">
+                <div className="text-sm text-slate-700">{confirmCfg.message}</div>
+
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={closeConfirm}
+                    disabled={actionBusy === confirmCfg.action}
+                    className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition hover:opacity-95"
+                    style={{
+                      backgroundColor: "#64748b",
+                      opacity: actionBusy === confirmCfg.action ? 0.6 : 1,
+                      cursor: actionBusy === confirmCfg.action ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => confirmAndRun(confirmCfg)}
+                    disabled={actionBusy === confirmCfg.action}
+                    className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition hover:opacity-95"
+                    style={{
+                      backgroundColor: confirmCfg.danger ? "#991b1b" : "#059669",
+                      opacity: actionBusy === confirmCfg.action ? 0.6 : 1,
+                      cursor: actionBusy === confirmCfg.action ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {actionBusy === confirmCfg.action ? "Working..." : confirmCfg.confirmLabel}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {attachOpen ? (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
@@ -1633,9 +1899,7 @@ export default function PayrollRunDetailPage() {
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={(e) =>
-                                      setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))
-                                    }
+                                    onChange={(e) => setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))}
                                     className="h-5 w-5"
                                   />
                                 </td>
