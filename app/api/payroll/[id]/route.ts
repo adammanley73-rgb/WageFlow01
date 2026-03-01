@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/server";
+import { WorkflowService } from "@/lib/services/workflow.service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -203,8 +204,8 @@ function buildEmployeeRow(att: any, emp: any) {
       emp?.name,
       [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
       [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-      "—"
-    ) || "—"
+      "â€”"
+    ) || "â€”"
   );
 
   const employeeNumber = String(
@@ -215,11 +216,11 @@ function buildEmployeeRow(att: any, emp: any) {
       emp?.payrollNumber,
       emp?.payroll_no,
       emp?.payrollNo,
-      "—"
-    ) || "—"
+      "â€”"
+    ) || "â€”"
   );
 
-  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "—") || "—");
+  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "â€”") || "â€”");
 
   const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
   const tax = toNumberSafe(pickFirst(att?.tax, 0));
@@ -293,8 +294,8 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
         emp?.name,
         [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
         [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-        "—"
-      ) || "—"
+        "â€”"
+      ) || "â€”"
     );
 
     const codes: string[] = [];
@@ -934,14 +935,20 @@ export async function PATCH(req: Request, { params }: Ctx) {
       });
     }
 
-    const { error: upErr } = await supabase
-      .from("payroll_runs")
-      .update({ status: "approved" })
-      .eq("id", id)
-      .eq("company_id", companyId);
+    const wf = await WorkflowService.changeStatus({
+      client: supabase,
+      runId: id,
+      companyId,
+      newStatus: "approved",
+      userId,
+      comment: "Approved payroll run",
+      automated: false,
+    });
 
-    if (upErr) {
-      return json(500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: upErr.message });
+    if (!wf.success) {
+      const msg = String(wf.error || "Failed to approve run");
+      const isTransition = msg.toLowerCase().includes("cannot change");
+      return json(isTransition ? 409 : 500, { ok: false, debugSource: "payroll_run_route_rls_v1", error: msg });
     }
 
     const post = await getRunAndEmployees(supabase, id, false);

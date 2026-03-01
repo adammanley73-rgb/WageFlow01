@@ -1,204 +1,180 @@
-/* preview: suppress Supabase builder typing quirks so build doesn't fail */
-// WageFlow Workflow Service
-import { supabase } from '../supabase';
-import type { WorkflowStatus, WorkflowHistoryEntry } from '../types/workflow';
-import { WORKFLOW_TRANSITIONS } from '../types/workflow';
+// C:\Projects\wageflow01\lib\services\workflow.service.ts
 
-// Minimal shape for a payroll run record we read/write
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { WorkflowStatus, WorkflowHistoryEntry } from "../types/workflow";
+import { WORKFLOW_TRANSITIONS } from "../types/workflow";
+
 type PayrollRunRow = {
-  payroll_run_id: string;
+  id: string;
+  company_id: string;
+
+  // Canonical lifecycle field in your app today
+  status: WorkflowStatus;
+
+  // Legacy but kept in-sync for now
   workflow_status: WorkflowStatus;
+
   workflow_history: WorkflowHistoryEntry[] | null;
-  created_at?: string;
-  updated_at?: string;
-  // optional audit timestamps we might update
+
+  created_at?: string | null;
+  updated_at?: string | null;
+
   processing_started_at?: string | null;
   processing_completed_at?: string | null;
+
   approved_by_user_id?: string | null;
   approved_at?: string | null;
+
   submitted_to_hmrc_at?: string | null;
 };
 
-// Safe UUID for both browser and server without Node 'crypto' import
 function safeUUID(): string {
   try {
-    // globalThis works both server and browser
     const g: any = globalThis as any;
-    if (g?.crypto?.randomUUID) {
-      return g.crypto.randomUUID();
-    }
+    if (g?.crypto?.randomUUID) return g.crypto.randomUUID();
   } catch {
-    // ignore
   }
-  // Fallback
   const rnd = Math.random().toString(16).slice(2);
   return `${Date.now()}-${rnd}`;
 }
 
+function isValidTransition(from: WorkflowStatus, to: WorkflowStatus): boolean {
+  const allowed = WORKFLOW_TRANSITIONS[from] || [];
+  return allowed.includes(to);
+}
+
 export class WorkflowService {
-  // Change payroll run status with validation and history tracking
-  static async changeStatus(
-    payrollRunId: string,
-    newStatus: WorkflowStatus,
-    userId: string,
-    comment?: string
-  ): Promise<{ success: boolean; error?: string }> {
+  static async changeStatus(params: {
+    client: SupabaseClient;
+    runId: string;
+    companyId: string;
+    newStatus: WorkflowStatus;
+    userId: string;
+    comment?: string;
+    automated?: boolean;
+  }): Promise<{ success: boolean; error?: string }> {
+    const { client, runId, companyId, newStatus, userId, comment, automated } = params;
+
     try {
-      // Get current payroll run
-      const { data: payrollRun, error: fetchError } = await supabase
-        .from('payroll_runs')
-        .select('*')
-        .eq('payroll_run_id', payrollRunId)
+      const { data: payrollRun, error: fetchError } = await client
+        .from("payroll_runs")
+        .select(
+          [
+            "id",
+            "company_id",
+            "status",
+            "workflow_status",
+            "workflow_history",
+            "processing_started_at",
+            "processing_completed_at",
+            "approved_by_user_id",
+            "approved_at",
+            "submitted_to_hmrc_at",
+            "created_at",
+            "updated_at",
+          ].join(",")
+        )
+        .eq("id", runId)
+        .eq("company_id", companyId)
         .single();
 
       if (fetchError || !payrollRun) {
-        return { success: false, error: 'Payroll run not found' };
+        return { success: false, error: fetchError?.message || "Payroll run not found" };
       }
 
-      const currentStatus = payrollRun.workflow_status;
+      const currentStatus = String((payrollRun as any).status || "draft") as WorkflowStatus;
 
-      // Validate transition
-      const allowedTransitions = WORKFLOW_TRANSITIONS[currentStatus as WorkflowStatus] || [];
-      if (!allowedTransitions.includes(newStatus)) {
+      if (currentStatus === newStatus) {
+        return { success: true };
+      }
+
+      if (!isValidTransition(currentStatus, newStatus)) {
         return {
           success: false,
-          error: `Cannot change from ${currentStatus} to ${newStatus}`
+          error: `Cannot change from ${currentStatus} to ${newStatus}`,
         };
       }
 
-      // Create history entry
+      const now = new Date().toISOString();
+
       const historyEntry: WorkflowHistoryEntry = {
         id: safeUUID(),
         from_status: currentStatus,
         to_status: newStatus,
         changed_by: userId,
-        changed_at: new Date().toISOString(),
+        changed_at: now,
         comment,
-        automated: false
+        automated: Boolean(automated),
       };
 
-      // Merge history
-      const currentHistory: WorkflowHistoryEntry[] = Array.isArray(payrollRun.workflow_history)
-        ? payrollRun.workflow_history
+      const currentHistory: WorkflowHistoryEntry[] = Array.isArray((payrollRun as any).workflow_history)
+        ? (payrollRun as any).workflow_history
         : [];
+
       const updatedHistory = [...currentHistory, historyEntry];
 
-      // Build update payload
-      const now = new Date().toISOString();
       const updateData: Partial<PayrollRunRow> & { updated_at: string } = {
+        status: newStatus,
         workflow_status: newStatus,
         workflow_history: updatedHistory,
-        updated_at: now
+        updated_at: now,
       };
 
       // Status-specific timestamps
-      switch (newStatus) {
-        case 'processing':
-          updateData.processing_started_at = now;
-          break;
-        case 'review':
-          updateData.processing_completed_at = now;
-          break;
-        case 'approved':
-          updateData.approved_by_user_id = userId;
-          updateData.approved_at = now;
-          break;
-        case 'submitted':
-          updateData.submitted_to_hmrc_at = now;
-          break;
-        default:
-          break;
+      if (newStatus === "processing") {
+        updateData.processing_started_at = (payrollRun as any).processing_started_at || now;
       }
 
-      const { error: updateError } = await supabase
-        .from('payroll_runs')
+      // If we are leaving processing, stamp completion if it hasn't been set.
+      if (currentStatus === "processing" && newStatus !== "processing") {
+        updateData.processing_completed_at = (payrollRun as any).processing_completed_at || now;
+      }
+
+      if (newStatus === "approved") {
+        updateData.approved_by_user_id = userId;
+        updateData.approved_at = now;
+      }
+
+      if (newStatus === "rti_submitted") {
+        updateData.submitted_to_hmrc_at = now;
+      }
+
+      const { error: updateError } = await client
+        .from("payroll_runs")
         .update(updateData)
-        .eq('payroll_run_id', payrollRunId);
+        .eq("id", runId)
+        .eq("company_id", companyId);
 
       if (updateError) {
-        return { success: false, error: updateError.message ?? 'Failed to update status' };
+        return { success: false, error: updateError.message || "Failed to update status" };
       }
 
       return { success: true };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
+      const msg = err instanceof Error ? err.message : "Unknown error";
       return { success: false, error: msg };
     }
   }
 
-  // Get workflow history for a payroll run
-  static async getWorkflowHistory(payrollRunId: string): Promise<WorkflowHistoryEntry[]> {
+  static async getWorkflowHistory(params: {
+    client: SupabaseClient;
+    runId: string;
+    companyId: string;
+  }): Promise<WorkflowHistoryEntry[]> {
+    const { client, runId, companyId } = params;
+
     try {
-      const { data, error } = await supabase
-        .from('payroll_runs')
-        .select('workflow_history')
-        .eq('payroll_run_id', payrollRunId)
+      const { data, error } = await client
+        .from("payroll_runs")
+        .select("workflow_history")
+        .eq("id", runId)
+        .eq("company_id", companyId)
         .single();
 
-      if (error || !data) {
-        return [];
-      }
-
-      return Array.isArray(data.workflow_history) ? data.workflow_history : [];
-    } catch (err) {
-      console.error('Error fetching workflow history:', err);
+      if (error || !data) return [];
+      return Array.isArray((data as any).workflow_history) ? (data as any).workflow_history : [];
+    } catch {
       return [];
     }
-  }
-
-  // Get all payroll runs with their current workflow status
-  static async getPayrollRunsWithStatus(): Promise<PayrollRunRow[]> {
-    try {
-      const { data, error } = await supabase
-        .from('payroll_runs')
-        .select(`
-          payroll_run_id,
-          workflow_status,
-          workflow_history,
-          approved_by_user_id,
-          approved_at,
-          submitted_to_hmrc_at,
-          processing_started_at,
-          processing_completed_at,
-          created_at,
-          updated_at
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      return data ?? [];
-    } catch (err) {
-      console.error('Error fetching payroll runs with status:', err);
-      throw err;
-    }
-  }
-
-  // Bulk status change (for processing multiple runs)
-  static async bulkChangeStatus(
-    payrollRunIds: string[],
-    newStatus: WorkflowStatus,
-    userId: string,
-    comment?: string
-  ): Promise<{ success: boolean; results: Array<{ id: string; success: boolean; error?: string }> }> {
-    const results: Array<{ id: string; success: boolean; error?: string }> = [];
-    let overallSuccess = true;
-
-    for (const id of payrollRunIds) {
-      // sequential to avoid rate limits; parallelize if needed
-      const result = await this.changeStatus(id, newStatus, userId, comment);
-      results.push({ id, ...result });
-      if (!result.success) overallSuccess = false;
-    }
-
-    return { success: overallSuccess, results };
-  }
-
-  // Check if status transition is valid
-  static isValidTransition(fromStatus: WorkflowStatus, toStatus: WorkflowStatus): boolean {
-    const allowedTransitions = WORKFLOW_TRANSITIONS[fromStatus] || [];
-    return allowedTransitions.includes(toStatus);
   }
 }
