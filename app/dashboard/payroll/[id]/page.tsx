@@ -1,4 +1,4 @@
-/* C:\Users\adamm\Projects\wageflow01\app\dashboard\payroll\[id]\page.tsx */
+/* C:\Projects\wageflow01\app\dashboard\payroll\[id]\page.tsx */
 
 "use client";
 
@@ -429,7 +429,9 @@ export default function PayrollRunDetailPage() {
         setSuppCheck((s) => ({ ...s, checked: false, loading: true, open: false, openId: null, openStatus: null }));
 
         const taxYearStart = ukTaxYearStartForPayDate(String(payDateIso));
-        const url = taxYearStart ? `/api/payroll/runs?taxYearStart=${encodeURIComponent(taxYearStart)}` : `/api/payroll/runs`;
+        const url = taxYearStart
+          ? `/api/payroll/runs?taxYearStart=${encodeURIComponent(taxYearStart)}`
+          : `/api/payroll/runs`;
 
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) {
@@ -508,8 +510,7 @@ export default function PayrollRunDetailPage() {
       ? Number(exceptionsObj?.warningCount)
       : exceptionItems.filter((x: any) => !isBlock(x)).length;
 
-  const exceptionTotal =
-    Number.isFinite(Number(exceptionsObj?.total)) ? Number(exceptionsObj?.total) : exceptionItems.length;
+  const exceptionTotal = Number.isFinite(Number(exceptionsObj?.total)) ? Number(exceptionsObj?.total) : exceptionItems.length;
 
   const hasBlockingExceptions = blockingCount > 0;
   const hasAnyExceptions = exceptionTotal > 0 || blockingCount > 0 || warningCount > 0;
@@ -1034,6 +1035,19 @@ export default function PayrollRunDetailPage() {
     return Object.keys(selectedIds).filter((k) => selectedIds[k]).length;
   }, [selectedIds]);
 
+  const topSaveDisabled = !canEditRun || !dirty || hasErrors || saving || rows.length === 0;
+  const topSaveTitle = !canEditRun
+    ? "Run is locked."
+    : rows.length === 0
+    ? "No employee rows loaded for this run"
+    : hasErrors
+    ? "Fix validation errors first."
+    : !dirty
+    ? "No changes to save."
+    : saving
+    ? "Working..."
+    : "Save employee row changes";
+
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
       <div className="flex flex-col gap-4">
@@ -1143,7 +1157,11 @@ export default function PayrollRunDetailPage() {
                   cursor: !canStartProcessing ? "not-allowed" : "pointer",
                 }}
                 title={
-                  dirty ? "Save or discard edits before changing status." : statusLower !== "draft" ? "Draft only." : "Move this run into processing."
+                  dirty
+                    ? "Save or discard edits before changing status."
+                    : statusLower !== "draft"
+                    ? "Draft only."
+                    : "Move this run into processing."
                 }
               >
                 {actionBusy === "start_processing" ? "Working..." : "Start processing"}
@@ -1168,7 +1186,13 @@ export default function PayrollRunDetailPage() {
                   opacity: !canMarkRtiSubmitted ? 0.6 : 1,
                   cursor: !canMarkRtiSubmitted ? "not-allowed" : "pointer",
                 }}
-                title={dirty ? "Save or discard edits before changing status." : statusLower !== "approved" ? "Approved only." : "Confirm RTI submission."}
+                title={
+                  dirty
+                    ? "Save or discard edits before changing status."
+                    : statusLower !== "approved"
+                    ? "Approved only."
+                    : "Confirm RTI submission."
+                }
               >
                 {actionBusy === "mark_rti_submitted" ? "Working..." : "Mark RTI submitted"}
               </button>
@@ -1192,7 +1216,13 @@ export default function PayrollRunDetailPage() {
                   opacity: !canMarkCompleted ? 0.6 : 1,
                   cursor: !canMarkCompleted ? "not-allowed" : "pointer",
                 }}
-                title={dirty ? "Save or discard edits before changing status." : statusLower !== "rti_submitted" ? "RTI submitted only." : "Confirm completion."}
+                title={
+                  dirty
+                    ? "Save or discard edits before changing status."
+                    : statusLower !== "rti_submitted"
+                    ? "RTI submitted only."
+                    : "Confirm completion."
+                }
               >
                 {actionBusy === "mark_completed" ? "Working..." : "Mark completed"}
               </button>
@@ -1216,7 +1246,13 @@ export default function PayrollRunDetailPage() {
                   opacity: !canCancelRun ? 0.6 : 1,
                   cursor: !canCancelRun ? "not-allowed" : "pointer",
                 }}
-                title={dirty ? "Save or discard edits before changing status." : !(statusLower === "draft" || statusLower === "processing") ? "Draft or processing only." : "Cancel this run."}
+                title={
+                  dirty
+                    ? "Save or discard edits before changing status."
+                    : !(statusLower === "draft" || statusLower === "processing")
+                    ? "Draft or processing only."
+                    : "Cancel this run."
+                }
               >
                 {actionBusy === "cancel_run" ? "Working..." : "Cancel"}
               </button>
@@ -1341,8 +1377,7 @@ export default function PayrollRunDetailPage() {
                 color: "#92400e",
               }}
             >
-              Seeded mode. This run is not fully calculated yet. Approval is disabled until seededMode is false and there
-              are no blocking exceptions.
+              Seeded mode. This run is not fully calculated yet. Approval is disabled until seededMode is false and there are no blocking exceptions.
             </div>
           ) : null}
 
@@ -1361,8 +1396,7 @@ export default function PayrollRunDetailPage() {
 
           {showDataMismatchNote ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-              This run has totals but no employee rows were returned by the API. The run details still show correctly.
-              Approve stays disabled until employees load.
+              This run has totals but no employee rows were returned by the API. The run details still show correctly. Approve stays disabled until employees load.
             </div>
           ) : null}
 
@@ -1371,6 +1405,46 @@ export default function PayrollRunDetailPage() {
               This run is locked because it is {statusText}. Edits are disabled.
             </div>
           ) : null}
+        </div>
+
+        <div className="sticky top-3 z-40">
+          <div className="rounded-2xl bg-white/95 shadow-sm ring-1 ring-neutral-300 px-5 py-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm font-extrabold text-slate-900">Primary actions</div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                <button
+                  type="button"
+                  onClick={saveChanges}
+                  disabled={topSaveDisabled}
+                  className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
+                  style={{
+                    backgroundColor: topSaveDisabled ? "var(--wf-blue)" : "#059669",
+                    opacity: topSaveDisabled ? 0.6 : 1,
+                    cursor: topSaveDisabled ? "not-allowed" : "pointer",
+                  }}
+                  title={topSaveTitle}
+                >
+                  {actionBusy === "save" ? "Saving..." : "Save Changes"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={approveRun}
+                  disabled={!canApprove}
+                  title={approveDisabledReason || "Approve and queue FPS"}
+                  className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
+                  style={{
+                    backgroundColor: "#059669",
+                    opacity: !canApprove ? 0.6 : 1,
+                    cursor: !canApprove ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {actionBusy === "approve" ? "Working..." : "Approve run"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div
@@ -1681,8 +1755,7 @@ export default function PayrollRunDetailPage() {
           </div>
 
           <div className="px-5 py-4 text-sm text-slate-700">
-            Live totals reflect your edits. Net defaults to Gross minus Deductions. Approval is blocked until seededMode is
-            false and there are no blocking exceptions.
+            Live totals reflect your edits. Net defaults to Gross minus Deductions. Approval is blocked until seededMode is false and there are no blocking exceptions.
           </div>
         </div>
 
@@ -1719,7 +1792,10 @@ export default function PayrollRunDetailPage() {
         </div>
 
         {confirmOpen && confirmCfg ? (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          >
             <div className="w-full max-w-xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex items-center justify-between border-b border-neutral-200">
                 <div className="text-base font-extrabold text-slate-900">{confirmCfg.title}</div>
@@ -1776,7 +1852,10 @@ export default function PayrollRunDetailPage() {
         ) : null}
 
         {attachOpen ? (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          >
             <div className="w-full max-w-3xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-200">
                 <div className="flex flex-col">
@@ -1899,7 +1978,9 @@ export default function PayrollRunDetailPage() {
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={(e) => setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))}
+                                    onChange={(e) =>
+                                      setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))
+                                    }
                                     className="h-5 w-5"
                                   />
                                 </td>
