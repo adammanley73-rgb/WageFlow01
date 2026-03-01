@@ -1,6 +1,7 @@
-/* preview: auto-suppressed to keep Preview builds green. */
+// C:\Projects\wageflow01\lib\services\automation.service.ts
+
 // WageFlow Automation Service
-import type { WorkflowStatus } from '../types/workflow';
+import type { WorkflowStatus } from "../types/workflow";
 
 export interface AutomationRule {
   id: string;
@@ -20,59 +21,53 @@ export interface AutomationRule {
 }
 
 export class AutomationService {
-  // Default automation rules
   private static readonly DEFAULT_RULES: AutomationRule[] = [
     {
-      id: 'auto-review-after-processing',
-      name: 'Auto-move to Review',
-      description: 'Automatically move payroll runs to review after processing completes',
+      id: "auto-approve-after-processing",
+      name: "Auto-approve after processing",
+      description: "Automatically move payroll runs to approved after processing completes",
       trigger: {
-        fromStatus: 'processing',
-        condition: 'calculations_complete'
+        fromStatus: "processing",
+        condition: "calculations_complete",
       },
       action: {
-        toStatus: 'review',
-        notifyUsers: ['admin']
+        toStatus: "approved",
+        notifyUsers: ["admin"],
       },
-      enabled: true
+      enabled: true,
     },
     {
-      id: 'auto-complete-after-submission',
-      name: 'Auto-complete after HMRC confirmation',
-      description: 'Mark runs as complete when HMRC confirms receipt',
+      id: "auto-complete-after-rti",
+      name: "Auto-complete after RTI confirmation",
+      description: "Mark runs as complete when HMRC confirms receipt",
       trigger: {
-        fromStatus: 'submitted',
-        condition: 'hmrc_confirmed',
-        timeDelay: 30 // 30 minutes after submission
+        fromStatus: "rti_submitted",
+        condition: "hmrc_confirmed",
+        timeDelay: 30,
       },
       action: {
-        toStatus: 'completed',
-        notifyUsers: ['payroll_team']
+        toStatus: "completed",
+        notifyUsers: ["payroll_team"],
       },
-      enabled: true
+      enabled: true,
     },
     {
-      id: 'reminder-pending-approval',
-      name: 'Approval Reminder',
-      description: 'Send reminders for runs pending approval',
+      id: "reminder-approved-not-submitted",
+      name: "RTI submission reminder",
+      description: "Send reminders for approved runs not yet RTI submitted",
       trigger: {
-        fromStatus: 'review',
-        timeDelay: 1440 // 24 hours
+        fromStatus: "approved",
+        timeDelay: 1440,
       },
       action: {
-        toStatus: 'review', // Stay in same status but send notification
-        notifyUsers: ['managers']
+        toStatus: "approved",
+        notifyUsers: ["managers"],
       },
-      enabled: true
-    }
+      enabled: true,
+    },
   ];
 
-  // Check if automation should trigger
-  static shouldTriggerAutomation(
-    payrollRunId: string, // kept for future audit/log use
-    currentStatus: WorkflowStatus,
-    condition?: string
-  ): AutomationRule[] {
+  static shouldTriggerAutomation(payrollRunId: string, currentStatus: WorkflowStatus, condition?: string): AutomationRule[] {
     return this.DEFAULT_RULES.filter((rule) => {
       if (!rule.enabled) return false;
       if (rule.trigger.fromStatus !== currentStatus) return false;
@@ -81,90 +76,83 @@ export class AutomationService {
     });
   }
 
-  // Execute automation rule
   static async executeAutomation(
     payrollRunId: string,
     rule: AutomationRule,
-    userId: string = 'system'
+    userId: string = "system"
   ): Promise<{ success: boolean; error?: string }> {
     try {
       console.log(`🤖 Executing automation: ${rule.name} for payroll run ${payrollRunId}`);
 
       // Simulate automation execution
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 250));
 
-      // Here you would call your WorkflowService.changeStatus
+      // Future: call the real workflow transition endpoint/service here.
       // await WorkflowService.changeStatus(payrollRunId, rule.action.toStatus, userId, `Automated: ${rule.description}`);
 
-      // Send notifications if required
       if (rule.action.notifyUsers?.length) {
         await this.sendNotifications(rule.action.notifyUsers, {
-          type: 'workflow_automation',
+          type: "workflow_automation",
           payrollRunId,
           message: rule.description,
-          newStatus: rule.action.toStatus
+          newStatus: rule.action.toStatus,
         });
       }
 
       return { success: true };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error(`❌ Automation failed for rule ${rule.name}:`, message);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      console.error(`⛔ Automation failed for rule ${rule.name}:`, message);
       return { success: false, error: message };
     }
   }
 
-  // Smart workflow suggestions
   static getWorkflowSuggestions(
     payrollRuns: Array<{ id: string; workflow_status: WorkflowStatus; createdAt: string }>
   ): Array<{
-    type: 'suggestion';
+    type: "suggestion";
     message: string;
     action?: () => void;
   }> {
     const suggestions: Array<{
-      type: 'suggestion';
+      type: "suggestion";
       message: string;
       action?: () => void;
     }> = [];
 
-    // Find runs stuck in draft for too long
     const oldDrafts = payrollRuns.filter((run) => {
       const created = new Date(run.createdAt).getTime();
       if (Number.isNaN(created)) return false;
-      const daysSinceDraft = (Date.now() - created) / (1000 * 60 * 60 * 24);
-      return run.workflow_status === 'draft' && daysSinceDraft > 3;
+      const days = (Date.now() - created) / (1000 * 60 * 60 * 24);
+      return run.workflow_status === "draft" && days > 3;
     });
 
     if (oldDrafts.length > 0) {
       suggestions.push({
-        type: 'suggestion',
-        message: `💡 ${oldDrafts.length} draft payroll runs are over 3 days old. Consider processing or archiving them.`
+        type: "suggestion",
+        message: `💡 ${oldDrafts.length} draft payroll runs are over 3 days old. Consider processing or cancelling them.`,
       });
     }
 
-    // Find runs ready for bulk review (those in processing)
-    const readyForReview = payrollRuns.filter((run) => run.workflow_status === 'processing').length;
-    if (readyForReview >= 3) {
+    const readyForApproval = payrollRuns.filter((run) => run.workflow_status === "processing").length;
+    if (readyForApproval >= 3) {
       suggestions.push({
-        type: 'suggestion',
-        message: `🚀 ${readyForReview} payroll runs are ready for review. Use bulk operations to review them all at once.`
+        type: "suggestion",
+        message: `🚀 ${readyForApproval} payroll runs are ready for approval. Use bulk operations to approve them.`,
       });
     }
 
-    // Find runs that should be submitted
-    const readyForSubmission = payrollRuns.filter((run) => run.workflow_status === 'approved').length;
-    if (readyForSubmission > 0) {
+    const readyForRti = payrollRuns.filter((run) => run.workflow_status === "approved").length;
+    if (readyForRti > 0) {
       suggestions.push({
-        type: 'suggestion',
-        message: `📤 ${readyForSubmission} approved payroll runs are ready for HMRC submission.`
+        type: "suggestion",
+        message: `📤 ${readyForRti} approved payroll runs are ready to be marked RTI submitted.`,
       });
     }
 
     return suggestions;
   }
 
-  // Send notifications
   private static async sendNotifications(
     userIds: string[],
     notification: {
@@ -174,16 +162,13 @@ export class AutomationService {
       newStatus: WorkflowStatus;
     }
   ): Promise<void> {
-    // Simulate notification sending
-    console.log(`📧 Sending notifications to ${userIds.join(', ')}:`, notification);
+    console.log(`📧 Sending notifications to ${userIds.join(", ")}:`, notification);
 
-    // Integrate with your notification system here
     for (const userId of userIds) {
       console.log(`📧 Notification sent to ${userId}: ${notification.message}`);
     }
   }
 
-  // Get automation status dashboard
   static getAutomationStatus(): {
     enabled: boolean;
     activeRules: number;
@@ -195,12 +180,12 @@ export class AutomationService {
     return {
       enabled: enabledRules.length > 0,
       activeRules: enabledRules.length,
-      recentExecutions: 0, // Pull from audit log if available
+      recentExecutions: 0,
       suggestions: [
-        'Consider enabling HMRC auto-submission for trusted payroll runs',
-        'Set up Slack notifications for status changes',
-        'Configure automatic payslip generation after completion'
-      ]
+        "Add RTI queue page to trigger sending queued FPS/EPS corrections.",
+        "Add daily digest notifications for bureaux and multi-company setups.",
+        "Generate payslips automatically after completion.",
+      ],
     };
   }
 }
