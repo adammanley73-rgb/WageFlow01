@@ -1104,8 +1104,14 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
 
   if (isComputeFull) {
-    if (String(run?.status || "").toLowerCase() !== "draft") {
-      return json(409, { ok: false, debugSource: "payroll_run_route_rls_v1", error: "Full compute is only allowed for draft runs.", runStatus: String(run?.status || "").toLowerCase() });
+    const statusForCompute = String(run?.status || "").toLowerCase();
+    if (!(statusForCompute === "draft" || statusForCompute === "processing")) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        error: "Full compute is only allowed for draft or processing runs.",
+        runStatus: statusForCompute,
+      });
     }
 
     const pre = await getRunAndEmployees(supabase, id, true);
