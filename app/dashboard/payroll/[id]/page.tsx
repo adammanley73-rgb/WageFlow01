@@ -1047,7 +1047,32 @@ export default function PayrollRunDetailPage() {
     ? "Approve disabled. Working..."
     : "";
 
-  const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.gross) > 0;
+  
+  const approveBlockerShort =
+    !apiGateReady
+      ? "Reload to get run state."
+      : statusLower !== "processing"
+      ? "Start processing first."
+      : !attachedFlagKnown
+      ? "Apply DB migrations for attachments flag."
+      : !attachmentsConfirmed
+      ? "Confirm all due employees are attached."
+      : seededMode
+      ? "Run full calculation to exit seeded mode."
+      : hasBlockingExceptions
+      ? `Fix blocking exceptions (${blockingCount}).`
+      : rows.length === 0
+      ? "Attach employees to this run."
+      : dirty
+      ? "Save or discard edits."
+      : hasErrors
+      ? "Fix validation errors."
+      : saving
+      ? "Working..."
+      : "Approval ready.";
+
+  const approvalStatusLine = canApprove ? "Ready to approve." : approveBlockerShort;
+const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.gross) > 0;
 
   const openExceptionsPanel = () => {
     setExceptionsExpanded(true);
@@ -1536,6 +1561,8 @@ export default function PayrollRunDetailPage() {
                   <div className="text-xs font-semibold text-slate-600">
                     Approval requires Processing, Confirm attachments, seededMode off, and 0 blocking exceptions.
                   </div>
+
+                   <div className="text-xs font-semibold text-slate-700">{approvalStatusLine}</div>
 
                   {statusLower === "processing" ? (
                     <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
