@@ -13,6 +13,8 @@ import { formatUkDate } from "@/lib/formatUkDate";
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
 const MISSING = "—";
+const WF_BLUE = "var(--wf-blue)";
+const WF_GREEN = "#059669";
 
 type Row = {
   id: string;
@@ -59,6 +61,66 @@ type ConfirmConfig = {
   danger?: boolean;
 };
 
+type StepButtonSize = "sm" | "lg";
+
+type StepButtonProps = {
+  step: number;
+  label: string;
+  done?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+  title?: string;
+  buttonRef?: any;
+  size?: StepButtonSize;
+  stretch?: boolean;
+};
+
+function StepButton(props: StepButtonProps) {
+  const {
+    step,
+    label,
+    done = false,
+    disabled = false,
+    onClick,
+    title,
+    buttonRef,
+    size = "sm",
+    stretch = false,
+  } = props;
+
+  const heightClass = size === "lg" ? "h-11" : "h-10";
+  const paddingClass = size === "lg" ? "px-5" : "px-4";
+  const widthClass = stretch ? "w-full" : "";
+
+  const bg = done ? WF_GREEN : WF_BLUE;
+  const opacity = disabled ? 0.6 : 1;
+  const cursor = disabled ? "not-allowed" : "pointer";
+
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex ${widthClass} ${heightClass} items-center justify-center rounded-xl ${paddingClass} text-sm font-semibold text-white transition hover:opacity-95`}
+      style={{ backgroundColor: bg, opacity, cursor }}
+      title={title}
+    >
+      <span
+        className="mr-2 inline-flex h-6 min-w-[1.6rem] items-center justify-center rounded-full text-xs font-extrabold"
+        style={{
+          backgroundColor: "rgba(255,255,255,0.22)",
+          color: "#ffffff",
+          padding: "0 0.45rem",
+        }}
+      >
+        {step}
+      </span>
+      <span className="whitespace-nowrap">{label}</span>
+    </button>
+  );
+}
+
 function gbp(n: number) {
   const safe = Number.isFinite(n) ? n : 0;
   return safe.toLocaleString("en-GB", { style: "currency", currency: "GBP" });
@@ -100,12 +162,10 @@ function focusRef(el: any) {
   if (!el) return;
   try {
     el.scrollIntoView({ behavior: "smooth", block: "center" });
-  } catch {
-  }
+  } catch {}
   try {
     if (typeof el.focus === "function") el.focus();
-  } catch {
-  }
+  } catch {}
 }
 
 /* -----------------------
@@ -353,7 +413,8 @@ export default function PayrollRunDetailPage() {
   const calcBtnRef = useRef<HTMLButtonElement | null>(null);
   const attachBtnRef = useRef<HTMLButtonElement | null>(null);
   const startProcessingBtnRef = useRef<HTMLButtonElement | null>(null);
-  const confirmCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
+  const approveBtnRef = useRef<HTMLButtonElement | null>(null);
   const employeeTableRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
@@ -1063,6 +1124,8 @@ export default function PayrollRunDetailPage() {
 
   const canApprove = canApproveBase && apiGateReady && !seededMode && !hasBlockingExceptions;
 
+  const approveDone = statusLower === "approved" || statusLower === "rti_submitted" || statusLower === "completed";
+
   const approveDisabledReason = !apiGateReady
     ? "Approve disabled. Run state is incomplete because seededMode or exceptions were not returned by the API. Reload or run calculation."
     : statusLower !== "processing"
@@ -1143,8 +1206,7 @@ export default function PayrollRunDetailPage() {
     setTimeout(() => {
       try {
         exceptionsAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      } catch {
-      }
+      } catch {}
     }, 0);
   };
 
@@ -1160,7 +1222,7 @@ export default function PayrollRunDetailPage() {
     }
 
     if (approvalBlockerCode === "confirm_attachments") {
-      focusRef(confirmCheckboxRef.current);
+      focusRef(confirmBtnRef.current);
       return;
     }
 
@@ -1221,8 +1283,14 @@ export default function PayrollRunDetailPage() {
 
   const recalcAllowed = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing");
 
-  const canToggleAttached =
-    !loading && !!runId && !saving && statusLower === "processing" && !dirty && actionBusy !== "set_attached_all_due_employees";
+  const canConfirmAttachments =
+    !loading &&
+    !!runId &&
+    !saving &&
+    statusLower === "processing" &&
+    !dirty &&
+    attachedFlagKnown &&
+    actionBusy !== "set_attached_all_due_employees";
 
   const toggleAttachedTitle = dirty
     ? "Save or discard edits before confirming attachments."
@@ -1230,30 +1298,30 @@ export default function PayrollRunDetailPage() {
     ? "Confirm attachments during processing."
     : !attachedFlagKnown
     ? "Flag missing. Apply DB migrations."
-    : canToggleAttached
+    : canConfirmAttachments
     ? "Confirm you have attached all employees due for payment."
     : "Working...";
 
-  const filteredCandidates = useMemo(() => {
-    const q = String(attachSearch || "").trim().toLowerCase();
-    const list = Array.isArray(candidates) ? candidates : [];
-    if (!q) return list;
+  const step1Done = statusLower !== "draft";
+  const step2Done = rows.length > 0;
+  const step3Done = apiGateReady && !seededMode;
+  const step4Done = attachmentsConfirmed;
+  const step5Done = approveDone;
+  const step6Done = statusLower === "rti_submitted" || statusLower === "completed";
+  const step7Done = statusLower === "completed";
 
-    return list.filter((c) => {
-      const name = String(c?.name ?? "").toLowerCase();
-      const num = String(c?.employeeNumber ?? "").toLowerCase();
-      const email = String(c?.email ?? "").toLowerCase();
-      return name.includes(q) || num.includes(q) || email.includes(q);
-    });
-  }, [candidates, attachSearch]);
+  const step2Label = isSupplementary ? "Attach employees" : "Attach due employees";
 
-  const visibleIds = useMemo(() => {
-    return filteredCandidates.map((c) => String(c?.id ?? "").trim()).filter(Boolean);
-  }, [filteredCandidates]);
+  const step2OnClick = () => {
+    if (isSupplementary) {
+      openAttachModal();
+      return;
+    }
+    attachDueEmployees();
+  };
 
-  const selectedCount = useMemo(() => {
-    return Object.keys(selectedIds).filter((k) => selectedIds[k]).length;
-  }, [selectedIds]);
+  const step4HeaderDisabled = !(statusLower === "processing" && attachedFlagKnown);
+  const step5HeaderDisabled = false;
 
   const topSaveDisabled = !canEditRun || !dirty || hasErrors || saving || rows.length === 0;
   const topSaveTitle = !canEditRun
@@ -1277,6 +1345,27 @@ export default function PayrollRunDetailPage() {
     attachedFlagKnown &&
     attachmentsConfirmed !== true;
 
+  const filteredCandidates = useMemo(() => {
+    const q = String(attachSearch || "").trim().toLowerCase();
+    const list = Array.isArray(candidates) ? candidates : [];
+    if (!q) return list;
+
+    return list.filter((c) => {
+      const name = String(c?.name ?? "").toLowerCase();
+      const num = String(c?.employeeNumber ?? "").toLowerCase();
+      const email = String(c?.email ?? "").toLowerCase();
+      return name.includes(q) || num.includes(q) || email.includes(q);
+    });
+  }, [candidates, attachSearch]);
+
+  const visibleIds = useMemo(() => {
+    return filteredCandidates.map((c) => String(c?.id ?? "").trim()).filter(Boolean);
+  }, [filteredCandidates]);
+
+  const selectedCount = useMemo(() => {
+    return Object.keys(selectedIds).filter((k) => selectedIds[k]).length;
+  }, [selectedIds]);
+
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
       <div className="flex flex-col gap-4">
@@ -1290,7 +1379,7 @@ export default function PayrollRunDetailPage() {
                   className="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold"
                   style={{
                     backgroundColor: "rgba(15,60,133,0.12)",
-                    color: "var(--wf-blue)",
+                    color: WF_BLUE,
                   }}
                 >
                   {statusText}
@@ -1363,7 +1452,7 @@ export default function PayrollRunDetailPage() {
                   <Link
                     href={`/dashboard/payroll/${parentRunId}`}
                     className="font-extrabold underline"
-                    style={{ color: "var(--wf-blue)" }}
+                    style={{ color: WF_BLUE }}
                   >
                     Open parent run
                   </Link>
@@ -1373,236 +1462,229 @@ export default function PayrollRunDetailPage() {
               <div className="flex flex-col gap-1 text-sm text-slate-700">
                 <div>
                   <span className="font-semibold">Period:</span>{" "}
-                  <span className={`${inter.className} font-extrabold`} style={{ color: "#059669" }}>
+                  <span className={`${inter.className} font-extrabold`} style={{ color: WF_GREEN }}>
                     {periodText}
                   </span>
                 </div>
                 <div>
                   <span className="font-semibold">Pay date:</span>{" "}
-                  <span className={`${inter.className} font-extrabold`} style={{ color: "var(--wf-blue)" }}>
+                  <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>
                     {payDateText}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              <Link
-                href="/dashboard/payroll"
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{ backgroundColor: "var(--wf-blue)" }}
-              >
-                Back to Runs
-              </Link>
+            <div className="flex flex-col gap-2 sm:items-end">
+              <div className="w-full sm:max-w-[56rem]">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <StepButton
+                    step={1}
+                    label="Start processing"
+                    done={step1Done}
+                    disabled={!canStartProcessing}
+                    onClick={startProcessing}
+                    title={
+                      dirty
+                        ? "Save or discard edits before changing status."
+                        : statusLower !== "draft"
+                        ? "Draft only."
+                        : "Move this run into processing."
+                    }
+                    buttonRef={startProcessingBtnRef}
+                    stretch
+                  />
 
-              <button
-                ref={startProcessingBtnRef}
-                type="button"
-                onClick={startProcessing}
-                disabled={!canStartProcessing}
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{
-                  backgroundColor: "#334155",
-                  opacity: !canStartProcessing ? 0.6 : 1,
-                  cursor: !canStartProcessing ? "not-allowed" : "pointer",
-                }}
-                title={
-                  dirty
-                    ? "Save or discard edits before changing status."
-                    : statusLower !== "draft"
-                    ? "Draft only."
-                    : "Move this run into processing."
-                }
-              >
-                {actionBusy === "start_processing" ? "Working..." : "Start processing"}
-              </button>
+                  <StepButton
+                    step={2}
+                    label={step2Label}
+                    done={step2Done}
+                    disabled={!canShowAttachButtons || saving || !runId}
+                    onClick={step2OnClick}
+                    title={
+                      isSupplementary
+                        ? "Supplementary runs do not auto-attach. Pick the employees to include."
+                        : "Attach all due employees for this run (auto attach, skips already attached)"
+                    }
+                    buttonRef={attachBtnRef}
+                    stretch
+                  />
 
-              <button
-                type="button"
-                onClick={() =>
-                  openConfirm({
-                    action: "mark_rti_submitted",
-                    title: "Mark RTI submitted",
-                    message:
-                      "This moves the run to RTI submitted. Make sure you have actually sent the FPS/EPS from your RTI queue before doing this.",
-                    confirmLabel: "Mark RTI submitted",
-                    danger: false,
-                  })
-                }
-                disabled={!canMarkRtiSubmitted}
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{
-                  backgroundColor: "var(--wf-blue)",
-                  opacity: !canMarkRtiSubmitted ? 0.6 : 1,
-                  cursor: !canMarkRtiSubmitted ? "not-allowed" : "pointer",
-                }}
-                title={
-                  dirty
-                    ? "Save or discard edits before changing status."
-                    : statusLower !== "approved"
-                    ? "Approved only."
-                    : "Confirm RTI submission."
-                }
-              >
-                {actionBusy === "mark_rti_submitted" ? "Working..." : "Mark RTI submitted"}
-              </button>
+                  <StepButton
+                    step={3}
+                    label="Run calculation"
+                    done={step3Done}
+                    disabled={!recalcAllowed}
+                    onClick={recalculateRun}
+                    title={
+                      !(statusLower === "draft" || statusLower === "processing")
+                        ? "Calculation is only allowed in Draft or Processing."
+                        : "Run full calculation for this run"
+                    }
+                    buttonRef={calcBtnRef}
+                    stretch
+                  />
 
-              <button
-                type="button"
-                onClick={() =>
-                  openConfirm({
-                    action: "mark_completed",
-                    title: "Mark completed",
-                    message:
-                      "This marks the run as completed. After this, edits should stop and any corrections should be done via supplementary runs.",
-                    confirmLabel: "Mark completed",
-                    danger: false,
-                  })
-                }
-                disabled={!canMarkCompleted}
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{
-                  backgroundColor: "#059669",
-                  opacity: !canMarkCompleted ? 0.6 : 1,
-                  cursor: !canMarkCompleted ? "not-allowed" : "pointer",
-                }}
-                title={
-                  dirty
-                    ? "Save or discard edits before changing status."
-                    : statusLower !== "rti_submitted"
-                    ? "RTI submitted only."
-                    : "Confirm completion."
-                }
-              >
-                {actionBusy === "mark_completed" ? "Working..." : "Mark completed"}
-              </button>
+                  <StepButton
+                    step={4}
+                    label="Confirm attachments"
+                    done={step4Done}
+                    disabled={step4HeaderDisabled}
+                    onClick={() => focusRef(confirmBtnRef.current)}
+                    title={
+                      step4HeaderDisabled
+                        ? "Confirm attachments during processing."
+                        : "Go to the Confirm attachments action in Primary actions."
+                    }
+                    stretch
+                  />
 
-              <button
-                type="button"
-                onClick={() =>
-                  openConfirm({
-                    action: "cancel_run",
-                    title: "Cancel payroll run",
-                    message:
-                      "This cancels the run. Use this only for the wrong frequency, wrong period, or a run that should not exist. Cancelled runs stay visible for recordkeeping.",
-                    confirmLabel: "Cancel run",
-                    danger: true,
-                  })
-                }
-                disabled={!canCancelRun}
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{
-                  backgroundColor: "#991b1b",
-                  opacity: !canCancelRun ? 0.6 : 1,
-                  cursor: !canCancelRun ? "not-allowed" : "pointer",
-                }}
-                title={
-                  dirty
-                    ? "Save or discard edits before changing status."
-                    : !(statusLower === "draft" || statusLower === "processing")
-                    ? "Draft or processing only."
-                    : "Cancel this run."
-                }
-              >
-                {actionBusy === "cancel_run" ? "Working..." : "Cancel"}
-              </button>
+                  <StepButton
+                    step={5}
+                    label="Approve run"
+                    done={step5Done}
+                    disabled={step5HeaderDisabled}
+                    onClick={() => focusRef(approveBtnRef.current)}
+                    title="Go to the Approve action in Primary actions."
+                    stretch
+                  />
 
-              {showCreateSupplementaryButton ? (
+                  <StepButton
+                    step={6}
+                    label="Mark RTI submitted"
+                    done={step6Done}
+                    disabled={!canMarkRtiSubmitted}
+                    onClick={() =>
+                      openConfirm({
+                        action: "mark_rti_submitted",
+                        title: "Mark RTI submitted",
+                        message:
+                          "This moves the run to RTI submitted. Make sure you have actually sent the FPS/EPS from your RTI queue before doing this.",
+                        confirmLabel: "Mark RTI submitted",
+                        danger: false,
+                      })
+                    }
+                    title={
+                      dirty
+                        ? "Save or discard edits before changing status."
+                        : statusLower !== "approved"
+                        ? "Approved only."
+                        : "Confirm RTI submission."
+                    }
+                    stretch
+                  />
+
+                  <div className="sm:col-start-2 lg:col-start-3">
+                    <StepButton
+                      step={7}
+                      label="Mark completed"
+                      done={step7Done}
+                      disabled={!canMarkCompleted}
+                      onClick={() =>
+                        openConfirm({
+                          action: "mark_completed",
+                          title: "Mark completed",
+                          message:
+                            "This marks the run as completed. After this, edits should stop and any corrections should be done via supplementary runs.",
+                          confirmLabel: "Mark completed",
+                          danger: false,
+                        })
+                      }
+                      title={
+                        dirty
+                          ? "Save or discard edits before changing status."
+                          : statusLower !== "rti_submitted"
+                          ? "RTI submitted only."
+                          : "Confirm completion."
+                      }
+                      stretch
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                <Link
+                  href="/dashboard/payroll"
+                  className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{ backgroundColor: "#000000" }}
+                >
+                  Back to Runs
+                </Link>
+
+                {showCreateSupplementaryButton ? (
+                  <button
+                    type="button"
+                    onClick={createSupplementaryRun}
+                    disabled={saving || !runId}
+                    className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                    style={{
+                      backgroundColor: "#000000",
+                      opacity: saving || !runId ? 0.6 : 1,
+                      cursor: saving || !runId ? "not-allowed" : "pointer",
+                    }}
+                    title="Create a supplementary run for this same pay period (no auto-attach)"
+                  >
+                    {actionBusy === "supp" ? "Creating..." : "Create supplementary run"}
+                  </button>
+                ) : null}
+
                 <button
                   type="button"
-                  onClick={createSupplementaryRun}
-                  disabled={saving || !runId}
+                  onClick={exportCsv}
                   className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                  style={{
-                    backgroundColor: "#334155",
-                    opacity: saving || !runId ? 0.6 : 1,
-                    cursor: saving || !runId ? "not-allowed" : "pointer",
-                  }}
-                  title="Create a supplementary run for this same pay period (no auto-attach)"
+                  style={{ backgroundColor: "#000000" }}
                 >
-                  {actionBusy === "supp" ? "Creating..." : "Create supplementary run"}
+                  Export CSV
                 </button>
-              ) : null}
 
-              {canShowAttachButtons && !isSupplementary ? (
                 <button
-                  ref={attachBtnRef}
                   type="button"
-                  onClick={attachDueEmployees}
-                  disabled={saving || !runId}
+                  onClick={openExceptionsPanel}
+                  disabled={loading || !hasAnyExceptions}
                   className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                   style={{
-                    backgroundColor: "#334155",
-                    opacity: saving || !runId ? 0.6 : 1,
-                    cursor: saving || !runId ? "not-allowed" : "pointer",
+                    backgroundColor: "#000000",
+                    border: `1px solid ${hasBlockingExceptions ? "#991b1b" : "#92400e"}`,
+                    opacity: loading || !hasAnyExceptions ? 0.6 : 1,
+                    cursor: loading || !hasAnyExceptions ? "not-allowed" : "pointer",
                   }}
-                  title="Attach all due employees for this run (auto attach, skips already attached)"
+                  title={!hasAnyExceptions ? "No exceptions returned for this run" : "Jump to exceptions panel"}
                 >
-                  {actionBusy === "attach" ? "Attaching..." : "Attach due employees"}
+                  Exceptions
                 </button>
-              ) : null}
 
-              {canShowAttachButtons && isSupplementary ? (
                 <button
-                  ref={attachBtnRef}
                   type="button"
-                  onClick={openAttachModal}
-                  disabled={saving || !runId}
+                  onClick={() =>
+                    openConfirm({
+                      action: "cancel_run",
+                      title: "Cancel payroll run",
+                      message:
+                        "This cancels the run. Use this only for the wrong frequency, wrong period, or a run that should not exist. Cancelled runs stay visible for recordkeeping.",
+                      confirmLabel: "Cancel run",
+                      danger: true,
+                    })
+                  }
+                  disabled={!canCancelRun}
                   className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                   style={{
-                    backgroundColor: "#334155",
-                    opacity: saving || !runId ? 0.6 : 1,
-                    cursor: saving || !runId ? "not-allowed" : "pointer",
+                    backgroundColor: "#000000",
+                    border: "1px solid #991b1b",
+                    opacity: !canCancelRun ? 0.6 : 1,
+                    cursor: !canCancelRun ? "not-allowed" : "pointer",
                   }}
-                  title="Supplementary runs do not auto-attach. Pick the employees to include."
+                  title={
+                    dirty
+                      ? "Save or discard edits before changing status."
+                      : !(statusLower === "draft" || statusLower === "processing")
+                      ? "Draft or processing only."
+                      : "Cancel this run."
+                  }
                 >
-                  Attach employees
+                  {actionBusy === "cancel_run" ? "Working..." : "Cancel"}
                 </button>
-              ) : null}
-
-              <button
-                type="button"
-                onClick={exportCsv}
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{ backgroundColor: "#059669" }}
-              >
-                Export CSV
-              </button>
-
-              <button
-                type="button"
-                onClick={openExceptionsPanel}
-                disabled={loading || !hasAnyExceptions}
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{
-                  backgroundColor: hasBlockingExceptions ? "#991b1b" : "#92400e",
-                  opacity: loading || !hasAnyExceptions ? 0.6 : 1,
-                  cursor: loading || !hasAnyExceptions ? "not-allowed" : "pointer",
-                }}
-                title={!hasAnyExceptions ? "No exceptions returned for this run" : "Jump to exceptions panel"}
-              >
-                Exceptions
-              </button>
-
-              <button
-                ref={calcBtnRef}
-                type="button"
-                onClick={recalculateRun}
-                disabled={!recalcAllowed}
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{
-                  backgroundColor: "var(--wf-blue)",
-                  opacity: !recalcAllowed ? 0.6 : 1,
-                  cursor: !recalcAllowed ? "not-allowed" : "pointer",
-                }}
-                title={
-                  !(statusLower === "draft" || statusLower === "processing")
-                    ? "Calculation is only allowed in Draft or Processing."
-                    : "Run full calculation for this run"
-                }
-              >
-                {actionBusy === "recalc" ? "Calculating..." : "Run calculation"}
-              </button>
+              </div>
             </div>
           </div>
 
@@ -1627,7 +1709,7 @@ export default function PayrollRunDetailPage() {
 
           {showProcessingAttachmentPrompt ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-              Approval is blocked until you confirm all due employees are attached. Use the checkbox in the Primary actions bar.
+              Approval is blocked until you confirm all due employees are attached. Use Step 4 in Primary actions.
             </div>
           ) : null}
 
@@ -1705,33 +1787,45 @@ export default function PayrollRunDetailPage() {
                       background: "transparent",
                       padding: 0,
                     }}
-                    title={
-                      approvalStatusClickable
-                        ? "Click to jump to the relevant action."
-                        : "No quick action available for this blocker."
-                    }
+                    title={approvalStatusClickable ? "Click to jump to the relevant action." : "No quick action available for this blocker."}
                   >
                     {approvalStatusLine}
                   </button>
-
-                  {statusLower === "processing" ? (
-                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
-                      <input
-                        ref={confirmCheckboxRef}
-                        type="checkbox"
-                        checked={attachedAllDue === true}
-                        disabled={!canToggleAttached || !attachedFlagKnown}
-                        onChange={(e) => setAttachedAllDueEmployees(Boolean(e.target.checked))}
-                        className="h-5 w-5"
-                        title={toggleAttachedTitle}
-                      />
-                      <span title={toggleAttachedTitle}>All due employees attached</span>
-                    </label>
-                  ) : null}
                 </div>
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                <StepButton
+                  step={4}
+                  label={attachmentsConfirmed ? "Attachments confirmed" : "Confirm attachments"}
+                  done={attachmentsConfirmed}
+                  disabled={!canConfirmAttachments}
+                  onClick={() => setAttachedAllDueEmployees(true)}
+                  title={toggleAttachedTitle}
+                  buttonRef={confirmBtnRef}
+                  size="lg"
+                />
+
+                {statusLower === "processing" && attachedFlagKnown && attachmentsConfirmed ? (
+                  <button
+                    type="button"
+                    onClick={() => setAttachedAllDueEmployees(false)}
+                    disabled={!canConfirmAttachments}
+                    className="text-xs font-semibold"
+                    style={{
+                      color: WF_BLUE,
+                      textDecoration: "underline",
+                      opacity: canConfirmAttachments ? 1 : 0.6,
+                      cursor: canConfirmAttachments ? "pointer" : "not-allowed",
+                      background: "transparent",
+                      padding: 0,
+                    }}
+                    title="Clear the confirmation (processing only)"
+                  >
+                    Reset
+                  </button>
+                ) : null}
+
                 <button
                   ref={saveBtnRef}
                   type="button"
@@ -1739,7 +1833,7 @@ export default function PayrollRunDetailPage() {
                   disabled={topSaveDisabled}
                   className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
                   style={{
-                    backgroundColor: topSaveDisabled ? "var(--wf-blue)" : "#059669",
+                    backgroundColor: topSaveDisabled ? WF_BLUE : WF_GREEN,
                     opacity: topSaveDisabled ? 0.6 : 1,
                     cursor: topSaveDisabled ? "not-allowed" : "pointer",
                   }}
@@ -1748,20 +1842,16 @@ export default function PayrollRunDetailPage() {
                   {actionBusy === "save" ? "Saving..." : "Save Changes"}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={approveRun}
+                <StepButton
+                  step={5}
+                  label={approveDone ? "Approved" : "Approve run"}
+                  done={approveDone}
                   disabled={!canApprove}
+                  onClick={approveRun}
                   title={approveDisabledReason || "Approve and queue FPS"}
-                  className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
-                  style={{
-                    backgroundColor: "#059669",
-                    opacity: !canApprove ? 0.6 : 1,
-                    cursor: !canApprove ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {actionBusy === "approve" ? "Working..." : "Approve run"}
-                </button>
+                  buttonRef={approveBtnRef}
+                  size="lg"
+                />
               </div>
             </div>
           </div>
@@ -1783,7 +1873,7 @@ export default function PayrollRunDetailPage() {
               disabled={loading}
               className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
               style={{
-                backgroundColor: hasBlockingExceptions ? "#991b1b" : "var(--wf-blue)",
+                backgroundColor: hasBlockingExceptions ? "#991b1b" : WF_BLUE,
                 opacity: loading ? 0.6 : 1,
                 cursor: loading ? "not-allowed" : "pointer",
               }}
@@ -1824,17 +1914,14 @@ export default function PayrollRunDetailPage() {
                         <div key={`blk-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span
-                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
-                              style={chip.style}
-                            >
+                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
                               {chip.label}
                             </span>
                           </div>
 
                           <div className="mt-2 text-sm text-slate-700">
                             Gross:{" "}
-                            <span className={`${inter.className} font-extrabold`} style={{ color: "var(--wf-blue)" }}>
+                            <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>
                               {gbp(gross)}
                             </span>
                           </div>
@@ -1848,7 +1935,7 @@ export default function PayrollRunDetailPage() {
                               <Link
                                 href={`/dashboard/employees/${g.employeeId}/edit?focus=tax_ni`}
                                 className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                                style={{ backgroundColor: "#059669" }}
+                                style={{ backgroundColor: WF_GREEN }}
                               >
                                 Fix on employee file
                               </Link>
@@ -1879,17 +1966,14 @@ export default function PayrollRunDetailPage() {
                         <div key={`wrn-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span
-                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
-                              style={chip.style}
-                            >
+                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
                               {chip.label}
                             </span>
                           </div>
 
                           <div className="mt-2 text-sm text-slate-700">
                             Gross:{" "}
-                            <span className={`${inter.className} font-extrabold`} style={{ color: "var(--wf-blue)" }}>
+                            <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>
                               {gbp(gross)}
                             </span>
                           </div>
@@ -1903,7 +1987,7 @@ export default function PayrollRunDetailPage() {
                               <Link
                                 href={`/dashboard/employees/${g.employeeId}/edit?focus=tax_ni`}
                                 className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                                style={{ backgroundColor: "var(--wf-blue)" }}
+                                style={{ backgroundColor: WF_BLUE }}
                               >
                                 Open employee file
                               </Link>
@@ -2021,7 +2105,7 @@ export default function PayrollRunDetailPage() {
                             disabled={!canEditRun}
                             className={`${inter.className} h-10 w-28 rounded-xl border border-slate-300 px-3 text-right text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
                             style={{
-                              color: "var(--wf-blue)",
+                              color: WF_BLUE,
                               opacity: !canEditRun ? 0.6 : 1,
                               cursor: !canEditRun ? "not-allowed" : "text",
                             }}
@@ -2037,7 +2121,7 @@ export default function PayrollRunDetailPage() {
                             disabled={!canEditRun}
                             className={`${inter.className} h-10 w-28 rounded-xl border border-slate-300 px-3 text-right text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
                             style={{
-                              color: "var(--wf-blue)",
+                              color: WF_BLUE,
                               opacity: !canEditRun ? 0.6 : 1,
                               cursor: !canEditRun ? "not-allowed" : "text",
                             }}
@@ -2054,7 +2138,7 @@ export default function PayrollRunDetailPage() {
                               disabled={!canEditRun}
                               className={`${inter.className} h-10 w-28 rounded-xl border border-slate-300 px-3 text-right text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
                               style={{
-                                color: "var(--wf-blue)",
+                                color: WF_BLUE,
                                 opacity: !canEditRun ? 0.6 : 1,
                                 cursor: !canEditRun ? "not-allowed" : "text",
                               }}
@@ -2071,7 +2155,7 @@ export default function PayrollRunDetailPage() {
                           <Link
                             href={`/dashboard/payroll/${runId}/payslip/${r.employeeId}`}
                             className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                            style={{ backgroundColor: "var(--wf-blue)" }}
+                            style={{ backgroundColor: WF_BLUE }}
                           >
                             View
                           </Link>
@@ -2089,10 +2173,7 @@ export default function PayrollRunDetailPage() {
         </div>
 
         {confirmOpen && confirmCfg ? (
-          <div
-            className="fixed inset-0 z-[70] flex items-center justify-center p-4"
-            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
-          >
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
             <div className="w-full max-w-xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex items-center justify-between border-b border-neutral-200">
                 <div className="text-base font-extrabold text-slate-900">{confirmCfg.title}</div>
@@ -2102,7 +2183,7 @@ export default function PayrollRunDetailPage() {
                   disabled={actionBusy === confirmCfg.action}
                   className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                   style={{
-                    backgroundColor: "var(--wf-blue)",
+                    backgroundColor: WF_BLUE,
                     opacity: actionBusy === confirmCfg.action ? 0.6 : 1,
                     cursor: actionBusy === confirmCfg.action ? "not-allowed" : "pointer",
                   }}
@@ -2135,7 +2216,7 @@ export default function PayrollRunDetailPage() {
                     disabled={actionBusy === confirmCfg.action}
                     className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition hover:opacity-95"
                     style={{
-                      backgroundColor: confirmCfg.danger ? "#991b1b" : "#059669",
+                      backgroundColor: confirmCfg.danger ? "#991b1b" : WF_GREEN,
                       opacity: actionBusy === confirmCfg.action ? 0.6 : 1,
                       cursor: actionBusy === confirmCfg.action ? "not-allowed" : "pointer",
                     }}
@@ -2149,10 +2230,7 @@ export default function PayrollRunDetailPage() {
         ) : null}
 
         {attachOpen ? (
-          <div
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
-          >
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
             <div className="w-full max-w-3xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-200">
                 <div className="flex flex-col">
@@ -2168,7 +2246,7 @@ export default function PayrollRunDetailPage() {
                   disabled={attachLoading}
                   className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                   style={{
-                    backgroundColor: "var(--wf-blue)",
+                    backgroundColor: WF_BLUE,
                     opacity: attachLoading ? 0.6 : 1,
                     cursor: attachLoading ? "not-allowed" : "pointer",
                   }}
@@ -2227,7 +2305,7 @@ export default function PayrollRunDetailPage() {
                       disabled={attachLoading || saving || selectedCount === 0}
                       className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                       style={{
-                        backgroundColor: "#059669",
+                        backgroundColor: WF_GREEN,
                         opacity: attachLoading || saving || selectedCount === 0 ? 0.6 : 1,
                         cursor: attachLoading || saving || selectedCount === 0 ? "not-allowed" : "pointer",
                       }}
@@ -2275,9 +2353,7 @@ export default function PayrollRunDetailPage() {
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={(e) =>
-                                      setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))
-                                    }
+                                    onChange={(e) => setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))}
                                     className="h-5 w-5"
                                   />
                                 </td>
