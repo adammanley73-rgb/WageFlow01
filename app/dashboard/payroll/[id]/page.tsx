@@ -96,6 +96,18 @@ function parseBoolStrict(v: any): boolean | null {
   return null;
 }
 
+function focusRef(el: any) {
+  if (!el) return;
+  try {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch {
+  }
+  try {
+    if (typeof el.focus === "function") el.focus();
+  } catch {
+  }
+}
+
 /* -----------------------
    Run label + period fallbacks
 ------------------------ */
@@ -275,6 +287,19 @@ function isUuid(s: any) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || "").trim());
 }
 
+type ApprovalBlockerCode =
+  | "ready"
+  | "reload"
+  | "start_processing"
+  | "migrations"
+  | "confirm_attachments"
+  | "compute_full"
+  | "fix_exceptions"
+  | "attach_employees"
+  | "save_edits"
+  | "validation"
+  | "working";
+
 export default function PayrollRunDetailPage() {
   const params = useParams();
   const runId = String((params as any)?.id || "");
@@ -323,6 +348,13 @@ export default function PayrollRunDetailPage() {
 
   const [confirmOpen, setConfirmOpen] = useState<boolean>(false);
   const [confirmCfg, setConfirmCfg] = useState<ConfirmConfig | null>(null);
+
+  const saveBtnRef = useRef<HTMLButtonElement | null>(null);
+  const calcBtnRef = useRef<HTMLButtonElement | null>(null);
+  const attachBtnRef = useRef<HTMLButtonElement | null>(null);
+  const startProcessingBtnRef = useRef<HTMLButtonElement | null>(null);
+  const confirmCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const employeeTableRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
     setApprovedMsg(null);
@@ -1021,7 +1053,13 @@ export default function PayrollRunDetailPage() {
   const attachmentsUnknown = attachmentsConfirmRequired && !attachedFlagKnown;
 
   const canApproveBase =
-    statusLower === "processing" && rows.length > 0 && !dirty && !hasErrors && !saving && attachedFlagKnown && attachmentsConfirmed;
+    statusLower === "processing" &&
+    rows.length > 0 &&
+    !dirty &&
+    !hasErrors &&
+    !saving &&
+    attachedFlagKnown &&
+    attachmentsConfirmed;
 
   const canApprove = canApproveBase && apiGateReady && !seededMode && !hasBlockingExceptions;
 
@@ -1047,32 +1085,58 @@ export default function PayrollRunDetailPage() {
     ? "Approve disabled. Working..."
     : "";
 
-  
-  const approveBlockerShort =
-    !apiGateReady
-      ? "Reload to get run state."
+  const approvalBlockerCode: ApprovalBlockerCode = !canApprove
+    ? !apiGateReady
+      ? "reload"
       : statusLower !== "processing"
-      ? "Start processing first."
+      ? "start_processing"
       : !attachedFlagKnown
-      ? "Apply DB migrations for attachments flag."
+      ? "migrations"
       : !attachmentsConfirmed
-      ? "Confirm all due employees are attached."
+      ? "confirm_attachments"
       : seededMode
-      ? "Run full calculation to exit seeded mode."
+      ? "compute_full"
       : hasBlockingExceptions
-      ? `Fix blocking exceptions (${blockingCount}).`
+      ? "fix_exceptions"
       : rows.length === 0
-      ? "Attach employees to this run."
+      ? "attach_employees"
       : dirty
-      ? "Save or discard edits."
+      ? "save_edits"
       : hasErrors
-      ? "Fix validation errors."
+      ? "validation"
       : saving
+      ? "working"
+      : "ready"
+    : "ready";
+
+  const approvalBlockerShort =
+    approvalBlockerCode === "ready"
+      ? "Approval ready."
+      : approvalBlockerCode === "reload"
+      ? "Reload to get run state."
+      : approvalBlockerCode === "start_processing"
+      ? "Start processing first."
+      : approvalBlockerCode === "migrations"
+      ? "Apply DB migrations for attachments flag."
+      : approvalBlockerCode === "confirm_attachments"
+      ? "Confirm all due employees are attached."
+      : approvalBlockerCode === "compute_full"
+      ? "Run full calculation to exit seeded mode."
+      : approvalBlockerCode === "fix_exceptions"
+      ? `Fix blocking exceptions (${blockingCount}).`
+      : approvalBlockerCode === "attach_employees"
+      ? "Attach employees to this run."
+      : approvalBlockerCode === "save_edits"
+      ? "Save or discard edits."
+      : approvalBlockerCode === "validation"
+      ? "Fix validation errors."
+      : approvalBlockerCode === "working"
       ? "Working..."
       : "Approval ready.";
 
-  const approvalStatusLine = canApprove ? "Ready to approve." : approveBlockerShort;
-const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.gross) > 0;
+  const approvalStatusLine = canApprove ? "Ready to approve." : approvalBlockerShort;
+
+  const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.gross) > 0;
 
   const openExceptionsPanel = () => {
     setExceptionsExpanded(true);
@@ -1084,19 +1148,76 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
     }, 0);
   };
 
+  const onClickApprovalStatusLine = () => {
+    if (approvalBlockerCode === "reload") {
+      load();
+      return;
+    }
+
+    if (approvalBlockerCode === "start_processing") {
+      focusRef(startProcessingBtnRef.current);
+      return;
+    }
+
+    if (approvalBlockerCode === "confirm_attachments") {
+      focusRef(confirmCheckboxRef.current);
+      return;
+    }
+
+    if (approvalBlockerCode === "compute_full") {
+      focusRef(calcBtnRef.current);
+      return;
+    }
+
+    if (approvalBlockerCode === "fix_exceptions") {
+      openExceptionsPanel();
+      return;
+    }
+
+    if (approvalBlockerCode === "attach_employees") {
+      focusRef(attachBtnRef.current);
+      return;
+    }
+
+    if (approvalBlockerCode === "save_edits") {
+      focusRef(saveBtnRef.current);
+      return;
+    }
+
+    if (approvalBlockerCode === "validation") {
+      focusRef(employeeTableRef.current);
+      return;
+    }
+  };
+
+  const approvalStatusClickable =
+    approvalBlockerCode === "reload" ||
+    approvalBlockerCode === "start_processing" ||
+    approvalBlockerCode === "confirm_attachments" ||
+    approvalBlockerCode === "compute_full" ||
+    approvalBlockerCode === "fix_exceptions" ||
+    approvalBlockerCode === "attach_employees" ||
+    approvalBlockerCode === "save_edits" ||
+    approvalBlockerCode === "validation";
+
   const headline = runNameFromApi ? runNameFromApi : runNumber !== MISSING ? `Run ${runNumber}` : "Run";
   const kindChip = isSupplementary ? "SUPPLEMENTARY" : "PRIMARY";
 
   const showCreateSupplementaryButton =
-    !loading && !isSupplementary && !!runId && parentIsCompleted && frequencyAllowsSupp && suppCheck.checked && !suppCheck.open;
+    !loading &&
+    !isSupplementary &&
+    !!runId &&
+    parentIsCompleted &&
+    frequencyAllowsSupp &&
+    suppCheck.checked &&
+    !suppCheck.open;
 
   const canShowAttachButtons = !loading && !!runId && canEditRun;
 
   const canStartProcessing = !loading && !!runId && !saving && statusLower === "draft" && !dirty && !hasErrors;
   const canMarkRtiSubmitted = !loading && !!runId && !saving && statusLower === "approved" && !dirty;
   const canMarkCompleted = !loading && !!runId && !saving && statusLower === "rti_submitted" && !dirty;
-  const canCancelRun =
-    !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
+  const canCancelRun = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
 
   const recalcAllowed = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing");
 
@@ -1151,7 +1272,10 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
     !loading && statusLower === "processing" && attachedFlagKnown && attachmentsConfirmed !== true;
 
   const showFlagMismatchWarning =
-    !loading && (statusLower === "approved" || statusLower === "rti_submitted" || statusLower === "completed") && attachedFlagKnown && attachmentsConfirmed !== true;
+    !loading &&
+    (statusLower === "approved" || statusLower === "rti_submitted" || statusLower === "completed") &&
+    attachedFlagKnown &&
+    attachmentsConfirmed !== true;
 
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
@@ -1228,8 +1352,7 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
                     }}
                     title="Approval requires you to confirm all due employees are attached"
                   >
-                    Attachments:{" "}
-                    {attachmentsUnknown ? "UNKNOWN" : attachmentsConfirmed ? "CONFIRMED" : "NOT CONFIRMED"}
+                    Attachments: {attachmentsUnknown ? "UNKNOWN" : attachmentsConfirmed ? "CONFIRMED" : "NOT CONFIRMED"}
                   </span>
                 ) : null}
               </div>
@@ -1273,6 +1396,7 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
               </Link>
 
               <button
+                ref={startProcessingBtnRef}
                 type="button"
                 onClick={startProcessing}
                 disabled={!canStartProcessing}
@@ -1402,6 +1526,7 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
 
               {canShowAttachButtons && !isSupplementary ? (
                 <button
+                  ref={attachBtnRef}
                   type="button"
                   onClick={attachDueEmployees}
                   disabled={saving || !runId}
@@ -1419,6 +1544,7 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
 
               {canShowAttachButtons && isSupplementary ? (
                 <button
+                  ref={attachBtnRef}
                   type="button"
                   onClick={openAttachModal}
                   disabled={saving || !runId}
@@ -1459,6 +1585,7 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
               </button>
 
               <button
+                ref={calcBtnRef}
                 type="button"
                 onClick={recalculateRun}
                 disabled={!recalcAllowed}
@@ -1468,7 +1595,11 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
                   opacity: !recalcAllowed ? 0.6 : 1,
                   cursor: !recalcAllowed ? "not-allowed" : "pointer",
                 }}
-                title={!(statusLower === "draft" || statusLower === "processing") ? "Calculation is only allowed in Draft or Processing." : "Run full calculation for this run"}
+                title={
+                  !(statusLower === "draft" || statusLower === "processing")
+                    ? "Calculation is only allowed in Draft or Processing."
+                    : "Run full calculation for this run"
+                }
               >
                 {actionBusy === "recalc" ? "Calculating..." : "Run calculation"}
               </button>
@@ -1562,11 +1693,31 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
                     Approval requires Processing, Confirm attachments, seededMode off, and 0 blocking exceptions.
                   </div>
 
-                   <div className="text-xs font-semibold text-slate-700">{approvalStatusLine}</div>
+                  <button
+                    type="button"
+                    onClick={onClickApprovalStatusLine}
+                    disabled={!approvalStatusClickable}
+                    className="text-xs font-semibold text-slate-700"
+                    style={{
+                      cursor: approvalStatusClickable ? "pointer" : "default",
+                      opacity: approvalStatusClickable ? 1 : 0.9,
+                      textDecoration: approvalStatusClickable ? "underline" : "none",
+                      background: "transparent",
+                      padding: 0,
+                    }}
+                    title={
+                      approvalStatusClickable
+                        ? "Click to jump to the relevant action."
+                        : "No quick action available for this blocker."
+                    }
+                  >
+                    {approvalStatusLine}
+                  </button>
 
                   {statusLower === "processing" ? (
                     <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
                       <input
+                        ref={confirmCheckboxRef}
                         type="checkbox"
                         checked={attachedAllDue === true}
                         disabled={!canToggleAttached || !attachedFlagKnown}
@@ -1582,6 +1733,7 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
                 <button
+                  ref={saveBtnRef}
                   type="button"
                   onClick={saveChanges}
                   disabled={topSaveDisabled}
@@ -1615,13 +1767,14 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
           </div>
         </div>
 
-        <div ref={exceptionsAnchorRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
+        <div
+          ref={exceptionsAnchorRef}
+          className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden"
+        >
           <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col">
               <div className="text-base font-extrabold text-slate-900">Exceptions</div>
-              <div className="text-sm text-slate-700">
-                {loading ? "Loading..." : `${blockingCount} blocking, ${warningCount} warnings`}
-              </div>
+              <div className="text-sm text-slate-700">{loading ? "Loading..." : `${blockingCount} blocking, ${warningCount} warnings`}</div>
             </div>
 
             <button
@@ -1671,7 +1824,10 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
                         <div key={`blk-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
+                            <span
+                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
+                              style={chip.style}
+                            >
                               {chip.label}
                             </span>
                           </div>
@@ -1723,7 +1879,10 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
                         <div key={`wrn-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
+                            <span
+                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
+                              style={chip.style}
+                            >
                               {chip.label}
                             </span>
                           </div>
@@ -1773,7 +1932,10 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
           <StatTile title="Total Net" value={gbp(displayTotals.net)} />
         </div>
 
-        <div className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
+        <div
+          ref={employeeTableRef}
+          className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden"
+        >
           <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-extrabold text-slate-900">Employees in this run</h2>
             <div className="text-sm text-slate-700">Edit amounts, save, export CSV, or open a payslip.</div>
@@ -1927,7 +2089,10 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
         </div>
 
         {confirmOpen && confirmCfg ? (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          >
             <div className="w-full max-w-xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex items-center justify-between border-b border-neutral-200">
                 <div className="text-base font-extrabold text-slate-900">{confirmCfg.title}</div>
@@ -1984,7 +2149,10 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
         ) : null}
 
         {attachOpen ? (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          >
             <div className="w-full max-w-3xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-200">
                 <div className="flex flex-col">
@@ -2107,7 +2275,9 @@ const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.g
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={(e) => setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))}
+                                    onChange={(e) =>
+                                      setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))
+                                    }
                                     className="h-5 w-5"
                                   />
                                 </td>
