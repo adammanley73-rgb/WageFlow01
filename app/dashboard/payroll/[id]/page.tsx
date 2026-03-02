@@ -86,6 +86,16 @@ function pickFirst(...vals: any[]) {
   return null;
 }
 
+function parseBoolStrict(v: any): boolean | null {
+  if (v === true) return true;
+  if (v === false) return false;
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (["true", "1", "yes", "y", "on"].includes(s)) return true;
+  if (["false", "0", "no", "n", "off"].includes(s)) return false;
+  return null;
+}
+
 /* -----------------------
    Run label + period fallbacks
 ------------------------ */
@@ -286,6 +296,7 @@ export default function PayrollRunDetailPage() {
     | "mark_rti_submitted"
     | "mark_completed"
     | "cancel_run"
+    | "set_attached_all_due_employees"
   >(null);
 
   const [dirty, setDirty] = useState<boolean>(false);
@@ -407,6 +418,19 @@ export default function PayrollRunDetailPage() {
   const parentStatus = String(statusRaw || "").trim().toLowerCase();
   const parentIsCompleted = parentStatus === "completed";
 
+  const attachedFlagKnown = useMemo(() => {
+    if (!data || !runObj) return false;
+    return (
+      Object.prototype.hasOwnProperty.call(runObj, "attached_all_due_employees") ||
+      Object.prototype.hasOwnProperty.call(runObj, "attachedAllDueEmployees")
+    );
+  }, [data, runObj]);
+
+  const attachedAllDue = useMemo(() => {
+    const raw = pickFirst(runObj.attached_all_due_employees, runObj.attachedAllDueEmployees, null);
+    return parseBoolStrict(raw);
+  }, [runObj]);
+
   useEffect(() => {
     const shouldCheck =
       !!runId &&
@@ -429,9 +453,7 @@ export default function PayrollRunDetailPage() {
         setSuppCheck((s) => ({ ...s, checked: false, loading: true, open: false, openId: null, openStatus: null }));
 
         const taxYearStart = ukTaxYearStartForPayDate(String(payDateIso));
-        const url = taxYearStart
-          ? `/api/payroll/runs?taxYearStart=${encodeURIComponent(taxYearStart)}`
-          : `/api/payroll/runs`;
+        const url = taxYearStart ? `/api/payroll/runs?taxYearStart=${encodeURIComponent(taxYearStart)}` : `/api/payroll/runs`;
 
         const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) {
@@ -510,7 +532,8 @@ export default function PayrollRunDetailPage() {
       ? Number(exceptionsObj?.warningCount)
       : exceptionItems.filter((x: any) => !isBlock(x)).length;
 
-  const exceptionTotal = Number.isFinite(Number(exceptionsObj?.total)) ? Number(exceptionsObj?.total) : exceptionItems.length;
+  const exceptionTotal =
+    Number.isFinite(Number(exceptionsObj?.total)) ? Number(exceptionsObj?.total) : exceptionItems.length;
 
   const hasBlockingExceptions = blockingCount > 0;
   const hasAnyExceptions = exceptionTotal > 0 || blockingCount > 0 || warningCount > 0;
@@ -607,11 +630,13 @@ export default function PayrollRunDetailPage() {
     setValidation(v);
   }, [rows]);
 
-  const patchRunAction = async (action: string, confirm?: boolean) => {
+  const patchRunAction = async (action: string, extras?: Record<string, any>) => {
     if (!runId) throw new Error("Missing run id.");
 
     const payload: any = { action };
-    if (confirm === true) payload.confirm = true;
+    if (extras && typeof extras === "object") {
+      for (const k of Object.keys(extras)) payload[k] = (extras as any)[k];
+    }
 
     const res = await fetch(`/api/payroll/${runId}`, {
       method: "PATCH",
@@ -712,7 +737,7 @@ export default function PayrollRunDetailPage() {
 
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || "Failed to approve run");
+        throw new Error(j?.message || j?.error || "Failed to approve run");
       }
 
       const j: ApiResponse = await res.json();
@@ -752,13 +777,35 @@ export default function PayrollRunDetailPage() {
     }
   };
 
+  const setAttachedAllDueEmployees = async (value: boolean) => {
+    try {
+      setActionBusy("set_attached_all_due_employees");
+      setErr(null);
+      setApprovedMsg(null);
+
+      const j = await patchRunAction("set_attached_all_due_employees", { value });
+      setData(j);
+
+      const mapped = mapEmployees(j?.employees);
+      setRows(mapped);
+
+      setDirty(false);
+      setValidation({});
+      setApprovedMsg(value ? "Confirmed: all due employees are attached." : "Attachment confirmation cleared.");
+    } catch (e: any) {
+      setErr(e?.message || "Failed to update attachment confirmation");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   const confirmAndRun = async (cfg: ConfirmConfig) => {
     try {
       setActionBusy(cfg.action);
       setErr(null);
       setApprovedMsg(null);
 
-      const j = await patchRunAction(cfg.action, true);
+      const j = await patchRunAction(cfg.action, { confirm: true });
       setData(j);
 
       const mapped = mapEmployees(j?.employees);
@@ -967,24 +1014,37 @@ export default function PayrollRunDetailPage() {
 
   const payDateText = payDate ? formatUkDate(String(payDate)) : MISSING;
 
-  const canApproveBase =
-    (String(statusRaw || "") === "draft" || String(statusRaw || "") === "processing") &&
-    rows.length > 0 &&
-    !dirty &&
-    !hasErrors &&
-    !saving;
-
   const apiGateReady = apiSeededKnown && apiExceptionsKnown;
+
+  const attachmentsConfirmRequired = statusLower === "processing";
+  const attachmentsConfirmed = attachedAllDue === true;
+  const attachmentsUnknown = attachmentsConfirmRequired && !attachedFlagKnown;
+
+  const canApproveBase =
+    statusLower === "processing" && rows.length > 0 && !dirty && !hasErrors && !saving && attachedFlagKnown && attachmentsConfirmed;
+
   const canApprove = canApproveBase && apiGateReady && !seededMode && !hasBlockingExceptions;
 
   const approveDisabledReason = !apiGateReady
     ? "Approve disabled. Run state is incomplete because seededMode or exceptions were not returned by the API. Reload or run calculation."
+    : statusLower !== "processing"
+    ? "Approve disabled. You can only approve while the run is processing."
+    : !attachedFlagKnown
+    ? "Approve disabled. attached_all_due_employees flag is missing. Apply DB migrations."
+    : !attachmentsConfirmed
+    ? "Approve disabled. Confirm all due employees are attached."
     : seededMode
     ? "Approve disabled. This run is not fully calculated (seeded mode is on). Run calculations until seededMode is false."
     : hasBlockingExceptions
     ? `Approve disabled. Fix blocking exceptions first (${blockingCount}).`
-    : !canApproveBase
-    ? "Approve disabled. Ensure employees are loaded, there are no validation errors, and you have no unsaved edits."
+    : rows.length === 0
+    ? "Approve disabled. No employees are attached to this run."
+    : dirty
+    ? "Approve disabled. Save or discard edits first."
+    : hasErrors
+    ? "Approve disabled. Fix validation errors first."
+    : saving
+    ? "Approve disabled. Working..."
     : "";
 
   const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.gross) > 0;
@@ -1010,9 +1070,23 @@ export default function PayrollRunDetailPage() {
   const canStartProcessing = !loading && !!runId && !saving && statusLower === "draft" && !dirty && !hasErrors;
   const canMarkRtiSubmitted = !loading && !!runId && !saving && statusLower === "approved" && !dirty;
   const canMarkCompleted = !loading && !!runId && !saving && statusLower === "rti_submitted" && !dirty;
-  const canCancelRun = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
+  const canCancelRun =
+    !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
 
   const recalcAllowed = !loading && !!runId && !saving && statusLower === "draft";
+
+  const canToggleAttached =
+    !loading && !!runId && !saving && statusLower === "processing" && !dirty && actionBusy !== "set_attached_all_due_employees";
+
+  const toggleAttachedTitle = dirty
+    ? "Save or discard edits before confirming attachments."
+    : statusLower !== "processing"
+    ? "Confirm attachments during processing."
+    : !attachedFlagKnown
+    ? "Flag missing. Apply DB migrations."
+    : canToggleAttached
+    ? "Confirm you have attached all employees due for payment."
+    : "Working...";
 
   const filteredCandidates = useMemo(() => {
     const q = String(attachSearch || "").trim().toLowerCase();
@@ -1047,6 +1121,12 @@ export default function PayrollRunDetailPage() {
     : saving
     ? "Working..."
     : "Save employee row changes";
+
+  const showProcessingAttachmentPrompt =
+    !loading && statusLower === "processing" && attachedFlagKnown && attachmentsConfirmed !== true;
+
+  const showFlagMismatchWarning =
+    !loading && (statusLower === "approved" || statusLower === "rti_submitted" || statusLower === "completed") && attachedFlagKnown && attachmentsConfirmed !== true;
 
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
@@ -1104,6 +1184,27 @@ export default function PayrollRunDetailPage() {
                     title="Seeded mode means calculations are incomplete"
                   >
                     Seeded mode
+                  </span>
+                ) : null}
+
+                {!loading && statusLower === "processing" ? (
+                  <span
+                    className="inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold"
+                    style={{
+                      backgroundColor: attachmentsUnknown
+                        ? "rgba(245,158,11,0.12)"
+                        : attachmentsConfirmed
+                        ? "rgba(16,185,129,0.12)"
+                        : "rgba(239,68,68,0.10)",
+                      color: attachmentsUnknown ? "#92400e" : attachmentsConfirmed ? "#065f46" : "#991b1b",
+                      border: `1px solid ${
+                        attachmentsUnknown ? "#fde68a" : attachmentsConfirmed ? "#6ee7b7" : "#fecaca"
+                      }`,
+                    }}
+                    title="Approval requires you to confirm all due employees are attached"
+                  >
+                    Attachments:{" "}
+                    {attachmentsUnknown ? "UNKNOWN" : attachmentsConfirmed ? "CONFIRMED" : "NOT CONFIRMED"}
                   </span>
                 ) : null}
               </div>
@@ -1368,6 +1469,24 @@ export default function PayrollRunDetailPage() {
             </div>
           ) : null}
 
+          {showProcessingAttachmentPrompt ? (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+              Approval is blocked until you confirm all due employees are attached. Use the checkbox in the Primary actions bar.
+            </div>
+          ) : null}
+
+          {attachmentsUnknown && !loading ? (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+              attached_all_due_employees flag is missing from this run payload. Approval will stay blocked. Apply DB migrations.
+            </div>
+          ) : null}
+
+          {showFlagMismatchWarning ? (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+              This run is {statusText} but attached_all_due_employees is not confirmed. This is legacy data drift. New approvals are blocked unless confirmed.
+            </div>
+          ) : null}
+
           {seededMode ? (
             <div
               className="mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold"
@@ -1410,7 +1529,29 @@ export default function PayrollRunDetailPage() {
         <div className="sticky top-3 z-40">
           <div className="rounded-2xl bg-white/95 shadow-sm ring-1 ring-neutral-300 px-5 py-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm font-extrabold text-slate-900">Primary actions</div>
+              <div className="flex flex-col gap-1">
+                <div className="text-sm font-extrabold text-slate-900">Primary actions</div>
+
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  <div className="text-xs font-semibold text-slate-600">
+                    Approval requires Processing, Confirm attachments, seededMode off, and 0 blocking exceptions.
+                  </div>
+
+                  {statusLower === "processing" ? (
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={attachedAllDue === true}
+                        disabled={!canToggleAttached || !attachedFlagKnown}
+                        onChange={(e) => setAttachedAllDueEmployees(Boolean(e.target.checked))}
+                        className="h-5 w-5"
+                        title={toggleAttachedTitle}
+                      />
+                      <span title={toggleAttachedTitle}>All due employees attached</span>
+                    </label>
+                  ) : null}
+                </div>
+              </div>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
                 <button
@@ -1447,14 +1588,13 @@ export default function PayrollRunDetailPage() {
           </div>
         </div>
 
-        <div
-          ref={exceptionsAnchorRef}
-          className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden"
-        >
+        <div ref={exceptionsAnchorRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col">
               <div className="text-base font-extrabold text-slate-900">Exceptions</div>
-              <div className="text-sm text-slate-700">{loading ? "Loading..." : `${blockingCount} blocking, ${warningCount} warnings`}</div>
+              <div className="text-sm text-slate-700">
+                {loading ? "Loading..." : `${blockingCount} blocking, ${warningCount} warnings`}
+              </div>
             </div>
 
             <button
@@ -1755,47 +1895,12 @@ export default function PayrollRunDetailPage() {
           </div>
 
           <div className="px-5 py-4 text-sm text-slate-700">
-            Live totals reflect your edits. Net defaults to Gross minus Deductions. Approval is blocked until seededMode is false and there are no blocking exceptions.
+            Live totals reflect your edits. Net defaults to Gross minus Deductions. Approval is blocked until Processing, attachments confirmed, seededMode is false and there are no blocking exceptions.
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <button
-            type="button"
-            onClick={saveChanges}
-            disabled={!canEditRun || !dirty || hasErrors || saving || rows.length === 0}
-            className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
-            style={{
-              backgroundColor: !canEditRun || !dirty || hasErrors || saving || rows.length === 0 ? "var(--wf-blue)" : "#059669",
-              opacity: !canEditRun || !dirty || hasErrors || saving || rows.length === 0 ? 0.6 : 1,
-              cursor: !canEditRun || !dirty || hasErrors || saving || rows.length === 0 ? "not-allowed" : "pointer",
-            }}
-            title={!canEditRun ? "Run is locked." : rows.length === 0 ? "No employee rows loaded for this run" : "Save employee row changes"}
-          >
-            {actionBusy === "save" ? "Saving..." : "Save Changes"}
-          </button>
-
-          <button
-            type="button"
-            onClick={approveRun}
-            disabled={!canApprove}
-            title={approveDisabledReason || "Approve and queue FPS"}
-            className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
-            style={{
-              backgroundColor: "#059669",
-              opacity: !canApprove ? 0.6 : 1,
-              cursor: !canApprove ? "not-allowed" : "pointer",
-            }}
-          >
-            {actionBusy === "approve" ? "Working..." : "Approve run"}
-          </button>
-        </div>
-
         {confirmOpen && confirmCfg ? (
-          <div
-            className="fixed inset-0 z-[70] flex items-center justify-center p-4"
-            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
-          >
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
             <div className="w-full max-w-xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex items-center justify-between border-b border-neutral-200">
                 <div className="text-base font-extrabold text-slate-900">{confirmCfg.title}</div>
@@ -1852,10 +1957,7 @@ export default function PayrollRunDetailPage() {
         ) : null}
 
         {attachOpen ? (
-          <div
-            className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
-          >
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
             <div className="w-full max-w-3xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-200">
                 <div className="flex flex-col">
@@ -1978,9 +2080,7 @@ export default function PayrollRunDetailPage() {
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={(e) =>
-                                      setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))
-                                    }
+                                    onChange={(e) => setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))}
                                     className="h-5 w-5"
                                   />
                                 </td>
