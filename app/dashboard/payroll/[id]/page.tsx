@@ -701,7 +701,7 @@ export default function PayrollRunDetailPage() {
       const res = await fetch(`/api/payroll/${runId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "recalculate" }),
+        body: JSON.stringify({ action: "compute_full" }),
       });
 
       if (!res.ok) {
@@ -1073,7 +1073,7 @@ export default function PayrollRunDetailPage() {
   const canCancelRun =
     !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
 
-  const recalcAllowed = !loading && !!runId && !saving && statusLower === "draft";
+  const recalcAllowed = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing");
 
   const canToggleAttached =
     !loading && !!runId && !saving && statusLower === "processing" && !dirty && actionBusy !== "set_attached_all_due_employees";
@@ -1443,7 +1443,7 @@ export default function PayrollRunDetailPage() {
                   opacity: !recalcAllowed ? 0.6 : 1,
                   cursor: !recalcAllowed ? "not-allowed" : "pointer",
                 }}
-                title={statusLower !== "draft" ? "Calculation is draft-only." : "Run calculation pipeline for this run"}
+                title={!(statusLower === "draft" || statusLower === "processing") ? "Calculation is only allowed in Draft or Processing." : "Run full calculation for this run"}
               >
                 {actionBusy === "recalc" ? "Calculating..." : "Run calculation"}
               </button>
