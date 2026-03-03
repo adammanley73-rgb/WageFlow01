@@ -1,4 +1,4 @@
-// C:\Users\adamm\Projects\wageflow01\middleware.ts
+// C:\Projects\wageflow01\middleware.ts
 import { NextResponse } from "next/server";
 
 /*
@@ -117,8 +117,7 @@ function isWageflowPublicPath(pathname: string, method: string) {
   if (pathname === "/api/ai-status") return true;
 
   // Allow AI health publicly (safe: status only)
-  if (pathname === "/api/ai/health" || pathname.startsWith("/api/ai/health/"))
-    return true;
+  if (pathname === "/api/ai/health" || pathname.startsWith("/api/ai/health/")) return true;
 
   // Allow GET on copilot route publicly (safe: your route’s GET just returns help text)
   // Keep POST protected so unauthenticated users can’t use your AI proxy.
@@ -139,13 +138,7 @@ function clearAuthAndDemoCookies(res: any, request: any) {
     const lower = String(name || "").toLowerCase();
     if (!lower) return false;
 
-    if (
-      lower === DEMO_FLAG ||
-      lower === DEMO_STARTED ||
-      lower === DEMO_LAST ||
-      lower === DEMO_UI
-    )
-      return true;
+    if (lower === DEMO_FLAG || lower === DEMO_STARTED || lower === DEMO_LAST || lower === DEMO_UI) return true;
 
     if (lower.startsWith("sb-")) return true;
     if (lower.includes("supabase")) return true;
@@ -229,10 +222,7 @@ export function middleware(request: any) {
   }
 
   // Company landing on www root (and localhost for testing).
-  if (
-    (host === "www.thebusinessconsortiumltd.co.uk" || host === "localhost") &&
-    pathname === "/"
-  ) {
+  if ((host === "www.thebusinessconsortiumltd.co.uk" || host === "localhost") && pathname === "/") {
     const rewriteUrl = url.clone();
     rewriteUrl.pathname = "/preview/tbc";
     return NextResponse.rewrite(rewriteUrl);
@@ -251,12 +241,7 @@ export function middleware(request: any) {
 
     // If authed AND demo, enforce demo timeouts on this host too.
     if (authed && isDemoRequest(request) && !isStaticAllowlist(pathname)) {
-      const demoCheck = applyDemoTimeoutsOrTouch(
-        request,
-        pathname,
-        url?.search || "",
-        request.url
-      );
+      const demoCheck = applyDemoTimeoutsOrTouch(request, pathname, url?.search || "", request.url);
 
       if (demoCheck.action === "kill") {
         const loginUrl = new URL("/login", request.url);
@@ -302,12 +287,7 @@ export function middleware(request: any) {
 
   // Demo guardrails for dashboard routes (when authed).
   if (isVercelRuntime() && isDemoRequest(request) && !isStaticAllowlist(pathname)) {
-    const demoCheck = applyDemoTimeoutsOrTouch(
-      request,
-      pathname,
-      url?.search || "",
-      request.url
-    );
+    const demoCheck = applyDemoTimeoutsOrTouch(request, pathname, url?.search || "", request.url);
 
     if (demoCheck.action === "kill") {
       const loginUrl = new URL("/login", request.url);
@@ -369,5 +349,8 @@ export function middleware(request: any) {
 }
 
 export const config = {
-  matcher: ["/:path*"],
+  // Performance: do not run middleware for Next.js internals or common static assets.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|webp|svg|ico)$).*)",
+  ],
 };
