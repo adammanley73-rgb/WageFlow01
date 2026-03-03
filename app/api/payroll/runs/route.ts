@@ -1,4 +1,4 @@
-/* E:\Projects\wageflow01\app\api\payroll\runs\route.ts */
+/* C:\Projects\wageflow01\app\api\payroll\runs\route.ts */
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -417,7 +417,8 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
     return NextResponse.json(
       {
         ok: false,
-        error: "Supplementary run RPC is not available to the API right now. This is usually schema cache lag or a missing migration.",
+        error:
+          "Supplementary run RPC is not available to the API right now. This is usually schema cache lag or a missing migration.",
         code: "SUPPLEMENTARY_RPC_NOT_AVAILABLE",
         parent: { id: parentRunId },
         debugSource: "create_supplementary_run_rpc",
@@ -428,6 +429,24 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
   }
 
   if (e.code === "P0001") {
+    if (msgLower.includes("supplementary run already exists")) {
+      const match = e.message.match(/existing_run_id=([0-9a-f-]{36})/i);
+      const existingId = match ? String(match[1]).trim() : null;
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "A supplementary run already exists for this parent. Open it instead of creating another.",
+          code: "SUPPLEMENTARY_ALREADY_EXISTS",
+          parent: { id: parentRunId },
+          existing: existingId ? { id: existingId } : null,
+          debugSource: "create_supplementary_run_rpc",
+          debug,
+        },
+        { status: 409 }
+      );
+    }
+
     if (msgLower.includes("parent run must be completed")) {
       return NextResponse.json(
         {
@@ -600,18 +619,11 @@ function payDateMismatchResponse(args: {
   );
 }
 
-async function bestEffortAbsenceSync(args: {
-  client: any;
-  runId: string;
-  runRow: any;
-}) {
+async function bestEffortAbsenceSync(args: { client: any; runId: string; runRow: any }) {
   const { client, runId, runRow } = args;
 
   try {
-    const { data: preRows, error: preErr } = await client
-      .from("payroll_run_employees")
-      .select("*")
-      .eq("run_id", runId);
+    const { data: preRows, error: preErr } = await client.from("payroll_run_employees").select("*").eq("run_id", runId);
 
     if (preErr) {
       console.error("[payroll_runs] absence sync: failed to load payroll_run_employees", {
@@ -684,10 +696,7 @@ export async function GET(req: Request) {
     const debugCounts: any = debugMode ? {} : null;
 
     if (debugMode) {
-      let companyOnlyQ = client
-        .from("payroll_runs")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", companyIdTrim);
+      let companyOnlyQ = client.from("payroll_runs").select("id", { count: "exact", head: true }).eq("company_id", companyIdTrim);
 
       let inTaxYearQ = client
         .from("payroll_runs")
@@ -752,9 +761,7 @@ export async function GET(req: Request) {
       if (frequency) q = q.eq("frequency", frequency);
       if (filterArchived) q = q.is("archived_at", null);
 
-      return q
-        .order("pay_date", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false });
+      return q.order("pay_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
     };
 
     let listRes = await buildListQuery(selectWithArchived, !includeArchived);
@@ -786,8 +793,7 @@ export async function GET(req: Request) {
       const endIso = row.pay_period_end ?? row.period_end ?? null;
 
       const baseNumber = row.run_number ?? computedRunNumber ?? null;
-      const runNumberOut =
-        kind === "supplementary" ? (baseNumber ? String(baseNumber) + " SUPP" : "SUPP") : baseNumber;
+      const runNumberOut = kind === "supplementary" ? (baseNumber ? String(baseNumber) + " SUPP" : "SUPP") : baseNumber;
 
       const runNameOut = row.run_name ?? computedRunName;
 
@@ -978,40 +984,51 @@ export async function POST(req: Request) {
 
       if (!parent.pay_schedule_id) {
         return NextResponse.json(
-          { ok: false, error: "Parent run is missing pay_schedule_id. Fix the parent run first.", code: "PARENT_MISSING_SCHEDULE" },
+          {
+            ok: false,
+            error: "Parent run is missing pay_schedule_id. Fix the parent run first.",
+            code: "PARENT_MISSING_SCHEDULE",
+          },
           { status: 400 }
         );
       }
 
-      const openSuppQuery = await client
+      const existingSuppQuery = await client
         .from("payroll_runs")
-        .select("id, status, archived_at, parent_run_id")
+        .select("id, status, archived_at, created_at, parent_run_id, run_kind")
         .eq("company_id", companyIdStr)
         .eq("parent_run_id", parentRunId)
-        .is("archived_at", null)
-        .limit(10);
+        .eq("run_kind", "supplementary")
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-      if (openSuppQuery.error) {
+      if (existingSuppQuery.error) {
         return NextResponse.json(
-          { ok: false, error: openSuppQuery.error, code: "SUPPLEMENTARY_OPEN_CHECK_FAILED", debugSource: "supp_open_check_v1" },
+          {
+            ok: false,
+            error: existingSuppQuery.error,
+            code: "SUPPLEMENTARY_EXISTS_CHECK_FAILED",
+            debugSource: "supp_exists_check_v1",
+          },
           { status: 500 }
         );
       }
 
-      const openSuppRows = Array.isArray(openSuppQuery.data) ? openSuppQuery.data : [];
-      const openSupp = openSuppRows.find((r: any) => {
-        const st = String(r?.status ?? "draft").trim().toLowerCase();
-        return st !== "completed";
-      });
+      const existingSupp = Array.isArray(existingSuppQuery.data) ? existingSuppQuery.data[0] : null;
 
-      if (openSupp?.id) {
+      if (existingSupp?.id) {
         return NextResponse.json(
           {
             ok: false,
-            error: "An open supplementary run already exists for this parent. Complete it before creating another.",
-            code: "SUPPLEMENTARY_ALREADY_OPEN",
+            error: "A supplementary run already exists for this parent. Open it instead of creating another.",
+            code: "SUPPLEMENTARY_ALREADY_EXISTS",
             parent: { id: parentRunId },
-            open: { id: String(openSupp.id), status: openSupp.status ?? null },
+            existing: {
+              id: String(existingSupp.id),
+              status: existingSupp.status ?? null,
+              archived_at: existingSupp.archived_at ?? null,
+            },
+            debugSource: "supp_exists_check_v1",
           },
           { status: 409 }
         );
@@ -1063,7 +1080,14 @@ export async function POST(req: Request) {
 
       if (newRes.error || !newRes.data) {
         return NextResponse.json(
-          { ok: true, run_id: newId, created: true, run: null, warning: "Created but could not fetch run row.", debug: newRes.error ?? null },
+          {
+            ok: true,
+            run_id: newId,
+            created: true,
+            run: null,
+            warning: "Created but could not fetch run row.",
+            debug: newRes.error ?? null,
+          },
           { status: 201 }
         );
       }
@@ -1133,7 +1157,12 @@ export async function POST(req: Request) {
 
     if (!allowedFrequencies.includes(derivedFrequency)) {
       return NextResponse.json(
-        { ok: false, error: "Invalid derived frequency from schedule. Expected weekly, fortnightly, four_weekly, monthly.", code: "BAD_DERIVED_FREQUENCY", derivedFrequency },
+        {
+          ok: false,
+          error: "Invalid derived frequency from schedule. Expected weekly, fortnightly, four_weekly, monthly.",
+          code: "BAD_DERIVED_FREQUENCY",
+          derivedFrequency,
+        },
         { status: 400 }
       );
     }
@@ -1145,7 +1174,13 @@ export async function POST(req: Request) {
 
     if (!canonicalPay.ok) {
       return NextResponse.json(
-        { ok: false, code: canonicalPay.code, error: canonicalPay.error, details: canonicalPay.details ?? null, debugSource: "payroll_runs_create_debug_v12_paydate" },
+        {
+          ok: false,
+          code: canonicalPay.code,
+          error: canonicalPay.error,
+          details: canonicalPay.details ?? null,
+          debugSource: "payroll_runs_create_debug_v12_paydate",
+        },
         { status: 400 }
       );
     }
@@ -1296,11 +1331,7 @@ export async function POST(req: Request) {
     let lastErr: any = null;
 
     for (const row of rowVariants) {
-      const attempt = (await client
-        .from("payroll_runs")
-        .insert(row)
-        .select(selectCols)
-        .single()) as PostgrestSingleResponse<PayrollRunRow>;
+      const attempt = (await client.from("payroll_runs").insert(row).select(selectCols).single()) as PostgrestSingleResponse<PayrollRunRow>;
 
       if (!attempt.error && attempt.data) {
         createdRes = attempt;
