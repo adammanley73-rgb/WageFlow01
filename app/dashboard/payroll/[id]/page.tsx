@@ -501,13 +501,7 @@ export default function PayrollRunDetailPage() {
 
   useEffect(() => {
     const shouldCheck =
-      !!runId &&
-      !loading &&
-      !!data &&
-      !isSupplementary &&
-      parentIsCompleted &&
-      frequencyAllowsSupp &&
-      isIsoDateOnly(String(payDateIso || "").trim());
+      !!runId && !loading && !!data && !isSupplementary && parentIsCompleted && frequencyAllowsSupp && isUuid(runId);
 
     if (!shouldCheck) {
       setSuppCheck({ checked: false, loading: false, open: false, openId: null, openStatus: null });
@@ -520,38 +514,22 @@ export default function PayrollRunDetailPage() {
       try {
         setSuppCheck((s) => ({ ...s, checked: false, loading: true, open: false, openId: null, openStatus: null }));
 
-        const taxYearStart = ukTaxYearStartForPayDate(String(payDateIso));
-        const urlBase = taxYearStart
-          ? `/api/payroll/runs?taxYearStart=${encodeURIComponent(taxYearStart)}&includeArchived=1`
-          : `/api/payroll/runs?includeArchived=1`;
+        const url = `/api/payroll/supplementary/lookup?parent_run_id=${encodeURIComponent(runId)}`;
+        const res = await fetch(url, { cache: "no-store" });
 
-        const res = await fetch(urlBase, { cache: "no-store" });
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
           throw new Error(j?.error || "Failed to check supplementary runs");
         }
 
         const j: any = await res.json().catch(() => ({}));
-        const runs = Array.isArray(j?.runs) ? j.runs : [];
-
-        const existing = runs.find((r: any) => {
-          const kind = String(r?.run_kind || "").trim().toLowerCase();
-          const parent = String(r?.parent_run_id || "").trim();
-          if (kind !== "supplementary") return false;
-          if (parent !== runId) return false;
-          return true;
-        });
+        const exists = Boolean(j?.exists);
+        const id = String(pickFirst(j?.supplementary_run_id, j?.supplementaryRunId, j?.id, null) || "").trim();
 
         if (cancelled) return;
 
-        if (existing?.id) {
-          setSuppCheck({
-            checked: true,
-            loading: false,
-            open: true,
-            openId: String(existing.id),
-            openStatus: String(existing.status ?? "draft"),
-          });
+        if (exists && isUuid(id)) {
+          setSuppCheck({ checked: true, loading: false, open: true, openId: id, openStatus: null });
         } else {
           setSuppCheck({ checked: true, loading: false, open: false, openId: null, openStatus: null });
         }
@@ -566,7 +544,7 @@ export default function PayrollRunDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [runId, loading, data, isSupplementary, parentIsCompleted, frequencyAllowsSupp, payDateIso]);
+  }, [runId, loading, data, isSupplementary, parentIsCompleted, frequencyAllowsSupp]);
 
   const exceptionsObj: any = (data as any)?.exceptions;
   const exceptionItems = useMemo(() => {
@@ -919,12 +897,30 @@ export default function PayrollRunDetailPage() {
         body: JSON.stringify({ action: "create_supplementary", parent_run_id: runId }),
       });
 
+      const j: any = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || "Failed to create supplementary run");
+        const existingId = String(
+          pickFirst(
+            j?.existing_run_id,
+            j?.existingRunId,
+            j?.existing_id,
+            j?.existingId,
+            j?.run_id,
+            j?.runId,
+            null
+          ) || ""
+        ).trim();
+
+        if (res.status === 409 && isUuid(existingId)) {
+          setSuppCheck({ checked: true, loading: false, open: true, openId: existingId, openStatus: null });
+          setErr("A supplementary run already exists for this parent. Use Open supplementary run.");
+          return;
+        }
+
+        throw new Error(j?.message || j?.error || "Failed to create supplementary run");
       }
 
-      const j: any = await res.json().catch(() => ({}));
       const newId = String(pickFirst(j?.run_id, j?.id, j?.new_run_id, "") || "").trim();
 
       if (!isUuid(newId)) throw new Error("Supplementary run was created but no valid run_id was returned.");
@@ -932,6 +928,7 @@ export default function PayrollRunDetailPage() {
       window.location.href = `/dashboard/payroll/${newId}`;
     } catch (e: any) {
       setErr(e?.message || "Failed to create supplementary run");
+    } finally {
       setActionBusy(null);
     }
   };
@@ -1352,7 +1349,7 @@ export default function PayrollRunDetailPage() {
                   <StepButton
                     step={1}
                     label="Start processing"
-                    done={step1Done}
+                    done={statusLower !== "draft"}
                     disabled={!canStartProcessing}
                     onClick={startProcessing}
                     title={
@@ -1369,7 +1366,7 @@ export default function PayrollRunDetailPage() {
                   <StepButton
                     step={2}
                     label={step2Label}
-                    done={step2Done}
+                    done={rows.length > 0}
                     disabled={!canShowAttachButtons || saving || !runId}
                     onClick={step2OnClick}
                     title={
@@ -1384,7 +1381,7 @@ export default function PayrollRunDetailPage() {
                   <StepButton
                     step={3}
                     label="Run calculation"
-                    done={step3Done}
+                    done={apiGateReady && !seededMode}
                     disabled={!recalcAllowed}
                     onClick={recalculateRun}
                     title={
@@ -1399,27 +1396,27 @@ export default function PayrollRunDetailPage() {
                   <StepButton
                     step={4}
                     label="Confirm attachments"
-                    done={step4Done}
-                    disabled={step4Done || !canConfirmAttachments}
+                    done={attachedAllDue === true}
+                    disabled={attachedAllDue === true || !canConfirmAttachments}
                     onClick={() => setAttachedAllDueEmployees(true)}
-                    title={step4Done ? "Attachments already confirmed." : toggleAttachedTitle}
+                    title={attachedAllDue === true ? "Attachments already confirmed." : toggleAttachedTitle}
                     stretch
                   />
 
                   <StepButton
                     step={5}
                     label="Approve run"
-                    done={step5Done}
-                    disabled={step5Done || !canApprove}
+                    done={approveDone}
+                    disabled={approveDone || !canApprove}
                     onClick={approveRun}
-                    title={step5Done ? "Run already approved." : approveDisabledReason || "Approve and queue FPS"}
+                    title={approveDone ? "Run already approved." : approveDisabledReason || "Approve and queue FPS"}
                     stretch
                   />
 
                   <StepButton
                     step={6}
                     label="Mark RTI submitted"
-                    done={step6Done}
+                    done={statusLower === "rti_submitted" || statusLower === "completed"}
                     disabled={!canMarkRtiSubmitted}
                     onClick={() =>
                       openConfirm({
@@ -1445,7 +1442,7 @@ export default function PayrollRunDetailPage() {
                     <StepButton
                       step={7}
                       label="Mark completed"
-                      done={step7Done}
+                      done={statusLower === "completed"}
                       disabled={!canMarkCompleted}
                       onClick={() =>
                         openConfirm({
@@ -1484,7 +1481,7 @@ export default function PayrollRunDetailPage() {
                     href={`/dashboard/payroll/${suppCheck.openId}`}
                     className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                     style={{ backgroundColor: "#000000" }}
-                    title={`A supplementary run already exists (${String(suppCheck.openStatus || "draft").toUpperCase()}). Open it.`}
+                    title="A supplementary run already exists. Open it."
                   >
                     Open supplementary run
                   </Link>
