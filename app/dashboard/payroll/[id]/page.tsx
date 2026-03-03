@@ -370,6 +370,9 @@ export default function PayrollRunDetailPage() {
   const [suppPayDateDraft, setSuppPayDateDraft] = useState<string>("");
   const [suppPayDateTouched, setSuppPayDateTouched] = useState<boolean>(false);
 
+  const [suppPayDateReason, setSuppPayDateReason] = useState<string>("");
+  const [suppPayDateReasonTouched, setSuppPayDateReasonTouched] = useState<boolean>(false);
+
   const [exceptionsExpanded, setExceptionsExpanded] = useState<boolean>(false);
   const exceptionsAnchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -640,12 +643,22 @@ export default function PayrollRunDetailPage() {
   const hasErrors = Object.keys(validation).length > 0;
   const saving = actionBusy !== null;
 
+  const payDateOverrideReasonFromApi = String(
+    pickFirst(runObj.pay_date_override_reason, runObj.payDateOverrideReason, "") || ""
+  ).trim();
+
   useEffect(() => {
     const currentIso = payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : "";
     if (!suppPayDateTouched) {
       setSuppPayDateDraft(isIsoDateOnly(currentIso) ? currentIso : currentIso);
     }
   }, [payDateIsoRaw, suppPayDateTouched]);
+
+  useEffect(() => {
+    if (!suppPayDateReasonTouched) {
+      setSuppPayDateReason(payDateOverrideReasonFromApi || "");
+    }
+  }, [payDateOverrideReasonFromApi, suppPayDateReasonTouched]);
 
   const onChangeCell = (id: string, field: "gross" | "deductions" | "net", value: string) => {
     if (!canEditRun) return;
@@ -718,12 +731,18 @@ export default function PayrollRunDetailPage() {
       const nextIso = String(suppPayDateDraft || "").trim();
       if (!isIsoDateOnly(nextIso)) throw new Error("Invalid pay date. Use YYYY-MM-DD.");
 
+      const reason = String(suppPayDateReason || "").trim();
+      if (!reason) throw new Error("Reason is required to change the supplementary pay date.");
+
       setActionBusy("set_pay_date");
       setErr(null);
       setApprovedMsg(null);
 
-      await patchRunAction("set_pay_date", { pay_date: nextIso });
+      await patchRunAction("set_pay_date", { pay_date: nextIso, reason });
+
       setSuppPayDateTouched(false);
+      setSuppPayDateReasonTouched(false);
+
       await load();
       setApprovedMsg("Pay date updated for supplementary run.");
     } catch (e: any) {
@@ -1096,10 +1115,16 @@ export default function PayrollRunDetailPage() {
   const runNameFromApi = String(pickFirst(runObj.runName, runObj.run_name, "") || "").trim();
 
   const runNumberFromApi = pickFirst(runObj.runNumber, runObj.run_number, null) as any;
-  const runNumberDerived = makeRunNumberFromPayDate(frequencyRaw, payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : null);
+  const runNumberDerived = makeRunNumberFromPayDate(
+    frequencyRaw,
+    payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : null
+  );
   const runNumber = String(pickFirst(runNumberFromApi, runNumberDerived, MISSING) || MISSING);
 
-  const periodDerived = derivePeriodFromPayDate(frequencyRaw, payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : null);
+  const periodDerived = derivePeriodFromPayDate(
+    frequencyRaw,
+    payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : null
+  );
 
   const periodStart = pickFirst(runObj.periodStart, runObj.period_start, periodDerived?.startIso ?? null, null) as any;
   const periodEnd = pickFirst(runObj.periodEnd, runObj.period_end, periodDerived?.endIso ?? null, null) as any;
@@ -1264,8 +1289,16 @@ export default function PayrollRunDetailPage() {
   const canShowAttachButtons = !loading && !!runId && canEditRun;
 
   const showSuppPayDateEditor = !loading && isSupplementary && statusLower === "draft";
+
+  const reasonTrimmed = String(suppPayDateReason || "").trim();
+  const reasonValid = reasonTrimmed.length > 0;
+
   const suppPayDateSaveDisabled =
-    saving || !showSuppPayDateEditor || !isIsoDateOnly(suppPayDateDraft) || (isIsoDateOnly(payDateIso) && suppPayDateDraft === payDateIso);
+    saving ||
+    !showSuppPayDateEditor ||
+    !isIsoDateOnly(suppPayDateDraft) ||
+    !reasonValid ||
+    (isIsoDateOnly(payDateIso) && suppPayDateDraft === payDateIso && reasonTrimmed === payDateOverrideReasonFromApi);
 
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
@@ -1368,52 +1401,88 @@ export default function PayrollRunDetailPage() {
                   </span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">Pay date:</span>
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">Pay date:</span>
+
+                    {showSuppPayDateEditor ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="date"
+                          value={suppPayDateDraft}
+                          onChange={(e) => {
+                            setSuppPayDateTouched(true);
+                            setSuppPayDateDraft(e.target.value);
+                          }}
+                          disabled={saving}
+                          className={`${inter.className} h-10 rounded-xl border border-slate-300 px-3 text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
+                          style={{
+                            color: WF_BLUE,
+                            opacity: saving ? 0.6 : 1,
+                            cursor: saving ? "not-allowed" : "text",
+                          }}
+                          title="Supplementary pay date. Editable in Draft only."
+                        />
+
+                        <button
+                          type="button"
+                          onClick={saveSupplementaryPayDate}
+                          disabled={suppPayDateSaveDisabled}
+                          className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                          style={{
+                            backgroundColor: WF_BLUE,
+                            opacity: suppPayDateSaveDisabled ? 0.6 : 1,
+                            cursor: suppPayDateSaveDisabled ? "not-allowed" : "pointer",
+                          }}
+                          title={
+                            !reasonValid
+                              ? "Enter a reason to save."
+                              : suppPayDateSaveDisabled
+                              ? "Pick a different valid date to save."
+                              : "Save supplementary pay date."
+                          }
+                        >
+                          {actionBusy === "set_pay_date" ? "Saving..." : "Save pay date"}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>
+                        {payDateText}
+                      </span>
+                    )}
+                  </div>
 
                   {showSuppPayDateEditor ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        type="date"
-                        value={suppPayDateDraft}
-                        onChange={(e) => {
-                          setSuppPayDateTouched(true);
-                          setSuppPayDateDraft(e.target.value);
-                        }}
-                        disabled={saving}
-                        className={`${inter.className} h-10 rounded-xl border border-slate-300 px-3 text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
-                        style={{
-                          color: WF_BLUE,
-                          opacity: saving ? 0.6 : 1,
-                          cursor: saving ? "not-allowed" : "text",
-                        }}
-                        title="Supplementary pay date. Editable in Draft only."
-                      />
-
-                      <button
-                        type="button"
-                        onClick={saveSupplementaryPayDate}
-                        disabled={suppPayDateSaveDisabled}
-                        className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                        style={{
-                          backgroundColor: WF_BLUE,
-                          opacity: suppPayDateSaveDisabled ? 0.6 : 1,
-                          cursor: suppPayDateSaveDisabled ? "not-allowed" : "pointer",
-                        }}
-                        title={
-                          suppPayDateSaveDisabled
-                            ? "Pick a different valid date to save."
-                            : "Save supplementary pay date."
-                        }
-                      >
-                        {actionBusy === "set_pay_date" ? "Saving..." : "Save pay date"}
-                      </button>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">Reason:</span>
+                        <input
+                          type="text"
+                          value={suppPayDateReason}
+                          onChange={(e) => {
+                            setSuppPayDateReasonTouched(true);
+                            setSuppPayDateReason(e.target.value);
+                          }}
+                          disabled={saving}
+                          placeholder="Required. Why is the supplementary pay date changing?"
+                          className="h-10 w-full max-w-[36rem] rounded-xl border border-slate-300 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-offset-1"
+                          style={{
+                            opacity: saving ? 0.6 : 1,
+                            cursor: saving ? "not-allowed" : "text",
+                          }}
+                        />
+                      </div>
+                      {!reasonValid ? (
+                        <div className="text-xs font-semibold text-amber-800">
+                          Reason is required to save a supplementary pay date change.
+                        </div>
+                      ) : null}
                     </div>
-                  ) : (
-                    <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>
-                      {payDateText}
-                    </span>
-                  )}
+                  ) : null}
+
+                  {!showSuppPayDateEditor && isSupplementary && payDateOverrideReasonFromApi ? (
+                    <div className="text-xs font-semibold text-slate-600">Pay date override reason: {payDateOverrideReasonFromApi}</div>
+                  ) : null}
                 </div>
               </div>
             </div>

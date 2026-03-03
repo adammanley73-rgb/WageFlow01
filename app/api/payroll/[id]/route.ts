@@ -929,10 +929,19 @@ export async function PATCH(req: Request, { params }: Ctx) {
     );
     const reason = String(reasonRaw ?? "").trim();
 
+    if (!reason) {
+      return json(400, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v1",
+        code: "REASON_REQUIRED",
+        message: "Reason is required to change the supplementary pay date.",
+      });
+    }
+
     const up = await updatePayrollRunSafe(supabase, id, companyId, {
       pay_date: nextIso,
       pay_date_overridden: true,
-      pay_date_override_reason: reason || null,
+      pay_date_override_reason: reason,
     });
 
     if (!up.ok) {
