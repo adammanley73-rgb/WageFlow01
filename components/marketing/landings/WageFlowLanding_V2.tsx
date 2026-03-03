@@ -1,4 +1,4 @@
-// C:\Users\adamm\Projects\wageflow01\components\marketing\landings\WageFlowLanding_V2.tsx
+// C:\Projects\wageflow01\components\marketing\landings\WageFlowLanding_V2.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -375,10 +375,6 @@ export default function WageFlowLandingV2() {
     setTimeout(() => scrollToId(id), 0);
   };
 
-  const onSignIn = () => {
-    scrollToId("pricing");
-  };
-
   const onGetFreeMonth = () => {
     showToast("Get 1st month free is coming soon.");
   };
@@ -449,13 +445,6 @@ export default function WageFlowLandingV2() {
               </button>
               <button
                 type="button"
-                onClick={onSignIn}
-                className="text-gray-700 hover:text-gray-900 transition focus:outline-none focus:ring-2 focus:ring-[#0f3c85] rounded-md px-2 py-1"
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
                 onClick={onGetFreeMonth}
                 className="bg-[#0f3c85] text-white px-6 py-2 rounded-lg hover:opacity-95 transition focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
               >
@@ -505,16 +494,6 @@ export default function WageFlowLandingV2() {
                 className="block w-full text-left text-gray-800 hover:text-gray-900 px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
               >
                 FAQs
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onSignIn();
-                }}
-                className="block w-full text-left text-gray-800 hover:text-gray-900 px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
-              >
-                Sign In
               </button>
               <button
                 type="button"
