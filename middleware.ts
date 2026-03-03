@@ -83,7 +83,6 @@ function isStaticAllowlist(pathname: string) {
   if (pathname === "/AIStatusBadge.png") return true;
 
   // Safe-ish common static asset extensions at the site root
-  // (keeps login pages from breaking if you swap assets later)
   const lower = pathname.toLowerCase();
   if (lower.endsWith(".png")) return true;
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return true;
@@ -148,39 +147,23 @@ function clearAuthAndDemoCookies(res: any, request: any) {
   };
 
   for (const name of names) {
-    if (shouldClear(name)) {
-      res.cookies.delete(name);
-    }
+    if (shouldClear(name)) res.cookies.delete(name);
   }
 }
 
-function applyDemoTimeoutsOrTouch(
-  request: any,
-  pathname: string,
-  search: string,
-  baseUrl: string
-):
-  | { action: "allow" }
-  | { action: "kill"; reason: string }
-  | { action: "touch"; now: number } {
+function applyDemoTimeoutsOrTouch(request: any): { action: "kill"; reason: string } | { action: "touch"; now: number } {
   const now = nowSec();
   const started = toInt(request?.cookies?.get?.(DEMO_STARTED)?.value);
   const last = toInt(request?.cookies?.get?.(DEMO_LAST)?.value);
 
-  if (!started) {
-    return { action: "touch" as const, now };
-  }
+  if (!started) return { action: "touch" as const, now };
 
   const elapsed = now - started;
-  if (elapsed > DEMO_MAX_AGE_SEC) {
-    return { action: "kill" as const, reason: "Demo session expired (60 min limit)" };
-  }
+  if (elapsed > DEMO_MAX_AGE_SEC) return { action: "kill" as const, reason: "Demo session expired (60 min limit)" };
 
   if (last) {
     const idle = now - last;
-    if (idle > DEMO_IDLE_SEC) {
-      return { action: "kill" as const, reason: "Demo session timed out (15 min idle)" };
-    }
+    if (idle > DEMO_IDLE_SEC) return { action: "kill" as const, reason: "Demo session timed out (15 min idle)" };
   }
 
   return { action: "touch" as const, now };
@@ -209,7 +192,7 @@ export function middleware(request: any) {
   const pathname = url?.pathname || "";
   const method = String(request?.method || "GET").toUpperCase();
 
-  const hostHeader = request?.headers?.get("host") || url?.hostname || "";
+  const hostHeader = request?.headers?.get?.("host") || url?.hostname || "";
   const host = normaliseHost(hostHeader);
 
   // /demo entry point: keep demo flow consistent.
@@ -241,7 +224,7 @@ export function middleware(request: any) {
 
     // If authed AND demo, enforce demo timeouts on this host too.
     if (authed && isDemoRequest(request) && !isStaticAllowlist(pathname)) {
-      const demoCheck = applyDemoTimeoutsOrTouch(request, pathname, url?.search || "", request.url);
+      const demoCheck = applyDemoTimeoutsOrTouch(request);
 
       if (demoCheck.action === "kill") {
         const loginUrl = new URL("/login", request.url);
@@ -255,18 +238,14 @@ export function middleware(request: any) {
         return res;
       }
 
-      if (demoCheck.action === "touch") {
-        const res = NextResponse.next();
-        setDemoLastCookies(res, demoCheck.now);
-        return res;
-      }
+      const res = NextResponse.next();
+      setDemoLastCookies(res, demoCheck.now);
+      return res;
     }
   }
 
   // Only enforce dashboard rules on /dashboard/*
-  if (!pathname.startsWith("/dashboard")) {
-    return NextResponse.next();
-  }
+  if (!pathname.startsWith("/dashboard")) return NextResponse.next();
 
   // Enforce auth on Vercel for /dashboard/*
   if (isVercelRuntime()) {
@@ -287,7 +266,7 @@ export function middleware(request: any) {
 
   // Demo guardrails for dashboard routes (when authed).
   if (isVercelRuntime() && isDemoRequest(request) && !isStaticAllowlist(pathname)) {
-    const demoCheck = applyDemoTimeoutsOrTouch(request, pathname, url?.search || "", request.url);
+    const demoCheck = applyDemoTimeoutsOrTouch(request);
 
     if (demoCheck.action === "kill") {
       const loginUrl = new URL("/login", request.url);
@@ -330,9 +309,7 @@ export function middleware(request: any) {
   }
 
   // Allow the companies page when authed.
-  if (pathname === "/dashboard/companies") {
-    return NextResponse.next();
-  }
+  if (pathname === "/dashboard/companies") return NextResponse.next();
 
   // Enforce selection of an active company.
   const hasActive = Boolean(request?.cookies?.get?.("active_company_id")?.value);
@@ -349,8 +326,9 @@ export function middleware(request: any) {
 }
 
 export const config = {
-  // Performance: do not run middleware for Next.js internals or common static assets.
+  // Performance: do not run middleware for Next.js internals, common static assets,
+  // or your known public allowlist routes. (Keep /demo included so we can redirect it.)
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:png|jpg|jpeg|webp|svg|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|login(?:/|$)|auth(?:/|$)|api/auth(?:/|$)|api/diag(?:/|$)|api/healthcheck(?:/|$)|api/ai-status(?:/|$)|api/ai/health(?:/|$)|.*\\.(?:png|jpg|jpeg|webp|svg|ico)$).*)",
   ],
 };
