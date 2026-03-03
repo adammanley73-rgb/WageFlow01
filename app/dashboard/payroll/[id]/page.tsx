@@ -1132,50 +1132,6 @@ export default function PayrollRunDetailPage() {
     }, 0);
   };
 
-  const headline = runNameFromApi ? runNameFromApi : runNumber !== MISSING ? `Run ${runNumber}` : "Run";
-  const kindChip = isSupplementary ? "SUPPLEMENTARY" : "PRIMARY";
-
-  const showOpenSupplementaryButton =
-    !loading && !isSupplementary && suppCheck.checked && suppCheck.open && isUuid(String(suppCheck.openId || ""));
-
-  const showCreateSupplementaryButton =
-    !loading &&
-    !isSupplementary &&
-    !!runId &&
-    parentIsCompleted &&
-    frequencyAllowsSupp &&
-    suppCheck.checked &&
-    !suppCheck.open;
-
-  const canShowAttachButtons = !loading && !!runId && canEditRun;
-
-  const canStartProcessing = !loading && !!runId && !saving && statusLower === "draft" && !dirty && !hasErrors;
-  const canMarkRtiSubmitted = !loading && !!runId && !saving && statusLower === "approved" && !dirty;
-  const canMarkCompleted = !loading && !!runId && !saving && statusLower === "rti_submitted" && !dirty;
-  const canCancelRun =
-    !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
-
-  const recalcAllowed = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing");
-
-  const canConfirmAttachments =
-    !loading &&
-    !!runId &&
-    !saving &&
-    statusLower === "processing" &&
-    !dirty &&
-    attachedFlagKnown &&
-    actionBusy !== "set_attached_all_due_employees";
-
-  const toggleAttachedTitle = dirty
-    ? "Save or discard edits before confirming attachments."
-    : statusLower !== "processing"
-    ? "Confirm attachments during processing."
-    : !attachedFlagKnown
-    ? "Flag missing. Apply DB migrations."
-    : canConfirmAttachments
-    ? "Confirm you have attached all employees due for payment."
-    : "Working...";
-
   const step1Done = statusLower !== "draft";
   const step2Done = rows.length > 0;
   const step3Done = apiGateReady && !seededMode;
@@ -1216,6 +1172,33 @@ export default function PayrollRunDetailPage() {
     attachedFlagKnown &&
     attachmentsConfirmed !== true;
 
+  const canStartProcessing = !loading && !!runId && !saving && statusLower === "draft" && !dirty && !hasErrors;
+  const canMarkRtiSubmitted = !loading && !!runId && !saving && statusLower === "approved" && !dirty;
+  const canMarkCompleted = !loading && !!runId && !saving && statusLower === "rti_submitted" && !dirty;
+  const canCancelRun =
+    !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
+
+  const recalcAllowed = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing");
+
+  const canConfirmAttachments =
+    !loading &&
+    !!runId &&
+    !saving &&
+    statusLower === "processing" &&
+    !dirty &&
+    attachedFlagKnown &&
+    actionBusy !== "set_attached_all_due_employees";
+
+  const toggleAttachedTitle = dirty
+    ? "Save or discard edits before confirming attachments."
+    : statusLower !== "processing"
+    ? "Confirm attachments during processing."
+    : !attachedFlagKnown
+    ? "Flag missing. Apply DB migrations."
+    : canConfirmAttachments
+    ? "Confirm you have attached all employees due for payment."
+    : "Working...";
+
   const filteredCandidates = useMemo(() => {
     const q = String(attachSearch || "").trim().toLowerCase();
     const list = Array.isArray(candidates) ? candidates : [];
@@ -1236,6 +1219,23 @@ export default function PayrollRunDetailPage() {
   const selectedCount = useMemo(() => {
     return Object.keys(selectedIds).filter((k) => selectedIds[k]).length;
   }, [selectedIds]);
+
+  const headline = runNameFromApi ? runNameFromApi : runNumber !== MISSING ? `Run ${runNumber}` : "Run";
+  const kindChip = isSupplementary ? "SUPPLEMENTARY" : "PRIMARY";
+
+  const showOpenSupplementaryButton =
+    !loading && !isSupplementary && suppCheck.checked && suppCheck.open && isUuid(String(suppCheck.openId || ""));
+
+  const showCreateSupplementaryButton =
+    !loading &&
+    !isSupplementary &&
+    !!runId &&
+    parentIsCompleted &&
+    frequencyAllowsSupp &&
+    suppCheck.checked &&
+    !suppCheck.open;
+
+  const canShowAttachButtons = !loading && !!runId && canEditRun;
 
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
@@ -1690,7 +1690,8 @@ export default function PayrollRunDetailPage() {
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
                 <div className="text-sm font-extrabold text-slate-900">How to use this</div>
                 <div className="mt-1 text-sm text-slate-700">
-                  Blocking items must be fixed before approval. Warnings are allowed, but you should review them. Zero gross employees can be valid, for example tax rebates, so they stay as warnings.
+                  Blocking items must be fixed before approval. Warnings are allowed, but you should review them. Zero
+                  gross employees can be valid, for example tax rebates, so they stay as warnings.
                 </div>
               </div>
 
@@ -1826,7 +1827,10 @@ export default function PayrollRunDetailPage() {
           <StatTile title="Total Net" value={gbp(displayTotals.net)} />
         </div>
 
-        <div ref={employeeTableRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
+        <div
+          ref={employeeTableRef}
+          className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden"
+        >
           <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-extrabold text-slate-900">Employees in this run</h2>
             <div className="text-sm text-slate-700">Edit amounts, save, export CSV, or open a payslip.</div>
@@ -2136,7 +2140,8 @@ export default function PayrollRunDetailPage() {
                       <div className="px-4 py-4 text-sm text-slate-700">Loading...</div>
                     ) : filteredCandidates.length === 0 ? (
                       <div className="px-4 py-4 text-sm text-slate-700">
-                        No eligible employees found. This usually means everyone is already attached or no active employees match the run frequency.
+                        No eligible employees found. This usually means everyone is already attached or no active
+                        employees match the run frequency.
                       </div>
                     ) : (
                       <table className="w-full border-collapse">
