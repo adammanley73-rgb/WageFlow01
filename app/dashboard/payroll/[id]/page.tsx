@@ -360,11 +360,15 @@ export default function PayrollRunDetailPage() {
     | "mark_completed"
     | "cancel_run"
     | "set_attached_all_due_employees"
+    | "set_pay_date"
   >(null);
 
   const [dirty, setDirty] = useState<boolean>(false);
   const [validation, setValidation] = useState<Record<string, string>>({});
   const [approvedMsg, setApprovedMsg] = useState<string | null>(null);
+
+  const [suppPayDateDraft, setSuppPayDateDraft] = useState<string>("");
+  const [suppPayDateTouched, setSuppPayDateTouched] = useState<boolean>(false);
 
   const [exceptionsExpanded, setExceptionsExpanded] = useState<boolean>(false);
   const exceptionsAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -472,7 +476,7 @@ export default function PayrollRunDetailPage() {
   const parentRunId = String(pickFirst(runObj.parent_run_id, runObj.parentRunId, "") || "").trim();
   const hasParent = isUuid(parentRunId);
 
-  const payDateIso = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
+  const payDateIsoRaw = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
   const frequencyRaw = String(pickFirst(runObj.frequency, runObj.pay_frequency, runObj.payFrequency, "") || "").trim();
 
   const parentFrequency = String(frequencyRaw || "").trim().toLowerCase();
@@ -525,11 +529,12 @@ export default function PayrollRunDetailPage() {
         const j: any = await res.json().catch(() => ({}));
         const exists = Boolean(j?.exists);
         const id = String(pickFirst(j?.supplementary_run_id, j?.supplementaryRunId, j?.id, null) || "").trim();
+        const st = String(pickFirst(j?.supplementary_status, j?.status, null) || "").trim();
 
         if (cancelled) return;
 
         if (exists && isUuid(id)) {
-          setSuppCheck({ checked: true, loading: false, open: true, openId: id, openStatus: null });
+          setSuppCheck({ checked: true, loading: false, open: true, openId: id, openStatus: st || null });
         } else {
           setSuppCheck({ checked: true, loading: false, open: false, openId: null, openStatus: null });
         }
@@ -635,6 +640,13 @@ export default function PayrollRunDetailPage() {
   const hasErrors = Object.keys(validation).length > 0;
   const saving = actionBusy !== null;
 
+  useEffect(() => {
+    const currentIso = payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : "";
+    if (!suppPayDateTouched) {
+      setSuppPayDateDraft(isIsoDateOnly(currentIso) ? currentIso : currentIso);
+    }
+  }, [payDateIsoRaw, suppPayDateTouched]);
+
   const onChangeCell = (id: string, field: "gross" | "deductions" | "net", value: string) => {
     if (!canEditRun) return;
 
@@ -695,6 +707,30 @@ export default function PayrollRunDetailPage() {
     }
 
     return j as ApiResponse;
+  };
+
+  const saveSupplementaryPayDate = async () => {
+    try {
+      if (!runId) throw new Error("Missing run id.");
+      if (!isSupplementary) throw new Error("Pay date override is only available for supplementary runs.");
+      if (statusLower !== "draft") throw new Error("Pay date can only be changed while the supplementary run is Draft.");
+
+      const nextIso = String(suppPayDateDraft || "").trim();
+      if (!isIsoDateOnly(nextIso)) throw new Error("Invalid pay date. Use YYYY-MM-DD.");
+
+      setActionBusy("set_pay_date");
+      setErr(null);
+      setApprovedMsg(null);
+
+      await patchRunAction("set_pay_date", { pay_date: nextIso });
+      setSuppPayDateTouched(false);
+      await load();
+      setApprovedMsg("Pay date updated for supplementary run.");
+    } catch (e: any) {
+      setErr(e?.message || "Failed to update pay date");
+    } finally {
+      setActionBusy(null);
+    }
   };
 
   const saveChanges = async () => {
@@ -1060,15 +1096,16 @@ export default function PayrollRunDetailPage() {
   const runNameFromApi = String(pickFirst(runObj.runName, runObj.run_name, "") || "").trim();
 
   const runNumberFromApi = pickFirst(runObj.runNumber, runObj.run_number, null) as any;
-  const runNumberDerived = makeRunNumberFromPayDate(frequencyRaw, payDateIso ? String(payDateIso) : null);
+  const runNumberDerived = makeRunNumberFromPayDate(frequencyRaw, payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : null);
   const runNumber = String(pickFirst(runNumberFromApi, runNumberDerived, MISSING) || MISSING);
 
-  const periodDerived = derivePeriodFromPayDate(frequencyRaw, payDateIso ? String(payDateIso) : null);
+  const periodDerived = derivePeriodFromPayDate(frequencyRaw, payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : null);
 
   const periodStart = pickFirst(runObj.periodStart, runObj.period_start, periodDerived?.startIso ?? null, null) as any;
   const periodEnd = pickFirst(runObj.periodEnd, runObj.period_end, periodDerived?.endIso ?? null, null) as any;
 
   const payDate = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
+  const payDateIso = payDate ? String(payDate).slice(0, 10) : "";
 
   const statusText = statusRaw ? statusLabel(statusRaw) : MISSING;
 
@@ -1128,14 +1165,6 @@ export default function PayrollRunDetailPage() {
       } catch {}
     }, 0);
   };
-
-  const step1Done = statusLower !== "draft";
-  const step2Done = rows.length > 0;
-  const step3Done = apiGateReady && !seededMode;
-  const step4Done = attachmentsConfirmed;
-  const step5Done = approveDone;
-  const step6Done = statusLower === "rti_submitted" || statusLower === "completed";
-  const step7Done = statusLower === "completed";
 
   const step2Label = isSupplementary ? "Attach employees" : "Attach due employees";
 
@@ -1233,6 +1262,10 @@ export default function PayrollRunDetailPage() {
     !suppCheck.open;
 
   const canShowAttachButtons = !loading && !!runId && canEditRun;
+
+  const showSuppPayDateEditor = !loading && isSupplementary && statusLower === "draft";
+  const suppPayDateSaveDisabled =
+    saving || !showSuppPayDateEditor || !isIsoDateOnly(suppPayDateDraft) || (isIsoDateOnly(payDateIso) && suppPayDateDraft === payDateIso);
 
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
@@ -1334,11 +1367,53 @@ export default function PayrollRunDetailPage() {
                     {periodText}
                   </span>
                 </div>
-                <div>
-                  <span className="font-semibold">Pay date:</span>{" "}
-                  <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>
-                    {payDateText}
-                  </span>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold">Pay date:</span>
+
+                  {showSuppPayDateEditor ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="date"
+                        value={suppPayDateDraft}
+                        onChange={(e) => {
+                          setSuppPayDateTouched(true);
+                          setSuppPayDateDraft(e.target.value);
+                        }}
+                        disabled={saving}
+                        className={`${inter.className} h-10 rounded-xl border border-slate-300 px-3 text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
+                        style={{
+                          color: WF_BLUE,
+                          opacity: saving ? 0.6 : 1,
+                          cursor: saving ? "not-allowed" : "text",
+                        }}
+                        title="Supplementary pay date. Editable in Draft only."
+                      />
+
+                      <button
+                        type="button"
+                        onClick={saveSupplementaryPayDate}
+                        disabled={suppPayDateSaveDisabled}
+                        className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                        style={{
+                          backgroundColor: WF_BLUE,
+                          opacity: suppPayDateSaveDisabled ? 0.6 : 1,
+                          cursor: suppPayDateSaveDisabled ? "not-allowed" : "pointer",
+                        }}
+                        title={
+                          suppPayDateSaveDisabled
+                            ? "Pick a different valid date to save."
+                            : "Save supplementary pay date."
+                        }
+                      >
+                        {actionBusy === "set_pay_date" ? "Saving..." : "Save pay date"}
+                      </button>
+                    </div>
+                  ) : (
+                    <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>
+                      {payDateText}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1481,7 +1556,11 @@ export default function PayrollRunDetailPage() {
                     href={`/dashboard/payroll/${suppCheck.openId}`}
                     className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                     style={{ backgroundColor: "#000000" }}
-                    title="A supplementary run already exists. Open it."
+                    title={
+                      suppCheck.openStatus
+                        ? `A supplementary run already exists (${String(suppCheck.openStatus).toUpperCase()}). Open it.`
+                        : "A supplementary run already exists. Open it."
+                    }
                   >
                     Open supplementary run
                   </Link>
@@ -1498,7 +1577,7 @@ export default function PayrollRunDetailPage() {
                       opacity: saving || !runId ? 0.6 : 1,
                       cursor: saving || !runId ? "not-allowed" : "pointer",
                     }}
-                    title="Create a supplementary run for this same pay period (manual attach)"
+                    title="Create a supplementary run (manual attach). Pay date can be edited in Draft."
                   >
                     {actionBusy === "supp" ? "Creating..." : "Create supplementary run"}
                   </button>
@@ -1605,13 +1684,15 @@ export default function PayrollRunDetailPage() {
 
           {attachmentsUnknown && !loading ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-              attached_all_due_employees flag is missing from this run payload. Approval will stay blocked. Apply DB migrations.
+              attached_all_due_employees flag is missing from this run payload. Approval will stay blocked. Apply DB
+              migrations.
             </div>
           ) : null}
 
           {showFlagMismatchWarning ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-              This run is {statusText} but attached_all_due_employees is not confirmed. This is legacy data drift. New approvals are blocked unless confirmed.
+              This run is {statusText} but attached_all_due_employees is not confirmed. This is legacy data drift. New
+              approvals are blocked unless confirmed.
             </div>
           ) : null}
 
@@ -1624,7 +1705,8 @@ export default function PayrollRunDetailPage() {
                 color: "#92400e",
               }}
             >
-              Seeded mode. This run is not fully calculated yet. Approval is disabled until seededMode is false and there are no blocking exceptions.
+              Seeded mode. This run is not fully calculated yet. Approval is disabled until seededMode is false and there
+              are no blocking exceptions.
             </div>
           ) : null}
 
@@ -1643,7 +1725,8 @@ export default function PayrollRunDetailPage() {
 
           {showDataMismatchNote ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-              This run has totals but no employee rows were returned by the API. The run details still show correctly. Approve stays disabled until employees load.
+              This run has totals but no employee rows were returned by the API. The run details still show correctly.
+              Approve stays disabled until employees load.
             </div>
           ) : null}
 
