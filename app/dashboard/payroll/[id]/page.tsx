@@ -390,6 +390,9 @@ export default function PayrollRunDetailPage() {
   const [suppPayDateReason, setSuppPayDateReason] = useState<string>("");
   const [suppPayDateReasonTouched, setSuppPayDateReasonTouched] = useState<boolean>(false);
 
+  const [parentPayDateIso, setParentPayDateIso] = useState<string>("");
+  const [suppTaxMonthAck, setSuppTaxMonthAck] = useState<boolean>(false);
+
   const [exceptionsExpanded, setExceptionsExpanded] = useState<boolean>(false);
   const exceptionsAnchorRef = useRef<HTMLDivElement | null>(null);
 
@@ -497,6 +500,8 @@ export default function PayrollRunDetailPage() {
   const hasParent = isUuid(parentRunId);
 
   const payDateIsoRaw = pickFirst(runObj.payDate, runObj.pay_date, null) as any;
+  const currentPayDateIso = payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : "";
+
   const frequencyRaw = String(pickFirst(runObj.frequency, runObj.pay_frequency, runObj.payFrequency, "") || "").trim();
 
   const parentFrequency = String(frequencyRaw || "").trim().toLowerCase();
@@ -522,6 +527,43 @@ export default function PayrollRunDetailPage() {
     const raw = pickFirst(runObj.attached_all_due_employees, runObj.attachedAllDueEmployees, null);
     return parseBoolStrict(raw);
   }, [runObj]);
+
+  useEffect(() => {
+    const shouldFetchParent = !!runId && !loading && !!data && isSupplementary && isUuid(parentRunId);
+    if (!shouldFetchParent) {
+      setParentPayDateIso("");
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const res = await fetch(`/api/payroll/${parentRunId}`, { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to load parent payroll run.");
+        const j: any = await res.json().catch(() => ({}));
+        const parentRun: any = j?.run || {};
+        const pd = pickFirst(parentRun.payDate, parentRun.pay_date, null);
+        const iso = pd ? String(pd).slice(0, 10) : "";
+
+        if (cancelled) return;
+        setParentPayDateIso(isIsoDateOnly(iso) ? iso : "");
+      } catch {
+        if (cancelled) return;
+        setParentPayDateIso("");
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, loading, data, isSupplementary, parentRunId]);
+
+  useEffect(() => {
+    setSuppTaxMonthAck(false);
+  }, [runId, parentPayDateIso, currentPayDateIso]);
 
   useEffect(() => {
     const shouldCheck =
@@ -667,12 +709,23 @@ export default function PayrollRunDetailPage() {
   const payDateOverriddenFromApi =
     parseBoolStrict(pickFirst(runObj.pay_date_overridden, runObj.payDateOverridden, null)) === true;
 
+  const parentTaxMonth = isIsoDateOnly(parentPayDateIso) ? payeTaxMonthNumber(parentPayDateIso) : null;
+  const suppTaxMonth = isIsoDateOnly(currentPayDateIso) ? payeTaxMonthNumber(currentPayDateIso) : null;
+
+  const crossTaxMonthPersisted =
+    isSupplementary &&
+    statusLower === "draft" &&
+    isIsoDateOnly(parentPayDateIso) &&
+    parentTaxMonth !== null &&
+    suppTaxMonth !== null &&
+    parentTaxMonth !== suppTaxMonth;
+
   useEffect(() => {
-    const currentIso = payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : "";
+    const currentIso = currentPayDateIso;
     if (!suppPayDateTouched) {
       setSuppPayDateDraft(isIsoDateOnly(currentIso) ? currentIso : currentIso);
     }
-  }, [payDateIsoRaw, suppPayDateTouched]);
+  }, [currentPayDateIso, suppPayDateTouched]);
 
   useEffect(() => {
     if (!suppPayDateReasonTouched) {
@@ -1245,7 +1298,19 @@ export default function PayrollRunDetailPage() {
     attachedFlagKnown &&
     attachmentsConfirmed !== true;
 
-  const canStartProcessing = !loading && !!runId && !saving && statusLower === "draft" && !dirty && !hasErrors;
+  const canStartProcessingBase = !loading && !!runId && !saving && statusLower === "draft" && !dirty && !hasErrors;
+
+  const suppStartBlockedInvalidPayDate = isSupplementary && statusLower === "draft" && !isIsoDateOnly(payDateIso);
+  const suppStartBlockedMissingReason =
+    isSupplementary && statusLower === "draft" && payDateOverriddenFromApi && !payDateOverrideReasonFromApi;
+  const suppStartBlockedTaxMonthAck = isSupplementary && statusLower === "draft" && crossTaxMonthPersisted && !suppTaxMonthAck;
+
+  const canStartProcessing =
+    canStartProcessingBase &&
+    !suppStartBlockedInvalidPayDate &&
+    !suppStartBlockedMissingReason &&
+    !suppStartBlockedTaxMonthAck;
+
   const canMarkRtiSubmitted = !loading && !!runId && !saving && statusLower === "approved" && !dirty;
   const canMarkCompleted = !loading && !!runId && !saving && statusLower === "rti_submitted" && !dirty;
   const canCancelRun =
@@ -1322,15 +1387,29 @@ export default function PayrollRunDetailPage() {
     !reasonValid ||
     (isIsoDateOnly(payDateIso) && suppPayDateDraft === payDateIso && reasonTrimmed === payDateOverrideReasonFromApi);
 
-  const currentTaxMonth = isIsoDateOnly(payDateIso) ? payeTaxMonthNumber(payDateIso) : null;
-  const draftTaxMonth = isIsoDateOnly(suppPayDateDraft) ? payeTaxMonthNumber(suppPayDateDraft) : null;
+  const currentTaxMonthPreview = isIsoDateOnly(payDateIso) ? payeTaxMonthNumber(payDateIso) : null;
+  const draftTaxMonthPreview = isIsoDateOnly(suppPayDateDraft) ? payeTaxMonthNumber(suppPayDateDraft) : null;
   const showTaxMonthWarning =
     showSuppPayDateEditor &&
     isIsoDateOnly(payDateIso) &&
     isIsoDateOnly(suppPayDateDraft) &&
-    currentTaxMonth !== null &&
-    draftTaxMonth !== null &&
-    currentTaxMonth !== draftTaxMonth;
+    currentTaxMonthPreview !== null &&
+    draftTaxMonthPreview !== null &&
+    currentTaxMonthPreview !== draftTaxMonthPreview;
+
+  const startProcessingTitle = dirty
+    ? "Save or discard edits before changing status."
+    : statusLower !== "draft"
+    ? "Draft only."
+    : !canStartProcessingBase
+    ? "Start processing is currently disabled."
+    : suppStartBlockedInvalidPayDate
+    ? "Cannot start processing: supplementary pay date is missing/invalid."
+    : suppStartBlockedMissingReason
+    ? "Cannot start processing: pay date override reason is missing."
+    : suppStartBlockedTaxMonthAck
+    ? `Cannot start processing until you acknowledge the PAYE tax month change (Parent Month ${parentTaxMonth} → Supplementary Month ${suppTaxMonth}).`
+    : "Move this run into processing.";
 
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
@@ -1527,8 +1606,36 @@ export default function PayrollRunDetailPage() {
 
                       {showTaxMonthWarning ? (
                         <div className="mt-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-                          Warning: This change moves the pay date into a different PAYE tax month (Month {currentTaxMonth} → Month{" "}
-                          {draftTaxMonth}). This can affect RTI/FPS timing and PAYE/NI month-end reconciliation.
+                          Warning: This change moves the pay date into a different PAYE tax month (Month{" "}
+                          {currentTaxMonthPreview} → Month {draftTaxMonthPreview}). This can affect RTI/FPS timing and
+                          PAYE/NI month-end reconciliation.
+                        </div>
+                      ) : null}
+
+                      {crossTaxMonthPersisted ? (
+                        <div className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                          Important: This supplementary run pay date is in a different PAYE tax month than the parent run
+                          (Parent Month {parentTaxMonth} → Supplementary Month {suppTaxMonth}). RTI/FPS for this
+                          supplementary run will land in that later month.
+                        </div>
+                      ) : null}
+
+                      {crossTaxMonthPersisted ? (
+                        <label className="mt-2 flex items-start gap-2 text-sm font-semibold text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={suppTaxMonthAck}
+                            onChange={(e) => setSuppTaxMonthAck(Boolean(e.target.checked))}
+                            disabled={saving}
+                            className="mt-1 h-4 w-4"
+                          />
+                          <span>I understand. Allow Start processing.</span>
+                        </label>
+                      ) : null}
+
+                      {suppStartBlockedTaxMonthAck ? (
+                        <div className="mt-1 text-xs font-semibold text-amber-800">
+                          Start processing is disabled until you tick the acknowledgement above.
                         </div>
                       ) : null}
                     </div>
@@ -1559,13 +1666,7 @@ export default function PayrollRunDetailPage() {
                     done={statusLower !== "draft"}
                     disabled={!canStartProcessing}
                     onClick={startProcessing}
-                    title={
-                      dirty
-                        ? "Save or discard edits before changing status."
-                        : statusLower !== "draft"
-                        ? "Draft only."
-                        : "Move this run into processing."
-                    }
+                    title={startProcessingTitle}
                     buttonRef={startProcessingBtnRef}
                     stretch
                   />
