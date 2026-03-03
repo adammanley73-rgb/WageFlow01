@@ -89,8 +89,9 @@ function StepButton(props: StepButtonProps) {
   } = props;
 
   const heightClass = size === "lg" ? "h-11" : "h-10";
-  const paddingClass = size === "lg" ? "px-5" : "px-4";
+  const paddingClass = size === "lg" ? "px-4" : "px-3";
   const widthClass = stretch ? "w-full" : "";
+  const textClass = "text-[13px] leading-tight";
 
   const bg = done ? WF_GREEN : WF_BLUE;
   const opacity = disabled ? 0.6 : 1;
@@ -102,12 +103,12 @@ function StepButton(props: StepButtonProps) {
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex ${widthClass} ${heightClass} items-center justify-center rounded-xl ${paddingClass} text-sm font-semibold text-white transition hover:opacity-95`}
+      className={`flex ${widthClass} ${heightClass} min-w-0 items-center justify-center rounded-xl ${paddingClass} ${textClass} font-semibold text-white transition hover:opacity-95 overflow-hidden`}
       style={{ backgroundColor: bg, opacity, cursor }}
       title={title}
     >
       <span
-        className="mr-2 inline-flex h-6 min-w-[1.6rem] items-center justify-center rounded-full text-xs font-extrabold"
+        className="mr-2 inline-flex h-6 min-w-[1.6rem] shrink-0 items-center justify-center rounded-full text-[12px] font-extrabold"
         style={{
           backgroundColor: "rgba(255,255,255,0.22)",
           color: "#ffffff",
@@ -116,7 +117,7 @@ function StepButton(props: StepButtonProps) {
       >
         {step}
       </span>
-      <span className="whitespace-nowrap">{label}</span>
+      <span className="min-w-0 truncate text-center">{label}</span>
     </button>
   );
 }
@@ -156,16 +157,6 @@ function parseBoolStrict(v: any): boolean | null {
   if (["true", "1", "yes", "y", "on"].includes(s)) return true;
   if (["false", "0", "no", "n", "off"].includes(s)) return false;
   return null;
-}
-
-function focusRef(el: any) {
-  if (!el) return;
-  try {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-  } catch {}
-  try {
-    if (typeof el.focus === "function") el.focus();
-  } catch {}
 }
 
 /* -----------------------
@@ -347,19 +338,6 @@ function isUuid(s: any) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || "").trim());
 }
 
-type ApprovalBlockerCode =
-  | "ready"
-  | "reload"
-  | "start_processing"
-  | "migrations"
-  | "confirm_attachments"
-  | "compute_full"
-  | "fix_exceptions"
-  | "attach_employees"
-  | "save_edits"
-  | "validation"
-  | "working";
-
 export default function PayrollRunDetailPage() {
   const params = useParams();
   const runId = String((params as any)?.id || "");
@@ -409,12 +387,9 @@ export default function PayrollRunDetailPage() {
   const [confirmOpen, setConfirmOpen] = useState<boolean>(false);
   const [confirmCfg, setConfirmCfg] = useState<ConfirmConfig | null>(null);
 
-  const saveBtnRef = useRef<HTMLButtonElement | null>(null);
   const calcBtnRef = useRef<HTMLButtonElement | null>(null);
   const attachBtnRef = useRef<HTMLButtonElement | null>(null);
   const startProcessingBtnRef = useRef<HTMLButtonElement | null>(null);
-  const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
-  const approveBtnRef = useRef<HTMLButtonElement | null>(null);
   const employeeTableRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
@@ -546,9 +521,11 @@ export default function PayrollRunDetailPage() {
         setSuppCheck((s) => ({ ...s, checked: false, loading: true, open: false, openId: null, openStatus: null }));
 
         const taxYearStart = ukTaxYearStartForPayDate(String(payDateIso));
-        const url = taxYearStart ? `/api/payroll/runs?taxYearStart=${encodeURIComponent(taxYearStart)}` : `/api/payroll/runs`;
+        const urlBase = taxYearStart
+          ? `/api/payroll/runs?taxYearStart=${encodeURIComponent(taxYearStart)}&includeArchived=1`
+          : `/api/payroll/runs?includeArchived=1`;
 
-        const res = await fetch(url, { cache: "no-store" });
+        const res = await fetch(urlBase, { cache: "no-store" });
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
           throw new Error(j?.error || "Failed to check supplementary runs");
@@ -557,27 +534,23 @@ export default function PayrollRunDetailPage() {
         const j: any = await res.json().catch(() => ({}));
         const runs = Array.isArray(j?.runs) ? j.runs : [];
 
-        const open = runs.find((r: any) => {
+        const existing = runs.find((r: any) => {
           const kind = String(r?.run_kind || "").trim().toLowerCase();
           const parent = String(r?.parent_run_id || "").trim();
-          const st = String(r?.status ?? "draft").trim().toLowerCase();
-          const archivedAt = r?.archived_at ?? null;
-
           if (kind !== "supplementary") return false;
           if (parent !== runId) return false;
-          if (archivedAt) return false;
-          return st !== "completed";
+          return true;
         });
 
         if (cancelled) return;
 
-        if (open?.id) {
+        if (existing?.id) {
           setSuppCheck({
             checked: true,
             loading: false,
             open: true,
-            openId: String(open.id),
-            openStatus: String(open.status ?? "draft"),
+            openId: String(existing.id),
+            openStatus: String(existing.status ?? "draft"),
           });
         } else {
           setSuppCheck({ checked: true, loading: false, open: false, openId: null, openStatus: null });
@@ -1148,57 +1121,6 @@ export default function PayrollRunDetailPage() {
     ? "Approve disabled. Working..."
     : "";
 
-  const approvalBlockerCode: ApprovalBlockerCode = !canApprove
-    ? !apiGateReady
-      ? "reload"
-      : statusLower !== "processing"
-      ? "start_processing"
-      : !attachedFlagKnown
-      ? "migrations"
-      : !attachmentsConfirmed
-      ? "confirm_attachments"
-      : seededMode
-      ? "compute_full"
-      : hasBlockingExceptions
-      ? "fix_exceptions"
-      : rows.length === 0
-      ? "attach_employees"
-      : dirty
-      ? "save_edits"
-      : hasErrors
-      ? "validation"
-      : saving
-      ? "working"
-      : "ready"
-    : "ready";
-
-  const approvalBlockerShort =
-    approvalBlockerCode === "ready"
-      ? "Approval ready."
-      : approvalBlockerCode === "reload"
-      ? "Reload to get run state."
-      : approvalBlockerCode === "start_processing"
-      ? "Start processing first."
-      : approvalBlockerCode === "migrations"
-      ? "Apply DB migrations for attachments flag."
-      : approvalBlockerCode === "confirm_attachments"
-      ? "Confirm all due employees are attached."
-      : approvalBlockerCode === "compute_full"
-      ? "Run full calculation to exit seeded mode."
-      : approvalBlockerCode === "fix_exceptions"
-      ? `Fix blocking exceptions (${blockingCount}).`
-      : approvalBlockerCode === "attach_employees"
-      ? "Attach employees to this run."
-      : approvalBlockerCode === "save_edits"
-      ? "Save or discard edits."
-      : approvalBlockerCode === "validation"
-      ? "Fix validation errors."
-      : approvalBlockerCode === "working"
-      ? "Working..."
-      : "Approval ready.";
-
-  const approvalStatusLine = canApprove ? "Ready to approve." : approvalBlockerShort;
-
   const showDataMismatchNote = !loading && rows.length === 0 && Number(apiTotals.gross) > 0;
 
   const openExceptionsPanel = () => {
@@ -1210,60 +1132,11 @@ export default function PayrollRunDetailPage() {
     }, 0);
   };
 
-  const onClickApprovalStatusLine = () => {
-    if (approvalBlockerCode === "reload") {
-      load();
-      return;
-    }
-
-    if (approvalBlockerCode === "start_processing") {
-      focusRef(startProcessingBtnRef.current);
-      return;
-    }
-
-    if (approvalBlockerCode === "confirm_attachments") {
-      focusRef(confirmBtnRef.current);
-      return;
-    }
-
-    if (approvalBlockerCode === "compute_full") {
-      focusRef(calcBtnRef.current);
-      return;
-    }
-
-    if (approvalBlockerCode === "fix_exceptions") {
-      openExceptionsPanel();
-      return;
-    }
-
-    if (approvalBlockerCode === "attach_employees") {
-      focusRef(attachBtnRef.current);
-      return;
-    }
-
-    if (approvalBlockerCode === "save_edits") {
-      focusRef(saveBtnRef.current);
-      return;
-    }
-
-    if (approvalBlockerCode === "validation") {
-      focusRef(employeeTableRef.current);
-      return;
-    }
-  };
-
-  const approvalStatusClickable =
-    approvalBlockerCode === "reload" ||
-    approvalBlockerCode === "start_processing" ||
-    approvalBlockerCode === "confirm_attachments" ||
-    approvalBlockerCode === "compute_full" ||
-    approvalBlockerCode === "fix_exceptions" ||
-    approvalBlockerCode === "attach_employees" ||
-    approvalBlockerCode === "save_edits" ||
-    approvalBlockerCode === "validation";
-
   const headline = runNameFromApi ? runNameFromApi : runNumber !== MISSING ? `Run ${runNumber}` : "Run";
   const kindChip = isSupplementary ? "SUPPLEMENTARY" : "PRIMARY";
+
+  const showOpenSupplementaryButton =
+    !loading && !isSupplementary && suppCheck.checked && suppCheck.open && isUuid(String(suppCheck.openId || ""));
 
   const showCreateSupplementaryButton =
     !loading &&
@@ -1279,7 +1152,8 @@ export default function PayrollRunDetailPage() {
   const canStartProcessing = !loading && !!runId && !saving && statusLower === "draft" && !dirty && !hasErrors;
   const canMarkRtiSubmitted = !loading && !!runId && !saving && statusLower === "approved" && !dirty;
   const canMarkCompleted = !loading && !!runId && !saving && statusLower === "rti_submitted" && !dirty;
-  const canCancelRun = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
+  const canCancelRun =
+    !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing") && !dirty;
 
   const recalcAllowed = !loading && !!runId && !saving && (statusLower === "draft" || statusLower === "processing");
 
@@ -1319,9 +1193,6 @@ export default function PayrollRunDetailPage() {
     }
     attachDueEmployees();
   };
-
-  const step4HeaderDisabled = !(statusLower === "processing" && attachedFlagKnown);
-  const step5HeaderDisabled = false;
 
   const topSaveDisabled = !canEditRun || !dirty || hasErrors || saving || rows.length === 0;
   const topSaveTitle = !canEditRun
@@ -1529,13 +1400,9 @@ export default function PayrollRunDetailPage() {
                     step={4}
                     label="Confirm attachments"
                     done={step4Done}
-                    disabled={step4HeaderDisabled}
-                    onClick={() => focusRef(confirmBtnRef.current)}
-                    title={
-                      step4HeaderDisabled
-                        ? "Confirm attachments during processing."
-                        : "Go to the Confirm attachments action in Primary actions."
-                    }
+                    disabled={step4Done || !canConfirmAttachments}
+                    onClick={() => setAttachedAllDueEmployees(true)}
+                    title={step4Done ? "Attachments already confirmed." : toggleAttachedTitle}
                     stretch
                   />
 
@@ -1543,9 +1410,9 @@ export default function PayrollRunDetailPage() {
                     step={5}
                     label="Approve run"
                     done={step5Done}
-                    disabled={step5HeaderDisabled}
-                    onClick={() => focusRef(approveBtnRef.current)}
-                    title="Go to the Approve action in Primary actions."
+                    disabled={step5Done || !canApprove}
+                    onClick={approveRun}
+                    title={step5Done ? "Run already approved." : approveDisabledReason || "Approve and queue FPS"}
                     stretch
                   />
 
@@ -1612,6 +1479,17 @@ export default function PayrollRunDetailPage() {
                   Back to Runs
                 </Link>
 
+                {showOpenSupplementaryButton ? (
+                  <Link
+                    href={`/dashboard/payroll/${suppCheck.openId}`}
+                    className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                    style={{ backgroundColor: "#000000" }}
+                    title={`A supplementary run already exists (${String(suppCheck.openStatus || "draft").toUpperCase()}). Open it.`}
+                  >
+                    Open supplementary run
+                  </Link>
+                ) : null}
+
                 {showCreateSupplementaryButton ? (
                   <button
                     type="button"
@@ -1623,11 +1501,26 @@ export default function PayrollRunDetailPage() {
                       opacity: saving || !runId ? 0.6 : 1,
                       cursor: saving || !runId ? "not-allowed" : "pointer",
                     }}
-                    title="Create a supplementary run for this same pay period (no auto-attach)"
+                    title="Create a supplementary run for this same pay period (manual attach)"
                   >
                     {actionBusy === "supp" ? "Creating..." : "Create supplementary run"}
                   </button>
                 ) : null}
+
+                <button
+                  type="button"
+                  onClick={saveChanges}
+                  disabled={topSaveDisabled}
+                  className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{
+                    backgroundColor: "#000000",
+                    opacity: topSaveDisabled ? 0.6 : 1,
+                    cursor: topSaveDisabled ? "not-allowed" : "pointer",
+                  }}
+                  title={topSaveTitle}
+                >
+                  {actionBusy === "save" ? "Saving..." : "Save Changes"}
+                </button>
 
                 <button
                   type="button"
@@ -1709,7 +1602,7 @@ export default function PayrollRunDetailPage() {
 
           {showProcessingAttachmentPrompt ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-              Approval is blocked until you confirm all due employees are attached. Use Step 4 in Primary actions.
+              Approval is blocked until you confirm all due employees are attached. Use Step 4 above.
             </div>
           ) : null}
 
@@ -1764,99 +1657,6 @@ export default function PayrollRunDetailPage() {
           ) : null}
         </div>
 
-        <div className="sticky top-3 z-40">
-          <div className="rounded-2xl bg-white/95 shadow-sm ring-1 ring-neutral-300 px-5 py-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-col gap-1">
-                <div className="text-sm font-extrabold text-slate-900">Primary actions</div>
-
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                  <div className="text-xs font-semibold text-slate-600">
-                    Approval requires Processing, Confirm attachments, seededMode off, and 0 blocking exceptions.
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={onClickApprovalStatusLine}
-                    disabled={!approvalStatusClickable}
-                    className="text-xs font-semibold text-slate-700"
-                    style={{
-                      cursor: approvalStatusClickable ? "pointer" : "default",
-                      opacity: approvalStatusClickable ? 1 : 0.9,
-                      textDecoration: approvalStatusClickable ? "underline" : "none",
-                      background: "transparent",
-                      padding: 0,
-                    }}
-                    title={approvalStatusClickable ? "Click to jump to the relevant action." : "No quick action available for this blocker."}
-                  >
-                    {approvalStatusLine}
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-                <StepButton
-                  step={4}
-                  label={attachmentsConfirmed ? "Attachments confirmed" : "Confirm attachments"}
-                  done={attachmentsConfirmed}
-                  disabled={!canConfirmAttachments}
-                  onClick={() => setAttachedAllDueEmployees(true)}
-                  title={toggleAttachedTitle}
-                  buttonRef={confirmBtnRef}
-                  size="lg"
-                />
-
-                {statusLower === "processing" && attachedFlagKnown && attachmentsConfirmed ? (
-                  <button
-                    type="button"
-                    onClick={() => setAttachedAllDueEmployees(false)}
-                    disabled={!canConfirmAttachments}
-                    className="text-xs font-semibold"
-                    style={{
-                      color: WF_BLUE,
-                      textDecoration: "underline",
-                      opacity: canConfirmAttachments ? 1 : 0.6,
-                      cursor: canConfirmAttachments ? "pointer" : "not-allowed",
-                      background: "transparent",
-                      padding: 0,
-                    }}
-                    title="Clear the confirmation (processing only)"
-                  >
-                    Reset
-                  </button>
-                ) : null}
-
-                <button
-                  ref={saveBtnRef}
-                  type="button"
-                  onClick={saveChanges}
-                  disabled={topSaveDisabled}
-                  className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition"
-                  style={{
-                    backgroundColor: topSaveDisabled ? WF_BLUE : WF_GREEN,
-                    opacity: topSaveDisabled ? 0.6 : 1,
-                    cursor: topSaveDisabled ? "not-allowed" : "pointer",
-                  }}
-                  title={topSaveTitle}
-                >
-                  {actionBusy === "save" ? "Saving..." : "Save Changes"}
-                </button>
-
-                <StepButton
-                  step={5}
-                  label={approveDone ? "Approved" : "Approve run"}
-                  done={approveDone}
-                  disabled={!canApprove}
-                  onClick={approveRun}
-                  title={approveDisabledReason || "Approve and queue FPS"}
-                  buttonRef={approveBtnRef}
-                  size="lg"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div
           ref={exceptionsAnchorRef}
           className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden"
@@ -1864,7 +1664,9 @@ export default function PayrollRunDetailPage() {
           <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col">
               <div className="text-base font-extrabold text-slate-900">Exceptions</div>
-              <div className="text-sm text-slate-700">{loading ? "Loading..." : `${blockingCount} blocking, ${warningCount} warnings`}</div>
+              <div className="text-sm text-slate-700">
+                {loading ? "Loading..." : `${blockingCount} blocking, ${warningCount} warnings`}
+              </div>
             </div>
 
             <button
@@ -1914,7 +1716,10 @@ export default function PayrollRunDetailPage() {
                         <div key={`blk-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
+                            <span
+                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
+                              style={chip.style}
+                            >
                               {chip.label}
                             </span>
                           </div>
@@ -1940,7 +1745,9 @@ export default function PayrollRunDetailPage() {
                                 Fix on employee file
                               </Link>
                             ) : (
-                              <span className="text-xs font-semibold text-slate-600">Missing employee_id in exception payload.</span>
+                              <span className="text-xs font-semibold text-slate-600">
+                                Missing employee_id in exception payload.
+                              </span>
                             )}
                           </div>
                         </div>
@@ -1966,7 +1773,10 @@ export default function PayrollRunDetailPage() {
                         <div key={`wrn-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="text-sm font-extrabold text-slate-900">{g.name}</div>
-                            <span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>
+                            <span
+                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
+                              style={chip.style}
+                            >
                               {chip.label}
                             </span>
                           </div>
@@ -2016,10 +1826,7 @@ export default function PayrollRunDetailPage() {
           <StatTile title="Total Net" value={gbp(displayTotals.net)} />
         </div>
 
-        <div
-          ref={employeeTableRef}
-          className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden"
-        >
+        <div ref={employeeTableRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
           <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-extrabold text-slate-900">Employees in this run</h2>
             <div className="text-sm text-slate-700">Edit amounts, save, export CSV, or open a payslip.</div>
@@ -2168,12 +1975,16 @@ export default function PayrollRunDetailPage() {
           </div>
 
           <div className="px-5 py-4 text-sm text-slate-700">
-            Live totals reflect your edits. Net defaults to Gross minus Deductions. Approval is blocked until Processing, attachments confirmed, seededMode is false and there are no blocking exceptions.
+            Live totals reflect your edits. Net defaults to Gross minus Deductions. Approval is blocked until Processing,
+            attachments confirmed, seededMode is false and there are no blocking exceptions.
           </div>
         </div>
 
         {confirmOpen && confirmCfg ? (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          >
             <div className="w-full max-w-xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex items-center justify-between border-b border-neutral-200">
                 <div className="text-base font-extrabold text-slate-900">{confirmCfg.title}</div>
@@ -2230,7 +2041,10 @@ export default function PayrollRunDetailPage() {
         ) : null}
 
         {attachOpen ? (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}>
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          >
             <div className="w-full max-w-3xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
               <div className="px-5 py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-200">
                 <div className="flex flex-col">
@@ -2353,7 +2167,9 @@ export default function PayrollRunDetailPage() {
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={(e) => setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))}
+                                    onChange={(e) =>
+                                      setSelectedIds((prev) => ({ ...prev, [id]: Boolean(e.target.checked) }))
+                                    }
                                     className="h-5 w-5"
                                   />
                                 </td>
