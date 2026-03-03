@@ -159,6 +159,12 @@ function parseBoolStrict(v: any): boolean | null {
   return null;
 }
 
+function truncateText(s: string, max: number) {
+  const raw = String(s || "");
+  if (raw.length <= max) return raw;
+  return raw.slice(0, Math.max(0, max - 1)).trimEnd() + "…";
+}
+
 /* -----------------------
    Run label + period fallbacks
 ------------------------ */
@@ -195,6 +201,17 @@ function ukTaxYearStartForPayDate(payDateIso: string) {
 
   const start = new Date(Date.UTC(startYear, 3, 6));
   return isoDateOnlyFromUtc(start);
+}
+
+function payeTaxMonthNumber(payDateIso: string) {
+  const s = String(payDateIso || "").trim();
+  if (!isIsoDateOnly(s)) return null;
+
+  const d = parseIsoDateOnlyToUtc(s);
+  const shifted = addDaysUtc(d, -5); // PAYE tax month runs 6th -> 5th; shift aligns to calendar months
+  const m = shifted.getUTCMonth();
+  const mth = m >= 3 ? m - 3 + 1 : m + 9 + 1; // April=1 ... March=12
+  return mth;
 }
 
 function makeRunNumberFromPayDate(frequency: Frequency, payDateIso: string | null) {
@@ -647,6 +664,9 @@ export default function PayrollRunDetailPage() {
     pickFirst(runObj.pay_date_override_reason, runObj.payDateOverrideReason, "") || ""
   ).trim();
 
+  const payDateOverriddenFromApi =
+    parseBoolStrict(pickFirst(runObj.pay_date_overridden, runObj.payDateOverridden, null)) === true;
+
   useEffect(() => {
     const currentIso = payDateIsoRaw ? String(payDateIsoRaw).slice(0, 10) : "";
     if (!suppPayDateTouched) {
@@ -744,7 +764,9 @@ export default function PayrollRunDetailPage() {
       setSuppPayDateReasonTouched(false);
 
       await load();
-      setApprovedMsg("Pay date updated for supplementary run.");
+
+      const shortReason = truncateText(reason, 90);
+      setApprovedMsg(`Supplementary pay date updated to ${formatUkDate(nextIso)}. Reason: ${shortReason}`);
     } catch (e: any) {
       setErr(e?.message || "Failed to update pay date");
     } finally {
@@ -1300,6 +1322,16 @@ export default function PayrollRunDetailPage() {
     !reasonValid ||
     (isIsoDateOnly(payDateIso) && suppPayDateDraft === payDateIso && reasonTrimmed === payDateOverrideReasonFromApi);
 
+  const currentTaxMonth = isIsoDateOnly(payDateIso) ? payeTaxMonthNumber(payDateIso) : null;
+  const draftTaxMonth = isIsoDateOnly(suppPayDateDraft) ? payeTaxMonthNumber(suppPayDateDraft) : null;
+  const showTaxMonthWarning =
+    showSuppPayDateEditor &&
+    isIsoDateOnly(payDateIso) &&
+    isIsoDateOnly(suppPayDateDraft) &&
+    currentTaxMonth !== null &&
+    draftTaxMonth !== null &&
+    currentTaxMonth !== draftTaxMonth;
+
   return (
     <PageTemplate title="Payroll" currentSection="payroll">
       <div className="flex flex-col gap-4">
@@ -1405,6 +1437,20 @@ export default function PayrollRunDetailPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold">Pay date:</span>
 
+                    {isSupplementary ? (
+                      <span
+                        className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
+                        style={{
+                          backgroundColor: payDateOverriddenFromApi ? "rgba(16,185,129,0.12)" : "rgba(148,163,184,0.14)",
+                          borderColor: payDateOverriddenFromApi ? "#6ee7b7" : "#cbd5e1",
+                          color: payDateOverriddenFromApi ? "#065f46" : "#334155",
+                        }}
+                        title="Whether this supplementary run pay date has been overridden"
+                      >
+                        Override: {payDateOverriddenFromApi ? "YES" : "NO"}
+                      </span>
+                    ) : null}
+
                     {showSuppPayDateEditor ? (
                       <div className="flex flex-wrap items-center gap-2">
                         <input
@@ -1472,16 +1518,33 @@ export default function PayrollRunDetailPage() {
                           }}
                         />
                       </div>
+
                       {!reasonValid ? (
                         <div className="text-xs font-semibold text-amber-800">
                           Reason is required to save a supplementary pay date change.
                         </div>
                       ) : null}
+
+                      {showTaxMonthWarning ? (
+                        <div className="mt-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                          Warning: This change moves the pay date into a different PAYE tax month (Month {currentTaxMonth} → Month{" "}
+                          {draftTaxMonth}). This can affect RTI/FPS timing and PAYE/NI month-end reconciliation.
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 
-                  {!showSuppPayDateEditor && isSupplementary && payDateOverrideReasonFromApi ? (
-                    <div className="text-xs font-semibold text-slate-600">Pay date override reason: {payDateOverrideReasonFromApi}</div>
+                  {!showSuppPayDateEditor && isSupplementary ? (
+                    <div className="text-xs font-semibold text-slate-600">
+                      {payDateOverriddenFromApi ? (
+                        <>
+                          Pay date override reason:{" "}
+                          {payDateOverrideReasonFromApi ? truncateText(payDateOverrideReasonFromApi, 120) : MISSING}
+                        </>
+                      ) : (
+                        <>Pay date override reason: {MISSING}</>
+                      )}
+                    </div>
                   ) : null}
                 </div>
               </div>
