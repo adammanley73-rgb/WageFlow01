@@ -1,4 +1,4 @@
-// C:\Users\adamm\Projects\wageflow01\components\marketing\landings\TheBusinessConsortiumLanding.tsx
+// C:\Projects\wageflow01\components\marketing\landings\TheBusinessConsortiumLanding.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -73,7 +73,7 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
   const CONTACT_BODY =
     "Welcome to The Business Consortium Ltd's initial contact method.\n\n" +
     "Before we can help you, we just need a few details from you, listed below.\n" +
-    "Please answer the questions as best you can and when you're happy with your responses, hit that \"Send\" button.\n" +
+    'Please answer the questions as best you can and when you\'re happy with your responses, hit that "Send" button.\n' +
     "When we receive your enquiry, one of the onboarding team will be in touch; this usually happens within an hour as we don't believe in keeping people waiting; employees' wages are important so we treat them as such.\n\n" +
     "Name of company:\n" +
     "Name of company contact and their position in company:\n" +
@@ -168,30 +168,30 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
       },
       {
         name: "PeopleFlow",
-        tagline: "Coming 2025",
+        tagline: "Coming 2026-2027",
         description:
           "HR workflows and employee records designed to sit cleanly alongside WageFlow, without the mess.",
-        badge: "Coming 2025",
+        badge: "Coming 2026-2027",
         icon: <Users className="w-6 h-6" aria-hidden="true" />,
         logoSrc: "/PeopleFlow.png",
         comingSoon: true,
       },
       {
         name: "AccountsFlow",
-        tagline: "Coming 2025",
+        tagline: "Coming 2026-2027",
         description:
           "Finance ops and reporting that stays aligned with payroll and people data, without spreadsheet chaos.",
-        badge: "Coming 2025",
+        badge: "Coming 2026-2027",
         icon: <Briefcase className="w-6 h-6" aria-hidden="true" />,
         logoSrc: "/AccountsFlow.png",
         comingSoon: true,
       },
       {
         name: "BusinessFlow",
-        tagline: "Coming 2026",
+        tagline: "Coming 2026-2027",
         description:
           "BusinessFlow is the full package name when WageFlow, PeopleFlow, and AccountsFlow are used together.",
-        badge: "Coming 2026",
+        badge: "Coming 2026-2027",
         icon: <Layers className="w-6 h-6" aria-hidden="true" />,
         logoSrc: "/BusinessFlowLogo.png",
         comingSoon: true,
@@ -454,7 +454,7 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
                   </div>
                   <div className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-green-600" aria-hidden="true" />
-                    PeopleFlow and AccountsFlow launching 2025-2026
+                    PeopleFlow and AccountsFlow launching 2026-2027
                   </div>
                   <div className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-green-600" aria-hidden="true" />
@@ -544,7 +544,7 @@ export default function TheBusinessConsortiumLanding({ initialShowIntro }: Props
             <div className="text-center mb-12">
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Products</h2>
               <p className="text-lg text-gray-700 mt-3 max-w-3xl mx-auto">
-                WageFlow is live now. Other products launching 2025-2026.
+                WageFlow is live now. Other products launching 2026-2027.
               </p>
             </div>
 
