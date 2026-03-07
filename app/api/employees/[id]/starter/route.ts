@@ -1,5 +1,3 @@
-// C:\Projects\wageflow01\app\api\employees\[id]\starter\route.ts
-
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -13,7 +11,7 @@ type StudentLoanPlanDb = "plan1" | "plan2" | "plan4" | "plan5" | null;
 type StudentLoanPlanUi = "none" | "plan1" | "plan2" | "plan4" | "plan5" | null;
 
 type StarterRow = {
-  employee_id: string;
+  employee_id: string; // references employees.id (UUID primary key)
   company_id: string;
   p45_provided: boolean | null;
   starter_declaration: StarterDeclaration;
@@ -72,6 +70,8 @@ function normalizeLoanPlan(v: unknown): StudentLoanPlanDb {
   const s = String(v ?? "").trim().toLowerCase();
   if (!s) return null;
 
+  // UI uses "none". DB stores that as NULL because the DB check constraint
+  // only allows plan1, plan2, plan4, plan5 or NULL.
   if (s === "none") return null;
   if (s === "plan1" || s === "plan_1" || s === "1") return "plan1";
   if (s === "plan2" || s === "plan_2" || s === "2") return "plan2";
@@ -81,18 +81,15 @@ function normalizeLoanPlan(v: unknown): StudentLoanPlanDb {
   return null;
 }
 
-function toUiLoanPlan(
-  v: unknown,
-  emptyFallback: StudentLoanPlanUi = "none"
-): StudentLoanPlanUi {
+function toUiLoanPlan(v: unknown): StudentLoanPlanUi {
   const s = String(v ?? "").trim().toLowerCase();
-  if (!s) return emptyFallback;
+  if (!s) return "none";
   if (s === "plan1") return "plan1";
   if (s === "plan2") return "plan2";
   if (s === "plan4") return "plan4";
   if (s === "plan5") return "plan5";
   if (s === "none") return "none";
-  return emptyFallback;
+  return "none";
 }
 
 function normalizeBoolean(v: unknown): boolean | null {
@@ -107,20 +104,11 @@ function hasOwn(obj: Record<string, unknown>, key: string) {
 }
 
 function toClientRow(row?: Partial<StarterRow> | null): StarterResponseRow {
-  if (!row) {
-    return {
-      p45_provided: false,
-      starter_declaration: null,
-      student_loan_plan: null,
-      postgraduate_loan: null,
-    };
-  }
-
   return {
-    p45_provided: normalizeBoolean(row.p45_provided) ?? false,
-    starter_declaration: normalizeDeclaration(row.starter_declaration),
-    student_loan_plan: toUiLoanPlan(row.student_loan_plan, "none"),
-    postgraduate_loan: normalizeBoolean(row.postgraduate_loan),
+    p45_provided: normalizeBoolean(row?.p45_provided) ?? false,
+    starter_declaration: normalizeDeclaration(row?.starter_declaration),
+    student_loan_plan: toUiLoanPlan(row?.student_loan_plan),
+    postgraduate_loan: normalizeBoolean(row?.postgraduate_loan),
   };
 }
 
@@ -134,9 +122,6 @@ function validateStarterBody(body: StarterBody) {
   const loanPlanWasSent = hasOwn(body, "student_loan_plan");
   const pglWasSent = hasOwn(body, "postgraduate_loan");
 
-  const rawDeclaration = String(body.starter_declaration ?? "").trim();
-  const rawLoanPlan = String(body.student_loan_plan ?? "").trim();
-
   const errors: string[] = [];
 
   if (p45Provided === null) {
@@ -144,6 +129,7 @@ function validateStarterBody(body: StarterBody) {
   }
 
   if (declarationWasSent) {
+    const rawDeclaration = String(body.starter_declaration ?? "").trim();
     if (!rawDeclaration) {
       errors.push("starter_declaration cannot be blank when provided.");
     } else if (starterDeclaration === null) {
@@ -152,9 +138,10 @@ function validateStarterBody(body: StarterBody) {
   }
 
   if (loanPlanWasSent) {
+    const rawLoanPlan = String(body.student_loan_plan ?? "").trim();
     if (!rawLoanPlan) {
       errors.push("student_loan_plan cannot be blank when provided.");
-    } else if (rawLoanPlan.toLowerCase() !== "none" && studentLoanPlan === null) {
+    } else if (String(rawLoanPlan).toLowerCase() !== "none" && studentLoanPlan === null) {
       errors.push('student_loan_plan must be one of "none", "plan1", "plan2", "plan4", or "plan5".');
     }
   }
@@ -163,16 +150,17 @@ function validateStarterBody(body: StarterBody) {
     errors.push("postgraduate_loan must be true or false when provided.");
   }
 
-  if (p45Provided === false) {
-    if (!declarationWasSent) {
+  const declarationFlowSubmitted =
+    p45Provided === false && (declarationWasSent || loanPlanWasSent || pglWasSent);
+
+  if (declarationFlowSubmitted) {
+    if (starterDeclaration === null) {
       errors.push("starter_declaration is required when p45_provided is false.");
     }
-
     if (!loanPlanWasSent) {
       errors.push("student_loan_plan is required when p45_provided is false.");
     }
-
-    if (!pglWasSent) {
+    if (postgraduateLoan === null) {
       errors.push("postgraduate_loan is required when p45_provided is false.");
     }
   }
@@ -182,24 +170,9 @@ function validateStarterBody(body: StarterBody) {
     errors,
     row: {
       p45_provided: p45Provided,
-      starter_declaration:
-        p45Provided === true
-          ? null
-          : declarationWasSent
-          ? starterDeclaration
-          : null,
-      student_loan_plan:
-        p45Provided === true
-          ? null
-          : loanPlanWasSent
-          ? studentLoanPlan
-          : null,
-      postgraduate_loan:
-        p45Provided === true
-          ? null
-          : pglWasSent
-          ? postgraduateLoan
-          : null,
+      starter_declaration: p45Provided === true ? null : declarationWasSent ? starterDeclaration : null,
+      student_loan_plan: loanPlanWasSent ? studentLoanPlan : null,
+      postgraduate_loan: pglWasSent ? postgraduateLoan : null,
     },
   };
 }
@@ -216,8 +189,8 @@ async function getEmployeeKeys(
 
   if (byEmployeeId.data) {
     return {
-      uuid: String((byEmployeeId.data as { id: unknown }).id),
-      company_id: String((byEmployeeId.data as { company_id: unknown }).company_id),
+      uuid: String((byEmployeeId.data as any).id),
+      company_id: String((byEmployeeId.data as any).company_id),
     };
   }
 
@@ -230,8 +203,8 @@ async function getEmployeeKeys(
 
     if (byId.data) {
       return {
-        uuid: String((byId.data as { id: unknown }).id),
-        company_id: String((byId.data as { company_id: unknown }).company_id),
+        uuid: String((byId.data as any).id),
+        company_id: String((byId.data as any).company_id),
       };
     }
   }
@@ -240,13 +213,7 @@ async function getEmployeeKeys(
 }
 
 function dbErrPayload(err: unknown) {
-  const e = err as {
-    message?: unknown;
-    hint?: unknown;
-    code?: unknown;
-    details?: unknown;
-  } | null;
-
+  const e = err as { message?: unknown; hint?: unknown; code?: unknown; details?: unknown } | null;
   return {
     details: String(e?.message ?? err),
     hint: e?.hint ?? null,
@@ -409,7 +376,7 @@ export async function POST(req: Request, ctx: RouteContext) {
     } else {
       const { error: insertError } = await supabase.from("employee_starters").insert(row);
 
-      const pgCode = String((insertError as { code?: unknown } | null)?.code ?? "");
+      const pgCode = String((insertError as any)?.code ?? "");
       if (pgCode === "23505") {
         const { error: updateError } = await supabase
           .from("employee_starters")
