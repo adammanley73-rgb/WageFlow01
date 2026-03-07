@@ -73,8 +73,8 @@ function normaliseStudentLoanPlan(value: unknown): StudentLoanPlan {
 }
 
 function normaliseStudentLoanPlanFromServer(value: unknown): StudentLoanPlan {
-  if (value === null || value === undefined) return "none";
-  return normaliseStudentLoanPlan(value) || "none";
+  if (value === null || value === undefined) return "";
+  return normaliseStudentLoanPlan(value);
 }
 
 function buildErrorMessage(payload: unknown, fallback: string) {
@@ -157,6 +157,15 @@ export default function DeclarationPage() {
 
   useEffect(() => {
     let alive = true;
+
+    if (!id) {
+      setErr("Missing employee id.");
+      setLoading(false);
+      return () => {
+        alive = false;
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      };
+    }
 
     (async () => {
       try {
@@ -355,6 +364,7 @@ export default function DeclarationPage() {
                     }))
                   }
                   onBlur={() => setTouched((prev) => ({ ...prev, starter_declaration: true }))}
+                  aria-invalid={touched.starter_declaration && !!fieldErrors.starter_declaration}
                   className={`mt-1 w-full rounded-md border bg-white p-2 ${
                     touched.starter_declaration && fieldErrors.starter_declaration
                       ? "border-red-600 ring-2 ring-red-200"
@@ -385,6 +395,7 @@ export default function DeclarationPage() {
                     }))
                   }
                   onBlur={() => setTouched((prev) => ({ ...prev, student_loan_plan: true }))}
+                  aria-invalid={touched.student_loan_plan && !!fieldErrors.student_loan_plan}
                   className={`mt-1 w-full rounded-md border bg-white p-2 ${
                     touched.student_loan_plan && fieldErrors.student_loan_plan
                       ? "border-red-600 ring-2 ring-red-200"
@@ -449,7 +460,7 @@ export default function DeclarationPage() {
               <button
                 type="button"
                 onClick={onSave}
-                disabled={saving || !canSave}
+                disabled={saving}
                 className="rounded-md bg-blue-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Saving..." : "Save and continue"}
