@@ -1,4 +1,4 @@
-/* C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\new\page.tsx */
+/* C:\Projects\wageflow01\app\dashboard\employees\new\page.tsx */
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -20,6 +20,7 @@ interface FormState {
 
   employment_type: string;
   apprenticeship_year: string;
+  p45_provided: boolean | null;
 
   salary: string;
   hourly_rate: string;
@@ -39,6 +40,20 @@ interface FormState {
 const WEEKS_PER_YEAR = 52.14285714;
 
 type PaySource = "salary" | "hourly" | null;
+type NmwBand = "over21" | "age18to20" | "under18" | "apprentice";
+
+type NmwRates = {
+  effectiveFrom: string;
+  over21: number;
+  age18to20: number;
+  under18: number;
+  apprentice: number;
+};
+
+const NMW_RATES: NmwRates[] = [
+  { effectiveFrom: "2025-04-01", over21: 12.21, age18to20: 10.0, under18: 7.55, apprentice: 7.55 },
+  { effectiveFrom: "2026-04-01", over21: 12.71, age18to20: 10.85, under18: 8.0, apprentice: 8.0 },
+];
 
 function cleanNi(raw: string) {
   return String(raw || "")
@@ -89,6 +104,10 @@ function isValidNi(ni: string) {
   return /^[A-Z]{2}\d{6}[A-Z]$/.test(ni);
 }
 
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+}
+
 function toNumberOrNull(v: string) {
   const s = String(v ?? "").trim();
   if (!s) return null;
@@ -101,7 +120,7 @@ function moneyRound(n: number) {
 }
 
 function fmtMoney(n: number) {
-  return moneyRound(n).toFixed(2);
+  return moneyRound(n).toFixed(2).replace(/\.?0+$/, "");
 }
 
 function hasAnyText(...vals: string[]) {
@@ -121,22 +140,6 @@ function calcAge(dob: Date, asOf: Date) {
   if (m < 0 || (m === 0 && asOf.getDate() < dob.getDate())) age--;
   return age;
 }
-
-/*
-  NMW rates are placeholders until you wire a proper rates table.
-*/
-type NmwBand = "over21" | "age18to20" | "under18" | "apprentice";
-type NmwRates = {
-  effectiveFrom: string;
-  over21: number;
-  age18to20: number;
-  under18: number;
-  apprentice: number;
-};
-
-const NMW_RATES: NmwRates[] = [
-  { effectiveFrom: "2025-04-01", over21: 12.21, age18to20: 10.0, under18: 7.55, apprentice: 7.55 },
-];
 
 function getApplicableRates(asOf: Date): NmwRates {
   const asOfTs = asOf.getTime();
@@ -177,10 +180,15 @@ function getRequiredNmw(
 }
 
 function bandLabel(band: NmwBand) {
-  if (band === "over21") return "21+ (NLW)";
+  if (band === "over21") return "21+";
   if (band === "age18to20") return "18-20";
   if (band === "under18") return "Under 18";
-  return "Apprentice (eligible)";
+  return "Apprentice";
+}
+
+function isJson(res: Response) {
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json");
 }
 
 export default function NewEmployeePage() {
@@ -202,6 +210,7 @@ export default function NewEmployeePage() {
 
     employment_type: "full_time",
     apprenticeship_year: "1",
+    p45_provided: null,
 
     salary: "",
     hourly_rate: "",
@@ -222,6 +231,7 @@ export default function NewEmployeePage() {
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const [empNoLoading, setEmpNoLoading] = useState(false);
   const [empNoErr, setEmpNoErr] = useState<string | null>(null);
@@ -408,7 +418,7 @@ export default function NewEmployeePage() {
     if (!required || payHourly === null) {
       return {
         ready: false,
-        message: "NMW check needs Date of birth and an hourly figure (hourly rate or salary plus hours).",
+        message: "NMW check needs Date of birth and an hourly figure.",
         requiredRate: null as number | null,
         payHourly: payHourly,
         band: null as NmwBand | null,
@@ -431,6 +441,19 @@ export default function NewEmployeePage() {
       below,
     };
   }, [form.start_date, form.date_of_birth, form.employment_type, form.apprenticeship_year, form.hourly_rate]);
+
+  useEffect(() => {
+    if (!nmw.ready || nmw.below !== false) {
+      setSuccessMsg(null);
+      return;
+    }
+
+    setSuccessMsg(
+      `Hourly rate complies with NMW. ${bandLabel(nmw.band as NmwBand)} minimum is £${(nmw.requiredRate as number).toFixed(
+        2
+      )} from ${nmw.effectiveFrom}.`
+    );
+  }, [nmw.ready, nmw.below, nmw.band, nmw.requiredRate, nmw.effectiveFrom]);
 
   const niPreview = useMemo(() => {
     const formatted = formatNiInput(form.ni_number || "");
@@ -459,14 +482,39 @@ export default function NewEmployeePage() {
       return;
     }
 
+    if (!isValidEmail(email)) {
+      setErr("Enter a valid email address.");
+      return;
+    }
+
+    if (!form.job_title.trim()) {
+      setErr("Job title is required.");
+      return;
+    }
+
     if (!form.start_date) {
       setErr("Start date is required.");
       return;
     }
 
+    if (!form.date_of_birth) {
+      setErr("Date of birth is required.");
+      return;
+    }
+
+    if (!form.employment_type) {
+      setErr("Employment type is required.");
+      return;
+    }
+
+    if (form.p45_provided === null) {
+      setErr("Please confirm whether a P45 has been supplied.");
+      return;
+    }
+
     const ni = cleanNi(form.ni_number);
-    if (ni && !isValidNi(ni)) {
-      setErr("NI number must be 2 letters, 6 numbers, then 1 letter. Example: AB123456C.");
+    if (!ni || !isValidNi(ni)) {
+      setErr("NI number is required and must be 2 letters, 6 numbers, then 1 letter. Example: AB123456C.");
       return;
     }
 
@@ -474,20 +522,28 @@ export default function NewEmployeePage() {
     const salary = toNumberOrNull(form.salary);
     const hourly = toNumberOrNull(form.hourly_rate);
 
-    const hasAnyPayInput =
-      String(form.salary || "").trim() !== "" ||
-      String(form.hourly_rate || "").trim() !== "" ||
-      String(form.hours_per_week || "").trim() !== "";
+    if (!hours || hours <= 0) {
+      setErr("Hours per week is required.");
+      return;
+    }
 
-    if (hasAnyPayInput) {
-      if (!hours || hours <= 0) {
-        setErr("Enter hours per week so pay can be validated.");
-        return;
-      }
-      if ((salary === null || salary <= 0) && (hourly === null || hourly <= 0)) {
-        setErr("Enter annual salary or hourly rate.");
-        return;
-      }
+    if (salary === null || salary <= 0) {
+      setErr("Annual salary is required.");
+      return;
+    }
+
+    if (hourly === null || hourly <= 0) {
+      setErr("Hourly rate is required.");
+      return;
+    }
+
+    if (nmw.ready && nmw.below) {
+      setErr(
+        `Hourly rate is below NMW. ${bandLabel(nmw.band as NmwBand)} minimum is £${(nmw.requiredRate as number).toFixed(
+          2
+        )}.`
+      );
+      return;
     }
 
     const addressFilled = hasAnyText(
@@ -519,14 +575,14 @@ export default function NewEmployeePage() {
       first_name: first,
       last_name: last,
       email,
-      job_title: form.job_title.trim() || null,
+      job_title: form.job_title.trim(),
       start_date: form.start_date,
-      date_of_birth: form.date_of_birth || null,
+      date_of_birth: form.date_of_birth,
 
       employment_type: form.employment_type,
       pay_frequency: form.pay_frequency,
 
-      ni_number: ni || null,
+      ni_number: ni,
 
       annual_salary: salary !== null ? moneyRound(salary) : null,
       hourly_rate: hourly !== null ? moneyRound(hourly) : null,
@@ -555,11 +611,11 @@ export default function NewEmployeePage() {
       }
 
       const employeeId =
-        data?.employee?.id ||
         data?.employee?.employee_id ||
         data?.employee_id ||
         data?.id ||
-        data?.employeeId;
+        data?.employeeId ||
+        data?.employee?.id;
 
       if (!employeeId) {
         setErr("Employee created but no id returned by API.");
@@ -567,7 +623,32 @@ export default function NewEmployeePage() {
         return;
       }
 
-      router.push(`/dashboard/employees/${employeeId}/wizard/starter`);
+      const starterRes = await fetch(`/api/employees/${employeeId}/starter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          p45_provided: form.p45_provided,
+        }),
+      });
+
+      if (!starterRes.ok) {
+        const j = isJson(starterRes) ? await starterRes.json().catch(() => ({} as any)) : {};
+        const detail =
+          j?.message ||
+          (Array.isArray(j?.details) ? j.details.join(" ") : "") ||
+          j?.error ||
+          "Failed to save P45 status.";
+        setErr(detail);
+        setSaving(false);
+        return;
+      }
+
+      if (form.p45_provided === true) {
+        router.push(`/dashboard/employees/${employeeId}/wizard/p45`);
+        return;
+      }
+
+      router.push(`/dashboard/employees/${employeeId}/wizard/declaration`);
     } catch {
       setErr("Create employee failed. Network or server error.");
       setSaving(false);
@@ -580,6 +661,13 @@ export default function NewEmployeePage() {
     "w-44 inline-flex items-center justify-center rounded-lg bg-[#0f3c85] px-5 py-2 text-white font-semibold disabled:opacity-60 hover:bg-[#0c2f68]";
   const BTN_SECONDARY =
     "w-44 inline-flex items-center justify-center rounded-lg border border-neutral-400 bg-white px-5 py-2 text-neutral-900 font-semibold hover:bg-neutral-50";
+
+  const p45ButtonClass = (selected: boolean) =>
+    `rounded-lg border px-4 py-2 text-sm font-medium ${
+      selected
+        ? "border-[#0f3c85] bg-blue-50 text-[#0f3c85] ring-2 ring-blue-200"
+        : "border-neutral-300 bg-white text-neutral-900 hover:bg-neutral-50"
+    }`;
 
   return (
     <PT currentSection="employees" title="New employee">
@@ -594,10 +682,11 @@ export default function NewEmployeePage() {
           <div className="rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6">
             <h1 className="text-2xl font-semibold text-neutral-900">Create employee</h1>
             <p className="mt-1 text-sm text-neutral-700">
-              Create the employee record, then you will be redirected into the wizard.
+              Create the employee record, capture P45 status, then route straight into the correct onboarding step.
             </p>
 
             {err ? <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{err}</div> : null}
+            {successMsg ? <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{successMsg}</div> : null}
 
             <form onSubmit={onSubmit} className="mt-6 space-y-6">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -612,6 +701,29 @@ export default function NewEmployeePage() {
                   />
                   <div className="mt-1 text-xs text-neutral-600">
                     {empNoErr ? empNoErr : "Auto-filled. You can change it if needed."}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-800">Has a P45 been supplied?</label>
+                  <div className="mt-1 flex gap-3">
+                    <button
+                      type="button"
+                      className={p45ButtonClass(form.p45_provided === true)}
+                      onClick={() => setField("p45_provided", true)}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      className={p45ButtonClass(form.p45_provided === false)}
+                      onClick={() => setField("p45_provided", false)}
+                    >
+                      No
+                    </button>
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-600">
+                    Required. This decides whether WageFlow routes to P45 details or New Starter Declaration.
                   </div>
                 </div>
 
@@ -653,6 +765,43 @@ export default function NewEmployeePage() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm text-neutral-800">Date of birth</label>
+                  <input
+                    type="date"
+                    value={form.date_of_birth}
+                    onChange={(e) => setField("date_of_birth", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    name="date_of_birth"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-800">NI number</label>
+                  <input
+                    value={form.ni_number}
+                    onChange={(e) => setField("ni_number", formatNiInput(e.target.value))}
+                    className={`mt-1 w-full rounded-lg border bg-white px-3 py-2 text-neutral-900 ${
+                      !niPreview.valid ? "border-red-500" : "border-neutral-300"
+                    }`}
+                    name="ni_number"
+                    placeholder="AB123456C"
+                    maxLength={9}
+                    inputMode="text"
+                    pattern="[A-Z]{2}[0-9]{6}[A-Z]"
+                    title="2 letters, 6 numbers, then 1 letter. Example: AB123456C"
+                  />
+                  <div className={`mt-1 text-xs ${!niPreview.valid ? "text-red-700" : "text-neutral-600"}`}>
+                    {!niPreview.hasAny
+                      ? "Required. Must be AB123456C format."
+                      : !niPreview.complete
+                      ? `Keep going. Normalised: ${niPreview.cleaned}`
+                      : niPreview.valid
+                      ? `Normalised: ${niPreview.cleaned}`
+                      : "Invalid format. Must be 2 letters + 6 digits + 1 letter. Example AB123456C."}
+                  </div>
+                </div>
+
                 <div className="md:col-span-2">
                   <label className="block text-sm text-neutral-800">Email</label>
                   <input
@@ -683,17 +832,6 @@ export default function NewEmployeePage() {
                     onChange={(e) => setField("start_date", e.target.value)}
                     className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                     name="start_date"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm text-neutral-800">Date of birth</label>
-                  <input
-                    type="date"
-                    value={form.date_of_birth}
-                    onChange={(e) => setField("date_of_birth", e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                    name="date_of_birth"
                   />
                 </div>
 
@@ -735,32 +873,6 @@ export default function NewEmployeePage() {
                 ) : (
                   <div />
                 )}
-
-                <div>
-                  <label className="block text-sm text-neutral-800">NI number</label>
-                  <input
-                    value={form.ni_number}
-                    onChange={(e) => setField("ni_number", formatNiInput(e.target.value))}
-                    className={`mt-1 w-full rounded-lg border bg-white px-3 py-2 text-neutral-900 ${
-                      !niPreview.valid ? "border-red-500" : "border-neutral-300"
-                    }`}
-                    name="ni_number"
-                    placeholder="AB123456C"
-                    maxLength={9}
-                    inputMode="text"
-                    pattern="[A-Z]{2}[0-9]{6}[A-Z]"
-                    title="2 letters, 6 numbers, then 1 letter. Example: AB123456C"
-                  />
-                  <div className={`mt-1 text-xs ${!niPreview.valid ? "text-red-700" : "text-neutral-600"}`}>
-                    {!niPreview.hasAny
-                      ? "Optional. If provided, must be AB123456C format."
-                      : !niPreview.complete
-                        ? `Keep going. Normalised: ${niPreview.cleaned}`
-                        : niPreview.valid
-                          ? `Normalised: ${niPreview.cleaned}`
-                          : "Invalid format. Must be 2 letters + 6 digits + 1 letter. Example AB123456C."}
-                  </div>
-                </div>
 
                 <div className="md:col-span-2">
                   <div className="rounded-lg border border-neutral-300 bg-white p-4">
@@ -898,12 +1010,12 @@ export default function NewEmployeePage() {
                           per hour. Your hourly figure:{" "}
                           <span className="font-semibold">£{(nmw.payHourly as number).toLocaleString("en-GB")}</span>.
                           <div className="mt-1 text-xs text-neutral-600">
-                            Rates applied from {nmw.effectiveFrom}. Final compliance is validated in payroll runs.
+                            Rates applied from {nmw.effectiveFrom}.
                           </div>
                         </div>
                       ) : (
                         <div className="mt-2 text-xs text-neutral-600">
-                          Tip: enter Date of birth and Hours per week, then enter Annual salary or Hourly rate.
+                          Enter Date of birth and Hours per week, then Annual salary or Hourly rate.
                         </div>
                       )}
                     </div>

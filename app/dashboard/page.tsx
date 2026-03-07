@@ -19,6 +19,7 @@ type Counts = {
   employeeCount: number;
   payrollRunCount: number;
   absenceRecordCount: number;
+  startersInProgressCount: number;
 };
 
 function isUuid(s: string) {
@@ -44,7 +45,7 @@ async function getCountsForCompany(companyId: string): Promise<Counts> {
   const user = userData?.user ?? null;
 
   if (userErr || !user) {
-    return { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0 };
+    return { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0, startersInProgressCount: 0 };
   }
 
   const { data: membership, error: memErr } = await supabase
@@ -55,19 +56,26 @@ async function getCountsForCompany(companyId: string): Promise<Counts> {
     .maybeSingle();
 
   if (memErr || !membership) {
-    return { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0 };
+    return { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0, startersInProgressCount: 0 };
   }
 
-  const [employeesRes, payrollRunsRes, absencesRes] = await Promise.all([
+  const [employeesRes, payrollRunsRes, absencesRes, startersRes] = await Promise.all([
     supabase.from("employees").select("id", { count: "exact", head: true }).eq("company_id", companyId),
     supabase.from("payroll_runs").select("id", { count: "exact", head: true }).eq("company_id", companyId),
     supabase.from("absences").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+    supabase
+      .from("wizard_sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .eq("wizard_type", "starter")
+      .eq("status", "in_progress"),
   ]);
 
   return {
     employeeCount: employeesRes.count ?? 0,
     payrollRunCount: payrollRunsRes.count ?? 0,
     absenceRecordCount: absencesRes.count ?? 0,
+    startersInProgressCount: startersRes.count ?? 0,
   };
 }
 
@@ -75,9 +83,7 @@ function StatValue(props: { label: string; value: string | number }) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center text-center">
       <div className="text-sm font-semibold text-neutral-900">{props.label}</div>
-      <div className={inter.className + " mt-2 text-[27px] leading-none font-semibold"}>
-        {props.value}
-      </div>
+      <div className={inter.className + " mt-2 text-[27px] leading-none font-semibold"}>{props.value}</div>
     </div>
   );
 }
@@ -100,12 +106,8 @@ function GreyTile(props: { title: string; description?: string; href?: string })
       style={{ backgroundColor: "#d4d4d4" }}
     >
       <div className="flex h-full w-full flex-col items-center text-center">
-        <div className="text-base font-semibold text-neutral-900 min-h-[22px] flex items-end">
-          {props.title}
-        </div>
-        <div className="mt-2 text-sm text-neutral-800 leading-snug min-h-[36px] w-full">
-          {props.description ?? ""}
-        </div>
+        <div className="text-base font-semibold text-neutral-900 min-h-[22px] flex items-end">{props.title}</div>
+        <div className="mt-2 text-sm text-neutral-800 leading-snug min-h-[36px] w-full">{props.description ?? ""}</div>
         <div className="mt-auto" />
       </div>
     </div>
@@ -124,7 +126,7 @@ export default async function DashboardPage() {
   const companyId = await getActiveCompanyId();
   const counts = companyId
     ? await getCountsForCompany(companyId)
-    : { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0 };
+    : { employeeCount: 0, payrollRunCount: 0, absenceRecordCount: 0, startersInProgressCount: 0 };
 
   return (
     <PageTemplate title="Dashboard" currentSection="dashboard">
@@ -134,40 +136,23 @@ export default async function DashboardPage() {
         {!companyId ? (
           <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
             <div className="text-sm font-semibold text-neutral-900">No active company selected</div>
-            <div className="mt-1 text-sm text-neutral-700">
-              Select a company, then return to the Dashboard.
-            </div>
+            <div className="mt-1 text-sm text-neutral-700">Select a company, then return to the Dashboard.</div>
           </div>
         ) : null}
 
         <div className="grid grid-rows-2 gap-3 flex-1 min-h-0">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 h-full min-h-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 h-full min-h-0">
             <StatTile label="Employees" value={counts.employeeCount} />
             <StatTile label="Payroll runs" value={counts.payrollRunCount} />
             <StatTile label="Absence records" value={counts.absenceRecordCount} />
+            <StatTile label="Starters in progress" value={counts.startersInProgressCount} />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 h-full min-h-0">
-            <GreyTile
-              title="New Employees Wizard"
-              description="Create and onboard new employees."
-              href="/dashboard/employees/new"
-            />
-            <GreyTile
-              title="Leaver Wizard"
-              description="Process leavers with a guided flow."
-              href="/dashboard/employees/leaver"
-            />
-            <GreyTile
-              title="New Absence Wizard"
-              description="Record sickness, holiday, or other absences."
-              href="/dashboard/absence/new"
-            />
-            <GreyTile
-              title="Payroll Run Wizard"
-              description="Start a guided payroll run."
-              href="/dashboard/payroll/new"
-            />
+            <GreyTile title="New Employees Wizard" description="Create and onboard new employees." href="/dashboard/employees/new" />
+            <GreyTile title="Leaver Wizard" description="Process leavers with a guided flow." href="/dashboard/employees/leaver" />
+            <GreyTile title="New Absence Wizard" description="Record sickness, holiday, or other absences." href="/dashboard/absence/new" />
+            <GreyTile title="Payroll Run Wizard" description="Start a guided payroll run." href="/dashboard/payroll/new" />
           </div>
         </div>
       </div>

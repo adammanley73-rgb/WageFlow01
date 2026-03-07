@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/server";
 import PageTemplate from "@/components/layout/PageTemplate";
 
 export const runtime = "nodejs";
@@ -21,113 +21,26 @@ async function getActiveCompanyId(): Promise<string | null> {
   return jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
 }
 
-function getSupabaseUrl(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
-}
-
-function getSupabaseAnonKey(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
-}
-
-function readChunkedCookieValue(
-  all: { name: string; value: string }[],
-  baseName: string
-): string | null {
-  const exact = all.find((c) => c.name === baseName);
-  if (exact) return exact.value;
-
-  const parts = all
-    .filter((c) => c.name.startsWith(baseName + "."))
-    .map((c) => {
-      const m = c.name.match(/\.(\d+)$/);
-      const idx = m ? Number(m[1]) : 0;
-      return { idx, value: c.value };
-    })
-    .sort((a, b) => a.idx - b.idx);
-
-  if (parts.length === 0) return null;
-  return parts.map((p) => p.value).join("");
-}
-
-async function extractAccessTokenFromCookies(): Promise<string | null> {
-  try {
-    const jar = await cookies();
-    const all = jar.getAll();
-
-    const bases = new Set<string>();
-    for (const c of all) {
-      const n = c.name;
-      if (!n.includes("auth-token")) continue;
-      if (!n.startsWith("sb-") && !n.includes("sb-")) continue;
-      bases.add(n.replace(/\.\d+$/, ""));
-    }
-
-    for (const base of bases) {
-      const raw = readChunkedCookieValue(all as any, base);
-      if (!raw) continue;
-
-      const decoded = (() => {
-        try {
-          return decodeURIComponent(raw);
-        } catch {
-          return raw;
-        }
-      })();
-
-      try {
-        const obj = JSON.parse(decoded);
-        if (obj && typeof obj.access_token === "string") return obj.access_token;
-      } catch {}
-
-      try {
-        const asJson = Buffer.from(decoded, "base64").toString("utf8");
-        const obj = JSON.parse(asJson);
-        if (obj && typeof obj.access_token === "string") return obj.access_token;
-      } catch {}
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function createSupabaseRlsClientOrNull(): Promise<{ supabase: any; hasToken: boolean } | null> {
-  const url = getSupabaseUrl();
-  const anonKey = getSupabaseAnonKey();
-  if (!url || !anonKey) return null;
-
-  const token = await extractAccessTokenFromCookies();
-
-  const opts: any = {
-    auth: { persistSession: false, autoRefreshToken: false },
-  };
-
-  if (token) {
-    opts.global = { headers: { Authorization: `Bearer ${token}` } };
-  }
-
-  return { supabase: createClient(url, anonKey, opts), hasToken: Boolean(token) };
-}
-
 async function loadEmployeesForCompany(
   companyId: string
 ): Promise<{ data: EmployeeRow[]; error: string | null }> {
   try {
-    const client = await createSupabaseRlsClientOrNull();
-    if (!client) return { data: [], error: "Supabase env missing" };
-    if (!client.hasToken) return { data: [], error: "Not signed in. Log in again." };
+    const supabase = await createClient();
 
-    const { supabase } = client;
+    const { data: userData, error: userErr } = await supabase.auth.getUser();
+    if (userErr || !userData?.user) {
+      return { data: [], error: "Not signed in. Log in again." };
+    }
 
     const { data: membership, error: memErr } = await supabase
       .from("company_memberships")
       .select("role")
       .eq("company_id", companyId)
+      .eq("user_id", userData.user.id)
       .maybeSingle();
 
     if (memErr) {
-      return { data: [], error: memErr.message || "Membership check failed" };
+      return { data: [], error: memErr.message || "Membership check failed." };
     }
 
     if (!membership) {
@@ -141,12 +54,12 @@ async function loadEmployeesForCompany(
       .order("first_name", { ascending: true });
 
     if (error) {
-      return { data: [], error: error.message || "Failed to load employees" };
+      return { data: [], error: error.message || "Failed to load employees." };
     }
 
     return { data: (data as EmployeeRow[]) || [], error: null };
   } catch (err: any) {
-    return { data: [], error: err?.message || "Unexpected error loading employees" };
+    return { data: [], error: err?.message || "Unexpected error loading employees." };
   }
 }
 

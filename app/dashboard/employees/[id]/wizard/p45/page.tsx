@@ -1,22 +1,43 @@
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\wizard\p45\page.tsx
+// C:\Projects\wageflow01\app\dashboard\employees\[id]\wizard\p45\page.tsx
+
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import PageTemplate from "@/components/ui/PageTemplate";
 import { formatUkDate } from "@/lib/formatUkDate";
 
+type TaxCodeBasis = "cumulative" | "week1_month1";
 type P45Row = {
   employer_paye_ref: string | null;
   employer_name: string | null;
   works_number: string | null;
-  leaving_date: string | null; // ISO yyyy-mm-dd
+  leaving_date: string | null;
   tax_code: string | null;
-  tax_basis: "Cumulative" | "Week1Month1" | null;
+  tax_code_basis: TaxCodeBasis | null;
   total_pay_to_date: number | null;
   total_tax_to_date: number | null;
   had_student_loan_deductions: boolean | null;
+};
+
+type ApiP45Row = Partial<P45Row> & {
+  tax_basis?: string | null;
+};
+
+type FieldErrors = {
+  employer_paye_ref: string;
+  employer_name: string;
+  leaving_date: string;
+  tax_code: string;
+  tax_code_basis: string;
+  total_pay_to_date: string;
+  total_tax_to_date: string;
+};
+
+type ToastState = {
+  kind: "error" | "success" | "info";
+  message: string;
 };
 
 function isJson(res: Response) {
@@ -35,8 +56,31 @@ function normalizePayeRef(input: string) {
 
 function isValidPayeRef(input: string) {
   const s = normalizePayeRef(input);
-  // Practical guardrail: 3 digits, slash, 1–10 alphanum (covers common PAYE refs)
   return /^\d{3}\/[A-Z0-9]{1,10}$/.test(s);
+}
+
+function normalizeTaxCode(input: string) {
+  return String(input || "").trim().toUpperCase();
+}
+
+function normalizeTaxCodeBasis(input: string | null | undefined): TaxCodeBasis | null {
+  const s = String(input || "").trim().toLowerCase();
+  if (!s) return null;
+  if (s === "cumulative") return "cumulative";
+  if (
+    s === "week1_month1" ||
+    s === "week1month1" ||
+    s === "w1m1" ||
+    s === "wk1/mth1" ||
+    s === "wk1mth1" ||
+    s === "week1" ||
+    s === "month1" ||
+    s === "week 1 / month 1" ||
+    s === "week 1 month 1"
+  ) {
+    return "week1_month1";
+  }
+  return null;
 }
 
 function addMonths(dateOnlyIso: string, months: number) {
@@ -46,11 +90,6 @@ function addMonths(dateOnlyIso: string, months: number) {
   const out = new Date(dt);
   out.setUTCMonth(out.getUTCMonth() + months);
   return out;
-}
-
-function isoDateOnly(dt: Date) {
-  if (!dt || Number.isNaN(dt.getTime())) return null;
-  return dt.toISOString().slice(0, 10);
 }
 
 function readStartDateFromJson(j: any): string | null {
@@ -73,6 +112,53 @@ function readStartDateFromJson(j: any): string | null {
   return isIsoDateOnly(s) ? s : null;
 }
 
+function toNumberOrNull(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getFieldErrors(form: P45Row): FieldErrors {
+  const payeRef = normalizePayeRef(form.employer_paye_ref || "");
+  const employerName = String(form.employer_name || "").trim();
+  const leavingDate = String(form.leaving_date || "").trim();
+  const taxCode = normalizeTaxCode(form.tax_code || "");
+  const taxCodeBasis = String(form.tax_code_basis || "").trim();
+  const totalPay = toNumberOrNull(form.total_pay_to_date);
+  const totalTax = toNumberOrNull(form.total_tax_to_date);
+
+  return {
+    employer_paye_ref: !payeRef
+      ? "Employer PAYE reference is required."
+      : !isValidPayeRef(payeRef)
+        ? 'Employer PAYE reference must look like "123/AB12345".'
+        : "",
+    employer_name: employerName ? "" : "Employer name is required.",
+    leaving_date: !leavingDate
+      ? "Leaving date is required."
+      : !isIsoDateOnly(leavingDate)
+        ? "Leaving date must be valid."
+        : "",
+    tax_code: taxCode ? "" : "Tax code is required.",
+    tax_code_basis:
+      taxCodeBasis === "cumulative" || taxCodeBasis === "week1_month1"
+        ? ""
+        : "Tax basis is required.",
+    total_pay_to_date:
+      totalPay === null
+        ? "Total pay to date is required."
+        : totalPay < 0
+          ? "Total pay to date cannot be negative."
+          : "",
+    total_tax_to_date:
+      totalTax === null
+        ? "Total tax to date is required."
+        : totalTax < 0
+          ? "Total tax to date cannot be negative."
+          : "",
+  };
+}
+
 export default function P45Page() {
   const params = useParams<{ id: string }>();
   const id = useMemo(() => String(params?.id || ""), [params]);
@@ -81,11 +167,9 @@ export default function P45Page() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
 
-  const [toast, setToast] = useState<{
-    kind: "error" | "success" | "info";
-    message: string;
-  } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [employeeStartDate, setEmployeeStartDate] = useState<string | null>(null);
   const [taxRuleForced, setTaxRuleForced] = useState(false);
@@ -96,21 +180,33 @@ export default function P45Page() {
     works_number: "",
     leaving_date: "",
     tax_code: "1257L",
-    tax_basis: "Cumulative",
-    total_pay_to_date: 0,
-    total_tax_to_date: 0,
+    tax_code_basis: "cumulative",
+    total_pay_to_date: null,
+    total_tax_to_date: null,
     had_student_loan_deductions: false,
   });
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 5500);
-    return () => clearTimeout(t);
-  }, [toast]);
+  const [touched, setTouched] = useState({
+    employer_paye_ref: false,
+    employer_name: false,
+    leaving_date: false,
+    tax_code: false,
+    tax_code_basis: false,
+    total_pay_to_date: false,
+    total_tax_to_date: false,
+  });
 
-  function showToast(kind: "error" | "success" | "info", message: string) {
+  function showToast(kind: ToastState["kind"], message: string) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ kind, message });
+    toastTimerRef.current = setTimeout(() => setToast(null), 5500);
   }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -120,8 +216,6 @@ export default function P45Page() {
         setLoading(true);
         setErr(null);
 
-        // Fetch employee start date (for the 3-month rule)
-        // Try details endpoint first, then fallback to /api/employees/:id
         try {
           const r1 = await fetch(`/api/employees/${id}/details`, { cache: "no-store" });
           if (r1.ok && isJson(r1)) {
@@ -137,7 +231,7 @@ export default function P45Page() {
             }
           }
         } catch {
-          // If we can’t read it, we still allow saving, but we cannot apply the 3-month rule reliably.
+          // ignore
         }
 
         const r = await fetch(`/api/employees/${id}/p45`, { cache: "no-store" });
@@ -147,30 +241,29 @@ export default function P45Page() {
 
         if (isJson(r)) {
           const j = await r.json().catch(() => null);
-          const d = (j?.data ?? j ?? null) as Partial<P45Row> | null;
+          const d = (j?.data ?? j ?? null) as ApiP45Row | null;
 
           if (alive && d) {
-            setForm((prev) => ({
-              ...prev,
-              employer_paye_ref: d.employer_paye_ref ?? prev.employer_paye_ref,
-              employer_name: d.employer_name ?? prev.employer_name,
-              works_number: d.works_number ?? prev.works_number,
-              leaving_date: d.leaving_date ?? prev.leaving_date,
-              tax_code: d.tax_code ?? prev.tax_code,
-              tax_basis: (d.tax_basis as any) ?? prev.tax_basis,
+            const incomingBasis = normalizeTaxCodeBasis(
+              (d.tax_code_basis as string | null | undefined) ?? d.tax_basis
+            );
+
+            setForm({
+              employer_paye_ref: d.employer_paye_ref ?? "",
+              employer_name: d.employer_name ?? "",
+              works_number: d.works_number ?? "",
+              leaving_date: d.leaving_date ?? "",
+              tax_code: d.tax_code ?? "1257L",
+              tax_code_basis: incomingBasis ?? "cumulative",
               total_pay_to_date:
-                typeof d.total_pay_to_date === "number"
-                  ? d.total_pay_to_date
-                  : prev.total_pay_to_date,
+                typeof d.total_pay_to_date === "number" ? d.total_pay_to_date : null,
               total_tax_to_date:
-                typeof d.total_tax_to_date === "number"
-                  ? d.total_tax_to_date
-                  : prev.total_tax_to_date,
+                typeof d.total_tax_to_date === "number" ? d.total_tax_to_date : null,
               had_student_loan_deductions:
                 typeof d.had_student_loan_deductions === "boolean"
                   ? d.had_student_loan_deductions
-                  : prev.had_student_loan_deductions,
-            }));
+                  : false,
+            });
           }
         }
       } catch (e: any) {
@@ -186,7 +279,8 @@ export default function P45Page() {
   }, [id]);
 
   function onChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
-    const { name, value, type, checked } = e.target as any;
+    const { name, value, type } = e.target as HTMLInputElement;
+    const checked = (e.target as HTMLInputElement).checked;
 
     setForm((prev) => ({
       ...prev,
@@ -194,12 +288,23 @@ export default function P45Page() {
         type === "checkbox"
           ? Boolean(checked)
           : name === "total_pay_to_date" || name === "total_tax_to_date"
-          ? value === "" ? null : Number(value)
-          : value,
+            ? value === ""
+              ? null
+              : Number(value)
+            : name === "employer_paye_ref"
+              ? normalizePayeRef(value)
+              : name === "tax_code"
+                ? normalizeTaxCode(value)
+                : name === "tax_code_basis"
+                  ? normalizeTaxCodeBasis(value)
+                  : value,
     }));
   }
 
-  // Apply the 3-month rule whenever we have both dates and leaving_date changes.
+  function onBlur(name: keyof typeof touched) {
+    setTouched((prev) => ({ ...prev, [name]: true }));
+  }
+
   useEffect(() => {
     const leave = String(form.leaving_date || "").trim();
     const start = String(employeeStartDate || "").trim();
@@ -228,10 +333,9 @@ export default function P45Page() {
       setForm((prev) => ({
         ...prev,
         tax_code: "1257L",
-        tax_basis: "Week1Month1",
+        tax_code_basis: "week1_month1",
       }));
 
-      // Only toast if we haven't already shown it for this state.
       showToast(
         "info",
         "Leaving date is more than 3 months before the employee start date. HMRC rule: use tax code 1257L on Week 1 / Month 1 until a P6 notice arrives."
@@ -239,16 +343,13 @@ export default function P45Page() {
     } else {
       setTaxRuleForced(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.leaving_date, employeeStartDate]);
 
   async function tryUpdateEmployeeTaxCode() {
-    // Best-guess endpoint. If this fails, we block finishing because you said MUST be on employee record.
-    const payload = { tax_code: "1257L", tax_basis: "Week1Month1" };
+    const payload = { tax_code: "1257L", tax_code_basis: "week1_month1" };
 
-    // Attempt 1: /details
     try {
-      const r1 = await fetch(`/api/employees/${id}/details`, {
+      const r1 = await fetch(`/api/employees/${id}/tax`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -256,9 +357,8 @@ export default function P45Page() {
       if (r1.ok) return true;
     } catch {}
 
-    // Attempt 2: /api/employees/:id (if your project supports it)
     try {
-      const r2 = await fetch(`/api/employees/${id}`, {
+      const r2 = await fetch(`/api/employees/${id}/details`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -266,21 +366,56 @@ export default function P45Page() {
       if (r2.ok) return true;
     } catch {}
 
+    try {
+      const r3 = await fetch(`/api/employees/${id}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (r3.ok) return true;
+    } catch {}
+
     return false;
   }
 
-  async function onSave() {
-    const paye = normalizePayeRef(String(form.employer_paye_ref || ""));
-    if (!paye || !isValidPayeRef(paye)) {
-      showToast(
-        "error",
-        'Employer PAYE reference is required and must look like "123/AB12345".'
-      );
-      return;
-    }
+  const fieldErrors = useMemo(() => getFieldErrors(form), [form]);
 
-    if (form.leaving_date && !isIsoDateOnly(String(form.leaving_date))) {
-      showToast("error", "Leaving date must be a valid date.");
+  const canSave = useMemo(() => {
+    return (
+      !fieldErrors.employer_paye_ref &&
+      !fieldErrors.employer_name &&
+      !fieldErrors.leaving_date &&
+      !fieldErrors.tax_code &&
+      !fieldErrors.tax_code_basis &&
+      !fieldErrors.total_pay_to_date &&
+      !fieldErrors.total_tax_to_date
+    );
+  }, [fieldErrors]);
+
+  async function onSave() {
+    setTouched({
+      employer_paye_ref: true,
+      employer_name: true,
+      leaving_date: true,
+      tax_code: true,
+      tax_code_basis: true,
+      total_pay_to_date: true,
+      total_tax_to_date: true,
+    });
+
+    if (!canSave) {
+      const message = [
+        fieldErrors.employer_paye_ref,
+        fieldErrors.employer_name,
+        fieldErrors.leaving_date,
+        fieldErrors.tax_code,
+        fieldErrors.tax_code_basis,
+        fieldErrors.total_pay_to_date,
+        fieldErrors.total_tax_to_date,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      showToast("error", message);
       return;
     }
 
@@ -289,12 +424,12 @@ export default function P45Page() {
       setErr(null);
 
       const payload: P45Row = {
-        employer_paye_ref: paye || null,
+        employer_paye_ref: normalizePayeRef(String(form.employer_paye_ref || "")) || null,
         employer_name: String(form.employer_name || "").trim() || null,
         works_number: String(form.works_number || "").trim() || null,
         leaving_date: String(form.leaving_date || "").trim() || null,
-        tax_code: String(form.tax_code || "").trim() || null,
-        tax_basis: (form.tax_basis as any) || null,
+        tax_code: normalizeTaxCode(String(form.tax_code || "")) || null,
+        tax_code_basis: form.tax_code_basis || null,
         total_pay_to_date:
           typeof form.total_pay_to_date === "number" ? form.total_pay_to_date : null,
         total_tax_to_date:
@@ -305,10 +440,9 @@ export default function P45Page() {
             : null,
       };
 
-      // If rule is forced, make it impossible to sneak different values through.
       if (taxRuleForced) {
         payload.tax_code = "1257L";
-        payload.tax_basis = "Week1Month1";
+        payload.tax_code_basis = "week1_month1";
       }
 
       const res = await fetch(`/api/employees/${id}/p45`, {
@@ -348,13 +482,14 @@ export default function P45Page() {
     }
   }
 
-  const payeNow = normalizePayeRef(String(form.employer_paye_ref || ""));
-  const payeOk = isValidPayeRef(payeNow);
-
   const inputBase =
     "mt-1 w-full rounded-md border bg-white p-2 outline-none focus:ring-2 focus:ring-offset-1";
   const okBorder = "border-neutral-400 focus:ring-blue-200";
   const badBorder = "border-red-500 focus:ring-red-200";
+
+  function inputClass(hasError: boolean) {
+    return `${inputBase} ${hasError ? badBorder : okBorder}`;
+  }
 
   return (
     <PageTemplate
@@ -372,8 +507,8 @@ export default function P45Page() {
               (toast.kind === "success"
                 ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
                 : toast.kind === "info"
-                ? "bg-blue-50 text-blue-900 ring-blue-200"
-                : "bg-red-50 text-red-900 ring-red-200")
+                  ? "bg-blue-50 text-blue-900 ring-blue-200"
+                  : "bg-red-50 text-red-900 ring-red-200")
             }
             role="status"
             aria-live="polite"
@@ -382,17 +517,17 @@ export default function P45Page() {
               {toast.kind === "success"
                 ? "Saved"
                 : toast.kind === "info"
-                ? "HMRC rule"
-                : "Action needed"}
+                  ? "HMRC rule"
+                  : "Action needed"}
             </div>
             <div className="mt-1 text-sm">{toast.message}</div>
           </div>
         </div>
       ) : null}
 
-      <div className="rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6">
+      <div className="rounded-xl bg-neutral-300 p-6 shadow-sm ring-1 ring-neutral-400">
         {loading ? (
-          <div>Loading…</div>
+          <div>Loading...</div>
         ) : (
           <>
             {err ? (
@@ -401,23 +536,33 @@ export default function P45Page() {
               </div>
             ) : null}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="block text-sm text-neutral-900">
-                  Employer PAYE reference (required)
+                  Employer PAYE reference
                 </label>
                 <input
                   name="employer_paye_ref"
                   value={form.employer_paye_ref || ""}
                   onChange={onChange}
-                  className={inputBase + " " + (payeOk ? okBorder : badBorder)}
-                  placeholder='e.g. 123/AB12345'
+                  onBlur={() => onBlur("employer_paye_ref")}
+                  className={inputClass(
+                    !!(touched.employer_paye_ref && fieldErrors.employer_paye_ref)
+                  )}
+                  placeholder="123/AB12345"
+                  aria-invalid={
+                    touched.employer_paye_ref && !!fieldErrors.employer_paye_ref
+                  }
                 />
-                {!payeOk ? (
+                {touched.employer_paye_ref && fieldErrors.employer_paye_ref ? (
                   <div className="mt-1 text-xs text-red-700">
-                    Must look like 123/AB12345.
+                    {fieldErrors.employer_paye_ref}
                   </div>
-                ) : null}
+                ) : (
+                  <div className="mt-1 text-xs text-neutral-700">
+                    Format: 123/AB12345
+                  </div>
+                )}
               </div>
 
               <div>
@@ -426,19 +571,28 @@ export default function P45Page() {
                   name="employer_name"
                   value={form.employer_name || ""}
                   onChange={onChange}
-                  className={inputBase + " " + okBorder}
+                  onBlur={() => onBlur("employer_name")}
+                  className={inputClass(
+                    !!(touched.employer_name && fieldErrors.employer_name)
+                  )}
+                  aria-invalid={touched.employer_name && !!fieldErrors.employer_name}
                 />
+                {touched.employer_name && fieldErrors.employer_name ? (
+                  <div className="mt-1 text-xs text-red-700">
+                    {fieldErrors.employer_name}
+                  </div>
+                ) : null}
               </div>
 
               <div>
                 <label className="block text-sm text-neutral-900">
-                  Works/payroll number
+                  Works or payroll number
                 </label>
                 <input
                   name="works_number"
                   value={form.works_number || ""}
                   onChange={onChange}
-                  className={inputBase + " " + okBorder}
+                  className={inputClass(false)}
                 />
               </div>
 
@@ -449,15 +603,23 @@ export default function P45Page() {
                   name="leaving_date"
                   value={form.leaving_date || ""}
                   onChange={onChange}
-                  className={inputBase + " " + okBorder}
+                  onBlur={() => onBlur("leaving_date")}
+                  className={inputClass(
+                    !!(touched.leaving_date && fieldErrors.leaving_date)
+                  )}
+                  aria-invalid={touched.leaving_date && !!fieldErrors.leaving_date}
                 />
-                {employeeStartDate ? (
+                {touched.leaving_date && fieldErrors.leaving_date ? (
+                  <div className="mt-1 text-xs text-red-700">
+                    {fieldErrors.leaving_date}
+                  </div>
+                ) : employeeStartDate ? (
                   <div className="mt-1 text-xs text-neutral-700">
                     Employee start date: {formatUkDate(employeeStartDate, "—")}
                   </div>
                 ) : (
                   <div className="mt-1 text-xs text-neutral-700">
-                    Employee start date: not available (tax rule cannot be checked reliably).
+                    Employee start date: not available. 3-month tax rule cannot be checked reliably.
                   </div>
                 )}
               </div>
@@ -468,39 +630,41 @@ export default function P45Page() {
                   name="tax_code"
                   value={form.tax_code || ""}
                   onChange={onChange}
+                  onBlur={() => onBlur("tax_code")}
                   disabled={taxRuleForced}
                   className={
-                    inputBase +
-                    " " +
-                    okBorder +
-                    (taxRuleForced ? " opacity-80 cursor-not-allowed" : "")
+                    inputClass(!!(touched.tax_code && fieldErrors.tax_code)) +
+                    (taxRuleForced ? " cursor-not-allowed opacity-80" : "")
                   }
+                  aria-invalid={touched.tax_code && !!fieldErrors.tax_code}
                 />
-                {taxRuleForced ? (
-                  <div className="mt-1 text-xs text-blue-900">
-                    Forced by rule: 1257L.
-                  </div>
+                {touched.tax_code && fieldErrors.tax_code ? (
+                  <div className="mt-1 text-xs text-red-700">{fieldErrors.tax_code}</div>
+                ) : taxRuleForced ? (
+                  <div className="mt-1 text-xs text-blue-900">Forced by rule: 1257L.</div>
                 ) : null}
               </div>
 
               <div>
                 <label className="block text-sm text-neutral-900">Tax basis</label>
                 <select
-                  name="tax_basis"
-                  value={form.tax_basis || ""}
+                  name="tax_code_basis"
+                  value={form.tax_code_basis || ""}
                   onChange={onChange}
+                  onBlur={() => onBlur("tax_code_basis")}
                   disabled={taxRuleForced}
                   className={
-                    inputBase +
-                    " " +
-                    okBorder +
-                    (taxRuleForced ? " opacity-80 cursor-not-allowed" : "")
+                    inputClass(!!(touched.tax_code_basis && fieldErrors.tax_code_basis)) +
+                    (taxRuleForced ? " cursor-not-allowed opacity-80" : "")
                   }
+                  aria-invalid={touched.tax_code_basis && !!fieldErrors.tax_code_basis}
                 >
-                  <option value="Cumulative">Cumulative</option>
-                  <option value="Week1Month1">Week 1 / Month 1</option>
+                  <option value="cumulative">Cumulative</option>
+                  <option value="week1_month1">Week 1 / Month 1</option>
                 </select>
-                {taxRuleForced ? (
+                {touched.tax_code_basis && fieldErrors.tax_code_basis ? (
+                  <div className="mt-1 text-xs text-red-700">{fieldErrors.tax_code_basis}</div>
+                ) : taxRuleForced ? (
                   <div className="mt-1 text-xs text-blue-900">
                     Forced by rule: Week 1 / Month 1.
                   </div>
@@ -516,8 +680,19 @@ export default function P45Page() {
                   name="total_pay_to_date"
                   value={form.total_pay_to_date ?? ""}
                   onChange={onChange}
-                  className={inputBase + " " + okBorder}
+                  onBlur={() => onBlur("total_pay_to_date")}
+                  className={inputClass(
+                    !!(touched.total_pay_to_date && fieldErrors.total_pay_to_date)
+                  )}
+                  aria-invalid={
+                    touched.total_pay_to_date && !!fieldErrors.total_pay_to_date
+                  }
                 />
+                {touched.total_pay_to_date && fieldErrors.total_pay_to_date ? (
+                  <div className="mt-1 text-xs text-red-700">
+                    {fieldErrors.total_pay_to_date}
+                  </div>
+                ) : null}
               </div>
 
               <div>
@@ -529,8 +704,19 @@ export default function P45Page() {
                   name="total_tax_to_date"
                   value={form.total_tax_to_date ?? ""}
                   onChange={onChange}
-                  className={inputBase + " " + okBorder}
+                  onBlur={() => onBlur("total_tax_to_date")}
+                  className={inputClass(
+                    !!(touched.total_tax_to_date && fieldErrors.total_tax_to_date)
+                  )}
+                  aria-invalid={
+                    touched.total_tax_to_date && !!fieldErrors.total_tax_to_date
+                  }
                 />
+                {touched.total_tax_to_date && fieldErrors.total_tax_to_date ? (
+                  <div className="mt-1 text-xs text-red-700">
+                    {fieldErrors.total_tax_to_date}
+                  </div>
+                ) : null}
               </div>
 
               <label className="mt-2 flex items-center gap-2 md:col-span-2">
@@ -548,18 +734,18 @@ export default function P45Page() {
 
             <div className="mt-6 flex justify-end gap-3">
               <Link
-                href={`/dashboard/employees/${id}/edit`}
+                href={`/dashboard/employees/${id}/wizard/starter`}
                 className="rounded-md bg-neutral-400 px-4 py-2 text-white"
               >
-                Cancel
+                Back
               </Link>
               <button
                 type="button"
                 onClick={onSave}
-                disabled={saving}
-                className="rounded-md bg-blue-700 px-4 py-2 text-white disabled:opacity-50"
+                disabled={saving || !canSave}
+                className="rounded-md bg-blue-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {saving ? "Saving…" : "Save and continue"}
+                {saving ? "Saving..." : "Save and continue"}
               </button>
             </div>
           </>
