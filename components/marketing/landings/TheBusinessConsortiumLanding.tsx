@@ -91,7 +91,7 @@ function clamp(n: number, min: number, max: number) {
 export default function TheBusinessConsortiumLanding(_: Props) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [billingMode, setBillingMode] = useState<BillingMode>("annual");
-  const [employeeCount, setEmployeeCount] = useState<number>(12);
+  const [employeeCount, setEmployeeCount] = useState<number>(5);
 
   const CONTACT_EMAIL = "enquiries@thebusinessconsortiumltd.co.uk";
   const CONTACT_BODY =
