@@ -9,14 +9,22 @@ export const revalidate = 0;
 type RouteContext = { params: Promise<{ id: string }> };
 
 type StarterDeclaration = "A" | "B" | "C" | null;
-type StudentLoanPlan = "plan1" | "plan2" | "plan4" | "plan5" | null;
+type StudentLoanPlanDb = "plan1" | "plan2" | "plan4" | "plan5" | null;
+type StudentLoanPlanUi = "none" | "plan1" | "plan2" | "plan4" | "plan5" | null;
 
 type StarterRow = {
-  employee_id: string;   // references employees.id (UUID primary key)
+  employee_id: string; // references employees.id (UUID primary key)
   company_id: string;
   p45_provided: boolean | null;
   starter_declaration: StarterDeclaration;
-  student_loan_plan: StudentLoanPlan;
+  student_loan_plan: StudentLoanPlanDb;
+  postgraduate_loan: boolean | null;
+};
+
+type StarterResponseRow = {
+  p45_provided: boolean | null;
+  starter_declaration: StarterDeclaration;
+  student_loan_plan: StudentLoanPlanUi;
   postgraduate_loan: boolean | null;
 };
 
@@ -60,17 +68,30 @@ function normalizeDeclaration(v: unknown): StarterDeclaration {
   return null;
 }
 
-function normalizeLoanPlan(v: unknown): StudentLoanPlan {
+function normalizeLoanPlan(v: unknown): StudentLoanPlanDb {
   const s = String(v ?? "").trim().toLowerCase();
   if (!s) return null;
-  // "none" means no plan - store as NULL to satisfy the DB check constraint
-  // which only allows plan1, plan2, plan4, plan5 or NULL.
+
+  // UI uses "none". DB stores that as NULL because the DB check constraint
+  // only allows plan1, plan2, plan4, plan5 or NULL.
   if (s === "none") return null;
   if (s === "plan1" || s === "plan_1" || s === "1") return "plan1";
   if (s === "plan2" || s === "plan_2" || s === "2") return "plan2";
   if (s === "plan4" || s === "plan_4" || s === "4") return "plan4";
   if (s === "plan5" || s === "plan_5" || s === "5") return "plan5";
+
   return null;
+}
+
+function toUiLoanPlan(v: unknown): StudentLoanPlanUi {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return "none";
+  if (s === "plan1") return "plan1";
+  if (s === "plan2") return "plan2";
+  if (s === "plan4") return "plan4";
+  if (s === "plan5") return "plan5";
+  if (s === "none") return "none";
+  return "none";
 }
 
 function normalizeBoolean(v: unknown): boolean | null {
@@ -82,6 +103,15 @@ function normalizeBoolean(v: unknown): boolean | null {
 
 function hasOwn(obj: Record<string, unknown>, key: string) {
   return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function toClientRow(row?: Partial<StarterRow> | null): StarterResponseRow {
+  return {
+    p45_provided: normalizeBoolean(row?.p45_provided) ?? false,
+    starter_declaration: normalizeDeclaration(row?.starter_declaration),
+    student_loan_plan: toUiLoanPlan(row?.student_loan_plan),
+    postgraduate_loan: normalizeBoolean(row?.postgraduate_loan),
+  };
 }
 
 function validateStarterBody(body: StarterBody) {
@@ -111,7 +141,9 @@ function validateStarterBody(body: StarterBody) {
 
   if (loanPlanWasSent) {
     const rawLoanPlan = String(body.student_loan_plan ?? "").trim();
-    if (rawLoanPlan && rawLoanPlan.toLowerCase() !== "none" && studentLoanPlan === null) {
+    if (!rawLoanPlan) {
+      errors.push("student_loan_plan cannot be blank when provided.");
+    } else if (String(rawLoanPlan).toLowerCase() !== "none" && studentLoanPlan === null) {
       errors.push('student_loan_plan must be one of "none", "plan1", "plan2", "plan4", or "plan5".');
     }
   }
@@ -126,6 +158,9 @@ function validateStarterBody(body: StarterBody) {
   if (declarationFlowSubmitted) {
     if (starterDeclaration === null) {
       errors.push("starter_declaration is required when p45_provided is false.");
+    }
+    if (!loanPlanWasSent) {
+      errors.push("student_loan_plan is required when p45_provided is false.");
     }
     if (postgraduateLoan === null) {
       errors.push("postgraduate_loan is required when p45_provided is false.");
@@ -217,8 +252,12 @@ export async function GET(_req: Request, ctx: RouteContext) {
 
     if (error) {
       if (looksLikeMissingTableOrRls(error)) {
-        return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+        return json(200, {
+          ok: true,
+          data: toClientRow(null),
+        });
       }
+
       return json(500, {
         ok: false,
         error: "LOAD_FAILED",
@@ -227,13 +266,15 @@ export async function GET(_req: Request, ctx: RouteContext) {
       });
     }
 
-    if (!data) {
-      return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
-    }
-
-    return json(200, { ok: true, data });
+    return json(200, {
+      ok: true,
+      data: toClientRow((data ?? null) as Partial<StarterRow> | null),
+    });
   } catch {
-    return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    return json(200, {
+      ok: true,
+      data: toClientRow(null),
+    });
   }
 }
 
@@ -303,7 +344,7 @@ export async function POST(req: Request, ctx: RouteContext) {
         ? validated.row.starter_declaration
         : existingRow.starter_declaration ?? null,
     student_loan_plan:
-      validated.row.student_loan_plan !== null
+      hasOwn(body, "student_loan_plan")
         ? validated.row.student_loan_plan
         : existingRow.student_loan_plan ?? null,
     postgraduate_loan:
@@ -335,9 +376,7 @@ export async function POST(req: Request, ctx: RouteContext) {
 
       writeError = error ?? null;
     } else {
-      const { error: insertError } = await supabase
-        .from("employee_starters")
-        .insert(row);
+      const { error: insertError } = await supabase.from("employee_starters").insert(row);
 
       const pgCode = String((insertError as any)?.code ?? "");
       if (pgCode === "23505") {
@@ -385,7 +424,7 @@ export async function POST(req: Request, ctx: RouteContext) {
     return json(201, {
       ok: true,
       id: routeEmployeeId,
-      data: saved ?? row,
+      data: toClientRow((saved ?? row) as Partial<StarterRow>),
     });
   } catch (e: unknown) {
     return json(500, {

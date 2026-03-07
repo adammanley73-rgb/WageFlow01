@@ -61,29 +61,36 @@ function normaliseBoolean(value: unknown): boolean | null {
 }
 
 function normaliseStarterDeclaration(value: unknown): StarterDeclaration {
-  const v = String(value || "").trim().toUpperCase();
+  const v = String(value ?? "").trim().toUpperCase();
   return v === "A" || v === "B" || v === "C" ? v : "";
 }
 
 function normaliseStudentLoanPlan(value: unknown): StudentLoanPlan {
-  const v = String(value || "").trim().toLowerCase();
+  const v = String(value ?? "").trim().toLowerCase();
   return v === "none" || v === "plan1" || v === "plan2" || v === "plan4" || v === "plan5"
     ? v
     : "";
 }
 
-function buildErrorMessage(payload: any, fallback: string) {
+function normaliseStudentLoanPlanFromServer(value: unknown): StudentLoanPlan {
+  if (value === null || value === undefined) return "none";
+  return normaliseStudentLoanPlan(value) || "none";
+}
+
+function buildErrorMessage(payload: unknown, fallback: string) {
   if (!payload || typeof payload !== "object") return fallback;
 
-  const details = Array.isArray(payload.details)
-    ? payload.details.filter(Boolean).join(" ")
-    : typeof payload.details === "string"
-    ? payload.details
+  const obj = payload as Record<string, unknown>;
+
+  const details = Array.isArray(obj.details)
+    ? obj.details.filter(Boolean).join(" ")
+    : typeof obj.details === "string"
+    ? obj.details
     : "";
 
   const message =
-    String(payload.message || "").trim() ||
-    String(payload.error || "").trim() ||
+    String(obj.message ?? "").trim() ||
+    String(obj.error ?? "").trim() ||
     "";
 
   return [message, details].filter(Boolean).join(" - ") || fallback;
@@ -161,30 +168,35 @@ export default function DeclarationPage() {
         });
 
         if (r.status === 204 || r.status === 404) return;
+
+        let payload: unknown = null;
+        if (isJson(r)) {
+          payload = await r.json().catch(() => null);
+        }
+
         if (!r.ok) {
-          let msg = `load ${r.status}`;
-          if (isJson(r)) {
-            const j = await r.json().catch(() => null);
-            msg = buildErrorMessage(j, msg);
-          }
+          const msg = buildErrorMessage(payload, `load ${r.status}`);
           throw new Error(msg);
         }
 
-        if (isJson(r)) {
-          const j = await r.json().catch(() => null);
-          const d = (j?.data ?? j ?? null) as Partial<StarterRow> | null;
+        const d =
+          payload && typeof payload === "object"
+            ? (((payload as Record<string, unknown>).data ??
+                payload) as Partial<StarterRow> | null)
+            : null;
 
-          if (alive && d) {
-            setForm({
-              p45_provided: false,
-              starter_declaration: normaliseStarterDeclaration(d.starter_declaration),
-              student_loan_plan: normaliseStudentLoanPlan(d.student_loan_plan),
-              postgraduate_loan: normaliseBoolean(d.postgraduate_loan),
-            });
-          }
+        if (!alive || !d) return;
+
+        setForm({
+          p45_provided: normaliseBoolean(d.p45_provided) ?? false,
+          starter_declaration: normaliseStarterDeclaration(d.starter_declaration),
+          student_loan_plan: normaliseStudentLoanPlanFromServer(d.student_loan_plan),
+          postgraduate_loan: normaliseBoolean(d.postgraduate_loan),
+        });
+      } catch (e: unknown) {
+        if (alive) {
+          setErr(String((e as { message?: unknown } | null)?.message ?? e));
         }
-      } catch (e: any) {
-        if (alive) setErr(String(e?.message || e));
       } finally {
         if (alive) setLoading(false);
       }
@@ -243,7 +255,7 @@ export default function DeclarationPage() {
         body: JSON.stringify(payload),
       });
 
-      let responseJson: any = null;
+      let responseJson: unknown = null;
       if (isJson(res)) {
         responseJson = await res.json().catch(() => null);
       }
@@ -253,10 +265,25 @@ export default function DeclarationPage() {
         throw new Error(msg);
       }
 
+      const saved =
+        responseJson && typeof responseJson === "object"
+          ? (((responseJson as Record<string, unknown>).data ??
+              responseJson) as Partial<StarterRow> | null)
+          : null;
+
+      if (saved) {
+        setForm({
+          p45_provided: normaliseBoolean(saved.p45_provided) ?? false,
+          starter_declaration: normaliseStarterDeclaration(saved.starter_declaration),
+          student_loan_plan: normaliseStudentLoanPlanFromServer(saved.student_loan_plan),
+          postgraduate_loan: normaliseBoolean(saved.postgraduate_loan),
+        });
+      }
+
       showToast("Starter declaration saved.", "success");
       router.push(`/dashboard/employees/${id}/wizard/bank`);
-    } catch (e: any) {
-      const msg = String(e?.message || e);
+    } catch (e: unknown) {
+      const msg = String((e as { message?: unknown } | null)?.message ?? e);
       setErr(msg);
       showToast(msg, "error");
     } finally {
