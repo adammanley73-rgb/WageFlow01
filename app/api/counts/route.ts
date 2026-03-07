@@ -12,6 +12,7 @@ type CountsResult = {
   employeeCount: number;
   payrollRunCount: number;
   absenceRecordCount: number;
+  startersInProgressCount: number;
 };
 
 function json(status: number, body: any) {
@@ -29,8 +30,7 @@ function isUuid(s: string) {
 
 async function getActiveCompanyId(): Promise<string | null> {
   const jar = await cookies();
-  const raw =
-    jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
+  const raw = jar.get("active_company_id")?.value ?? jar.get("company_id")?.value ?? null;
 
   if (!raw) return null;
 
@@ -38,39 +38,41 @@ async function getActiveCompanyId(): Promise<string | null> {
   return isUuid(trimmed) ? trimmed : null;
 }
 
-async function getCountsForCompany(
-  supabase: any,
-  companyId: string
-): Promise<CountsResult> {
-  const [employeesRes, payrollRunsRes, absencesRes] = await Promise.all([
+async function getCountsForCompany(supabase: any, companyId: string): Promise<CountsResult> {
+  const [employeesRes, payrollRunsRes, absencesRes, startersRes] = await Promise.all([
     supabase
       .from("employees")
       .select("id", { count: "exact", head: true })
       .eq("company_id", companyId),
+
     supabase
       .from("payroll_runs")
       .select("id", { count: "exact", head: true })
       .eq("company_id", companyId),
+
     supabase
       .from("absences")
       .select("id", { count: "exact", head: true })
       .eq("company_id", companyId),
+
+    supabase
+      .from("wizard_sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .eq("wizard_type", "starter")
+      .eq("status", "in_progress"),
   ]);
 
-  if (employeesRes.error) {
-    console.error("counts api: employee count error", employeesRes.error);
-  }
-  if (payrollRunsRes.error) {
-    console.error("counts api: payroll run count error", payrollRunsRes.error);
-  }
-  if (absencesRes.error) {
-    console.error("counts api: absence count error", absencesRes.error);
-  }
+  if (employeesRes.error) console.error("counts api: employee count error", employeesRes.error);
+  if (payrollRunsRes.error) console.error("counts api: payroll run count error", payrollRunsRes.error);
+  if (absencesRes.error) console.error("counts api: absence count error", absencesRes.error);
+  if (startersRes.error) console.error("counts api: starter sessions count error", startersRes.error);
 
   return {
     employeeCount: employeesRes.count ?? 0,
     payrollRunCount: payrollRunsRes.count ?? 0,
     absenceRecordCount: absencesRes.count ?? 0,
+    startersInProgressCount: startersRes.count ?? 0,
   };
 }
 
@@ -98,6 +100,7 @@ export async function GET() {
           employeeCount: 0,
           payrollRunCount: 0,
           absenceRecordCount: 0,
+          startersInProgressCount: 0,
         },
       });
     }

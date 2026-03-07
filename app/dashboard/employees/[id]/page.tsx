@@ -137,6 +137,12 @@ type EmployeeRow = {
 
   address?: any | null;
 
+  tax_code?: string | null;
+  tax_code_basis?: string | null;
+  tax_basis?: string | null;
+  ni_category?: string | null;
+  is_director?: boolean | null;
+
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -209,6 +215,13 @@ function cardBox(title: string, children: any) {
 function looksLikeMissingColumn(err: any, column: string) {
   const msg = String(err?.message || err || "").toLowerCase();
   return msg.includes("column") && msg.includes(column.toLowerCase());
+}
+
+function formatTaxBasis(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "week1_month1") return "Week 1 / Month 1";
+  if (v === "cumulative") return "Cumulative";
+  return MISSING;
 }
 
 export default async function EmployeeDetailsPage({
@@ -363,6 +376,9 @@ export default async function EmployeeDetailsPage({
     employee.ni_number_formatted ??
     null;
 
+  const taxBasisValue =
+    employee.tax_code_basis ?? employee.tax_basis ?? null;
+
   return (
     <PageTemplate title="Employee" currentSection="employees">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
@@ -495,6 +511,34 @@ export default async function EmployeeDetailsPage({
                 This is a simple indicator. Final AE decisions should be validated
                 during payroll processing.
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
+            <div className="text-sm font-semibold text-neutral-900">Tax and NI</div>
+            <div className="text-xs text-neutral-700">
+              HMRC tax code, NI category, and director status.
+            </div>
+          </div>
+
+          <div className="p-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {cardBox("Tax code", safeStr(employee.tax_code))}
+              {cardBox("Tax basis", formatTaxBasis(taxBasisValue))}
+              {cardBox(
+                "NI category",
+                employee.ni_category ? String(employee.ni_category).toUpperCase() : MISSING
+              )}
+              {cardBox(
+                "Director",
+                employee.is_director === true
+                  ? "Yes"
+                  : employee.is_director === false
+                    ? "No"
+                    : MISSING
+              )}
             </div>
           </div>
         </div>

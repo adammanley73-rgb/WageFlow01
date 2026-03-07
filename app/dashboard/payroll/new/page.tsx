@@ -1,4 +1,4 @@
-// C:\Users\adamm\Projects\wageflow01\app\dashboard\payroll\new\page.tsx
+// C:\Projects\wageflow01\app\dashboard\payroll\new\page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -18,12 +18,12 @@ type PayScheduleRow = {
 
   frequency: Frequency;
 
-  pay_day_of_week: number | null; // 1=Mon ... 7=Sun
-  pay_day_of_month: number | null; // 1..28
-  cycle_anchor_pay_date: string | null; // required for fortnightly/four_weekly unless flexible
+  pay_day_of_week: number | null;
+  pay_day_of_month: number | null;
+  cycle_anchor_pay_date: string | null;
 
-  pay_timing: string | null; // arrears/current/advance/flexible
-  pay_date_adjustment: string | null; // previous_working_day/next_working_day/none
+  pay_timing: string | null;
+  pay_date_adjustment: string | null;
   pay_date_offset_days: number | null;
 
   is_template: boolean;
@@ -88,7 +88,9 @@ function normalizeFrequency(v: any): Frequency {
 
   if (raw === "weekly") return "weekly";
   if (raw === "fortnightly") return "fortnightly";
-  if (raw === "four_weekly" || raw === "fourweekly" || raw === "4_weekly" || raw === "four_week") return "four_weekly";
+  if (raw === "four_weekly" || raw === "fourweekly" || raw === "4_weekly" || raw === "four_week") {
+    return "four_weekly";
+  }
   if (raw === "monthly") return "monthly";
   return "monthly";
 }
@@ -133,10 +135,6 @@ function scheduleDowLabel(dow: number | null) {
   return map[dow] || "";
 }
 
-/* -----------------------
-   Date helpers (UTC date-only)
------------------------- */
-
 function parseIsoDateOnlyToUtc(iso: string) {
   const s = String(iso || "").trim();
   if (!isIsoDateOnly(s)) throw new Error("Bad date: " + s);
@@ -154,159 +152,72 @@ function addDaysUtc(d: Date, days: number) {
   return out;
 }
 
-function diffDaysUtc(a: Date, b: Date) {
-  return Math.round((a.getTime() - b.getTime()) / 86400000);
-}
-
 function mondayOfWeekUtc(d: Date) {
   const out = new Date(d.getTime());
-  const jsDow = out.getUTCDay(); // 0=Sun..6=Sat
-  const daysSinceMonday = (jsDow + 6) % 7; // Mon=0 .. Sun=6
+  const jsDow = out.getUTCDay();
+  const daysSinceMonday = (jsDow + 6) % 7;
   out.setUTCDate(out.getUTCDate() - daysSinceMonday);
   return out;
 }
 
-function adjustWorkingDayUtc(d: Date, modeRaw: string | null) {
-  const mode = String(modeRaw || "previous_working_day").trim().toLowerCase();
-  if (mode === "none") return d;
-
-  const out = new Date(d.getTime());
-
-  const isWeekend = () => {
-    const js = out.getUTCDay();
-    return js === 0 || js === 6;
-  };
-
-  if (!isWeekend()) return out;
-
-  if (mode === "next_working_day") {
-    while (isWeekend()) out.setUTCDate(out.getUTCDate() + 1);
-    return out;
-  }
-
-  // default previous_working_day
-  while (isWeekend()) out.setUTCDate(out.getUTCDate() - 1);
-  return out;
-}
-
-function computeWeekPaydayUtc(weekAnyDay: Date, scheduleDow: number) {
-  const mon = mondayOfWeekUtc(weekAnyDay);
-  const target = addDaysUtc(mon, Math.max(0, Math.min(6, (scheduleDow || 1) - 1)));
-  return target;
-}
-
-function computeMonthlyPayDateUtc(monthAnyDay: Date, payDayOfMonth: number | null) {
-  const y = monthAnyDay.getUTCFullYear();
-  const m = monthAnyDay.getUTCMonth();
-
-  if (payDayOfMonth && payDayOfMonth >= 1 && payDayOfMonth <= 28) {
-    return new Date(Date.UTC(y, m, payDayOfMonth));
-  }
-
-  // If day-of-month not set, treat as "last day of month"
-  return new Date(Date.UTC(y, m + 1, 0));
-}
-
-function computeCanonicalPayDateIso(schedule: PayScheduleRow, inputIso: string): { payDateIso: string; warning?: string } {
-  const inputUtc = parseIsoDateOnlyToUtc(inputIso);
-
-  const offsetDays = Number.isFinite(Number(schedule.pay_date_offset_days)) ? Number(schedule.pay_date_offset_days) : 0;
-  const adjustMode = schedule.pay_date_adjustment || "previous_working_day";
-
-  if (schedule.frequency === "monthly") {
-    const base = computeMonthlyPayDateUtc(inputUtc, schedule.pay_day_of_month);
-    const withOffset = addDaysUtc(base, offsetDays);
-    const adjusted = adjustWorkingDayUtc(withOffset, adjustMode);
-    return { payDateIso: dateOnlyIsoUtc(adjusted) };
-  }
-
-  const scheduleDow = schedule.pay_day_of_week || 5;
-  let payday = computeWeekPaydayUtc(inputUtc, scheduleDow);
-
-  // Enforce cycle for fortnightly/four_weekly using anchor
-  if (schedule.frequency === "fortnightly" || schedule.frequency === "four_weekly") {
-    const period = schedule.frequency === "fortnightly" ? 14 : 28;
-
-    const anchorIso = String(schedule.cycle_anchor_pay_date || "").trim();
-    if (!anchorIso || !isIsoDateOnly(anchorIso)) {
-      // Should not happen for your seeded non-flex schedules, but keep UI resilient
-      const withOffset = addDaysUtc(payday, offsetDays);
-      const adjusted = adjustWorkingDayUtc(withOffset, adjustMode);
-      return {
-        payDateIso: dateOnlyIsoUtc(adjusted),
-        warning: "Schedule missing cycle anchor. Cycle alignment not enforced for this schedule.",
-      };
-    }
-
-    const anchorUtc = parseIsoDateOnlyToUtc(anchorIso);
-    const anchorPayday = computeWeekPaydayUtc(anchorUtc, scheduleDow);
-
-    const diff = diffDaysUtc(payday, anchorPayday);
-    const rem = ((diff % period) + period) % period;
-
-    if (rem !== 0) {
-      const next = addDaysUtc(payday, period - rem);
-      payday = next;
-      const withOffset = addDaysUtc(payday, offsetDays);
-      const adjusted = adjustWorkingDayUtc(withOffset, adjustMode);
-      return {
-        payDateIso: dateOnlyIsoUtc(adjusted),
-        warning: "Selected week is not a pay week for this cycle. Moved to the next valid pay date.",
-      };
-    }
-  }
-
-  const withOffset = addDaysUtc(payday, offsetDays);
-  const adjusted = adjustWorkingDayUtc(withOffset, adjustMode);
-  return { payDateIso: dateOnlyIsoUtc(adjusted) };
-}
-
-function computePayPeriodIso(schedule: PayScheduleRow, payDateIso: string): { startIso: string; endIso: string } {
+function computePeriodForSelectedPayDate(
+  schedule: PayScheduleRow,
+  payDateIso: string
+): { startIso: string; endIso: string; warning?: string } {
   const payUtc = parseIsoDateOnlyToUtc(payDateIso);
-  const timing = String(schedule.pay_timing || "arrears").trim().toLowerCase();
 
   if (schedule.frequency === "monthly") {
-    let base = payUtc;
-
-    // For monthly, treat arrears as "previous calendar month"
-    if (timing === "arrears") {
-      const y = payUtc.getUTCFullYear();
-      const m = payUtc.getUTCMonth();
-      base = new Date(Date.UTC(y, m - 1, 1));
-    } else if (timing === "advance") {
-      const y = payUtc.getUTCFullYear();
-      const m = payUtc.getUTCMonth();
-      base = new Date(Date.UTC(y, m + 1, 1));
-    }
-
-    const y = base.getUTCFullYear();
-    const m = base.getUTCMonth();
+    const y = payUtc.getUTCFullYear();
+    const m = payUtc.getUTCMonth();
     const start = new Date(Date.UTC(y, m, 1));
     const end = new Date(Date.UTC(y, m + 1, 0));
-    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+    return {
+      startIso: dateOnlyIsoUtc(start),
+      endIso: dateOnlyIsoUtc(end),
+    };
   }
 
-  const periodDays = schedule.frequency === "weekly" ? 7 : schedule.frequency === "fortnightly" ? 14 : schedule.frequency === "four_weekly" ? 28 : 7;
-
-  const payWeekMon = mondayOfWeekUtc(payUtc);
-
-  if (timing === "advance") {
-    const start = payWeekMon;
-    const end = addDaysUtc(start, periodDays - 1);
-    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+  if (schedule.frequency === "weekly") {
+    const start = mondayOfWeekUtc(payUtc);
+    const end = addDaysUtc(start, 6);
+    return {
+      startIso: dateOnlyIsoUtc(start),
+      endIso: dateOnlyIsoUtc(end),
+    };
   }
 
-  if (timing === "current") {
-    const payWeekSun = addDaysUtc(payWeekMon, 6);
-    const end = payWeekSun;
+  const periodDays = schedule.frequency === "fortnightly" ? 14 : 28;
+  const anchorIso = String(schedule.cycle_anchor_pay_date || "").trim();
+
+  if (isIsoDateOnly(anchorIso)) {
+    let end = parseIsoDateOnlyToUtc(anchorIso);
+
+    if (payUtc.getTime() > end.getTime()) {
+      while (end.getTime() < payUtc.getTime()) {
+        end = addDaysUtc(end, periodDays);
+      }
+    } else {
+      while (addDaysUtc(end, -periodDays).getTime() >= payUtc.getTime()) {
+        end = addDaysUtc(end, -periodDays);
+      }
+    }
+
     const start = addDaysUtc(end, -(periodDays - 1));
-    return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+
+    return {
+      startIso: dateOnlyIsoUtc(start),
+      endIso: dateOnlyIsoUtc(end),
+    };
   }
 
-  // default arrears
-  const end = addDaysUtc(payWeekMon, -1); // Sunday before pay week
+  const end = payUtc;
   const start = addDaysUtc(end, -(periodDays - 1));
-  return { startIso: dateOnlyIsoUtc(start), endIso: dateOnlyIsoUtc(end) };
+
+  return {
+    startIso: dateOnlyIsoUtc(start),
+    endIso: dateOnlyIsoUtc(end),
+    warning: "This schedule has no cycle anchor date, so the pay period is being calculated from the selected pay date.",
+  };
 }
 
 async function fetchActiveCompanyId(): Promise<string | null> {
@@ -354,33 +265,6 @@ function scheduleLabel(s: PayScheduleRow) {
 
 function todayIsoUtc() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function nextPayDateFromSchedule(schedule: PayScheduleRow, fromIso: string) {
-  const fromUtc = parseIsoDateOnlyToUtc(fromIso);
-
-  const base = computeCanonicalPayDateIso(schedule, dateOnlyIsoUtc(fromUtc)).payDateIso;
-  let candidate = parseIsoDateOnlyToUtc(base);
-
-  // If candidate is before "from", move forward to next slot
-  if (dateOnlyIsoUtc(candidate) < dateOnlyIsoUtc(fromUtc)) {
-    if (schedule.frequency === "monthly") {
-      const y = fromUtc.getUTCFullYear();
-      const m = fromUtc.getUTCMonth();
-      const nextMonth = new Date(Date.UTC(y, m + 1, 1));
-      const nextIso = dateOnlyIsoUtc(nextMonth);
-      return computeCanonicalPayDateIso(schedule, nextIso).payDateIso;
-    }
-
-    const step = schedule.frequency === "weekly" ? 7 : schedule.frequency === "fortnightly" ? 14 : schedule.frequency === "four_weekly" ? 28 : 7;
-
-    // For weekly, advance by one week.
-    // For fortnightly/four_weekly, computeCanonicalPayDateIso will also enforce/snap cycle.
-    const bumped = addDaysUtc(candidate, step);
-    return computeCanonicalPayDateIso(schedule, dateOnlyIsoUtc(bumped)).payDateIso;
-  }
-
-  return dateOnlyIsoUtc(candidate);
 }
 
 export default function PayrollNewPage() {
@@ -476,16 +360,28 @@ export default function PayrollNewPage() {
             slug: typeof r.slug === "string" ? r.slug : null,
 
             frequency: normalizeFrequency(r.frequency),
-            pay_day_of_week: r.pay_day_of_week === null || r.pay_day_of_week === undefined ? null : Number(r.pay_day_of_week),
-            pay_day_of_month: r.pay_day_of_month === null || r.pay_day_of_month === undefined ? null : Number(r.pay_day_of_month),
-            cycle_anchor_pay_date: typeof r.cycle_anchor_pay_date === "string" ? r.cycle_anchor_pay_date : null,
+            pay_day_of_week:
+              r.pay_day_of_week === null || r.pay_day_of_week === undefined
+                ? null
+                : Number(r.pay_day_of_week),
+            pay_day_of_month:
+              r.pay_day_of_month === null || r.pay_day_of_month === undefined
+                ? null
+                : Number(r.pay_day_of_month),
+            cycle_anchor_pay_date:
+              typeof r.cycle_anchor_pay_date === "string" ? r.cycle_anchor_pay_date : null,
 
             pay_timing: typeof r.pay_timing === "string" ? r.pay_timing : null,
-            pay_date_adjustment: typeof r.pay_date_adjustment === "string" ? r.pay_date_adjustment : null,
-            pay_date_offset_days: r.pay_date_offset_days === null || r.pay_date_offset_days === undefined ? null : Number(r.pay_date_offset_days),
+            pay_date_adjustment:
+              typeof r.pay_date_adjustment === "string" ? r.pay_date_adjustment : null,
+            pay_date_offset_days:
+              r.pay_date_offset_days === null || r.pay_date_offset_days === undefined
+                ? null
+                : Number(r.pay_date_offset_days),
 
             is_template: Boolean(r.is_template),
-            is_active: r.is_active === null || r.is_active === undefined ? null : Boolean(r.is_active),
+            is_active:
+              r.is_active === null || r.is_active === undefined ? null : Boolean(r.is_active),
             is_flexible: Boolean(r.is_flexible),
           }))
           .sort((a, b) => {
@@ -497,11 +393,13 @@ export default function PayrollNewPage() {
 
         setSchedules(cleaned);
 
-        if (!scheduleId && cleaned.length > 0) {
-          setScheduleId(cleaned[0].id);
+        if (cleaned.length > 0) {
+          setScheduleId((prev) => (prev && cleaned.some((s) => s.id === prev) ? prev : cleaned[0].id));
         }
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message ? String(e.message) : "Failed to load pay schedules");
+        if (!cancelled) {
+          setErr(e?.message ? String(e.message) : "Failed to load pay schedules");
+        }
       }
     }
 
@@ -510,7 +408,6 @@ export default function PayrollNewPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -528,7 +425,9 @@ export default function PayrollNewPage() {
         const data: WizardTokenResponse | null = await res.json().catch(() => null);
 
         if (!res.ok) {
-          const msg = normalizeMsg(data?.error || data?.message || `Failed to get wizard token (${res.status})`);
+          const msg = normalizeMsg(
+            data?.error || data?.message || `Failed to get wizard token (${res.status})`
+          );
           if (!cancelled) setErr(msg || `Failed to get wizard token (${res.status})`);
           return;
         }
@@ -541,7 +440,9 @@ export default function PayrollNewPage() {
 
         if (!cancelled) setWizardToken(token);
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message ? String(e.message) : "Failed to get wizard token");
+        if (!cancelled) {
+          setErr(e?.message ? String(e.message) : "Failed to get wizard token");
+        }
       }
     }
 
@@ -552,23 +453,20 @@ export default function PayrollNewPage() {
     };
   }, []);
 
-  // Auto-set a sensible pay date when a schedule is selected (next pay date from today)
   useEffect(() => {
-    if (!selectedSchedule) return;
-    if (payDate && isIsoDateOnly(payDate)) return;
-
-    try {
-      const nextIso = nextPayDateFromSchedule(selectedSchedule, todayIsoUtc());
-      setPayDate(nextIso);
-    } catch {
-      // ignore
+    if (!payDate) {
+      setPayDate(todayIsoUtc());
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSchedule?.id]);
+  }, [payDate]);
 
-  // Auto-compute period and canonical pay date from schedule rules
   useEffect(() => {
-    if (!selectedSchedule) return;
+    if (!selectedSchedule) {
+      setStartDate("");
+      setEndDate("");
+      setWarn(null);
+      return;
+    }
+
     if (!payDate || !isIsoDateOnly(payDate)) {
       setStartDate("");
       setEndDate("");
@@ -577,26 +475,17 @@ export default function PayrollNewPage() {
     }
 
     try {
-      const canon = computeCanonicalPayDateIso(selectedSchedule, payDate);
-      if (canon.warning) setWarn(canon.warning);
-      else setWarn(null);
-
-      if (canon.payDateIso !== payDate) {
-        setPayDate(canon.payDateIso);
-        return;
-      }
-
-      const period = computePayPeriodIso(selectedSchedule, canon.payDateIso);
+      const period = computePeriodForSelectedPayDate(selectedSchedule, payDate);
       setStartDate(period.startIso);
       setEndDate(period.endIso);
+      setWarn(period.warning ?? null);
     } catch (e: any) {
       setWarn(null);
       setStartDate("");
       setEndDate("");
       setErr(e?.message ? String(e.message) : "Failed to compute pay period from schedule");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSchedule?.id, payDate]);
+  }, [selectedSchedule, payDate]);
 
   const dateRangeBad = useMemo(() => {
     if (!startDate || !endDate) return false;
@@ -624,7 +513,12 @@ export default function PayrollNewPage() {
     setInfo(null);
 
     try {
-      const schedName = selectedSchedule?.name ? String(selectedSchedule.name) : derivedFrequency ? labelFreq(derivedFrequency) : "Payroll";
+      const schedName = selectedSchedule?.name
+        ? String(selectedSchedule.name)
+        : derivedFrequency
+        ? labelFreq(derivedFrequency)
+        : "Payroll";
+
       const runName = `${schedName} payroll (pay date ${payDate})`;
 
       const res = await fetch("/api/payroll/runs", {
@@ -633,12 +527,9 @@ export default function PayrollNewPage() {
         body: JSON.stringify({
           wizardToken,
           pay_schedule_id: scheduleId,
-
-          // We send these, but the API will recompute and enforce schedule rules anyway
           pay_date: payDate,
           period_start: startDate,
           period_end: endDate,
-
           run_name: runName,
         }),
       });
@@ -646,7 +537,9 @@ export default function PayrollNewPage() {
       const data: CreateRunResponse | null = await res.json().catch(() => null);
 
       if (!res.ok) {
-        const msg = normalizeMsg(data?.error || data?.message || `Failed to create payroll run (${res.status})`);
+        const msg = normalizeMsg(
+          data?.error || data?.message || `Failed to create payroll run (${res.status})`
+        );
         setErr(msg || `Failed to create payroll run (${res.status})`);
         setBusy(false);
         return;
@@ -670,7 +563,11 @@ export default function PayrollNewPage() {
         return;
       }
 
-      setInfo(data?.reusedExisting ? "Payroll run already exists. Opening it." : "Payroll run created. Opening it.");
+      setInfo(
+        data?.reusedExisting
+          ? "Payroll run already exists. Opening it."
+          : "Payroll run created. Opening it."
+      );
 
       setTimeout(() => {
         router.push(`/dashboard/payroll/${runId}`);
@@ -682,90 +579,115 @@ export default function PayrollNewPage() {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <h2 className="text-xl font-semibold text-neutral-900">Payroll Run Wizard</h2>
-      <p className="text-sm text-neutral-700">Choose a pay schedule. Pick a pay date. WageFlow will calculate the pay period from the schedule rules.</p>
+    <div className="w-full max-w-none rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-xl font-semibold text-neutral-900">Payroll Run Wizard</h2>
+        <p className="text-sm text-neutral-700">
+          Select any pay date you want. WageFlow will keep that pay date and calculate the pay
+          period around it from the selected schedule frequency.
+        </p>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <label className="block sm:col-span-2">
-          <span className="text-xs text-neutral-600">Pay schedule</span>
-          <select
-            className="mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm"
-            value={scheduleId}
-            onChange={(e) => setScheduleId(e.target.value)}
-          >
-            <option value="">{schedules.length ? "Select a pay schedule" : "No schedules for this company"}</option>
-            {schedules.map((s) => (
-              <option key={s.id} value={s.id}>
-                {scheduleLabel(s)}
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <label className="block sm:col-span-2">
+            <span className="text-xs text-neutral-600">Pay schedule</span>
+            <select
+              className="mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm"
+              value={scheduleId}
+              onChange={(e) => setScheduleId(e.target.value)}
+            >
+              <option value="">
+                {schedules.length ? "Select a pay schedule" : "No schedules for this company"}
               </option>
-            ))}
-          </select>
-        </label>
+              {schedules.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {scheduleLabel(s)}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label className="block">
-          <span className="text-xs text-neutral-600">Pay date (calculated to match schedule)</span>
-          <input
-            type="date"
-            className="mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm"
-            value={payDate}
-            onChange={(e) => setPayDate(e.target.value)}
-          />
-        </label>
+          <label className="block">
+            <span className="text-xs text-neutral-600">Pay date (manual)</span>
+            <input
+              type="date"
+              className="mt-1 w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm"
+              value={payDate}
+              onChange={(e) => setPayDate(e.target.value)}
+            />
+          </label>
 
-        <label className="block">
-          <span className="text-xs text-neutral-600">Frequency (from schedule)</span>
-          <input
-            type="text"
-            readOnly
-            className={`${inter.className} mt-1 w-full rounded border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm font-extrabold text-neutral-900`}
-            value={derivedFrequency ? labelFreq(derivedFrequency) : ""}
-            placeholder={scheduleId ? "Loading..." : "Select a schedule"}
-          />
-        </label>
+          <label className="block">
+            <span className="text-xs text-neutral-600">Frequency (from schedule)</span>
+            <input
+              type="text"
+              readOnly
+              className={`${inter.className} mt-1 w-full rounded border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm font-extrabold text-neutral-900`}
+              value={derivedFrequency ? labelFreq(derivedFrequency) : ""}
+              placeholder={scheduleId ? "Loading..." : "Select a schedule"}
+            />
+          </label>
 
-        <label className="block">
-          <span className="text-xs text-neutral-600">Pay period start (calculated)</span>
-          <input
-            type="date"
-            readOnly
-            className="mt-1 w-full cursor-not-allowed rounded border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-900"
-            value={startDate}
-          />
-        </label>
+          <label className="block">
+            <span className="text-xs text-neutral-600">Pay period start (calculated)</span>
+            <input
+              type="date"
+              readOnly
+              className="mt-1 w-full cursor-not-allowed rounded border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-900"
+              value={startDate}
+            />
+          </label>
 
-        <label className="block">
-          <span className="text-xs text-neutral-600">Pay period end (calculated)</span>
-          <input
-            type="date"
-            readOnly
-            className="mt-1 w-full cursor-not-allowed rounded border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-900"
-            value={endDate}
-          />
-        </label>
-      </div>
+          <label className="block">
+            <span className="text-xs text-neutral-600">Pay period end (calculated)</span>
+            <input
+              type="date"
+              readOnly
+              className="mt-1 w-full cursor-not-allowed rounded border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-900"
+              value={endDate}
+            />
+          </label>
+        </div>
 
-      {!wizardToken ? <div className="mt-3 text-sm text-neutral-600">Loading wizard token...</div> : null}
+        {!wizardToken ? (
+          <div className="mt-3 text-sm text-neutral-600">Loading wizard token...</div>
+        ) : null}
 
-      {warn ? <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{warn}</div> : null}
+        {warn ? (
+          <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {warn}
+          </div>
+        ) : null}
 
-      {dateRangeBad ? <div className="mt-3 text-sm text-red-700">Pay period start must be on or before pay period end.</div> : null}
+        {dateRangeBad ? (
+          <div className="mt-3 text-sm text-red-700">
+            Pay period start must be on or before pay period end.
+          </div>
+        ) : null}
 
-      {info ? <div className="mt-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">{info}</div> : null}
+        {info ? (
+          <div className="mt-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            {info}
+          </div>
+        ) : null}
 
-      {err ? <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{err}</div> : null}
+        {err ? (
+          <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {err}
+          </div>
+        ) : null}
 
-      <div className="pt-6">
-        <button
-          className={
-            "inline-flex items-center rounded-full bg-[#0f3c85] px-5 py-2 text-sm font-semibold text-white " +
-            (canSubmit && !busy ? "hover:opacity-95" : "opacity-60 cursor-not-allowed")
-          }
-          disabled={!canSubmit || busy}
-          onClick={onStart}
-        >
-          {busy ? "Starting..." : "Start payroll run"}
-        </button>
+        <div className="pt-6">
+          <button
+            className={
+              "inline-flex items-center rounded-full bg-[#0f3c85] px-5 py-2 text-sm font-semibold text-white " +
+              (canSubmit && !busy ? "hover:opacity-95" : "opacity-60 cursor-not-allowed")
+            }
+            disabled={!canSubmit || busy}
+            onClick={onStart}
+          >
+            {busy ? "Starting..." : "Start payroll run"}
+          </button>
+        </div>
       </div>
     </div>
   );

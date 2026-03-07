@@ -33,6 +33,7 @@ type PayslipRow = {
   postgrad_loan?: number | null;
 
   tax_code?: string | null;
+  tax_code_basis?: string | null;
   ni_category?: string | null;
 };
 
@@ -177,6 +178,13 @@ function pickFirst(...vals: any[]) {
   return null;
 }
 
+function formatTaxBasis(value: string | null | undefined): string {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "week1_month1") return "Week 1 / Month 1";
+  if (v === "cumulative") return "Cumulative";
+  return "—";
+}
+
 export default function PayslipPage() {
   const params = useParams();
   const runId = String((params as any)?.id || "");
@@ -279,7 +287,14 @@ export default function PayslipPage() {
         const studentLoan = toNumberSafe(pickFirst(match.student_loan, match.studentLoan, 0));
         const pgLoan = toNumberSafe(pickFirst(match.pg_loan, match.postgrad_loan, match.pgLoan, 0));
 
-        const net = toNumberSafe(pickFirst(match.net, match.net_pay, match.total_net, gross - (tax + niEmp + pensionEmp + other + aeo + studentLoan + pgLoan)));
+        const net = toNumberSafe(
+          pickFirst(
+            match.net,
+            match.net_pay,
+            match.total_net,
+            gross - (tax + niEmp + pensionEmp + other + aeo + studentLoan + pgLoan)
+          )
+        );
 
         const deductionsDirect = toNumberSafe(
           pickFirst(match.deductions, match.total_deductions, match.deduction_total, null)
@@ -297,13 +312,30 @@ export default function PayslipPage() {
             ? Math.max(0, Number((deductions - computedKnownDeductions).toFixed(2)))
             : 0;
 
-        const taxCode = String(pickFirst(match.tax_code_used, match.tax_code, match.taxCode, "") || "").trim() || null;
-        const niCat = String(pickFirst(match.ni_category_used, match.ni_category, match.niCategory, "") || "").trim() || null;
+        const taxCode = String(
+          pickFirst(match.tax_code_used, match.tax_code, match.taxCode, "") || ""
+        ).trim() || null;
+
+        const taxCodeBasis = String(
+          pickFirst(
+            match.tax_code_basis_used,
+            match.tax_code_basis,
+            match.tax_basis_used,
+            match.tax_basis,
+            ""
+          ) || ""
+        ).trim() || null;
+
+        const niCat = String(
+          pickFirst(match.ni_category_used, match.ni_category, match.niCategory, "") || ""
+        ).trim() || null;
 
         setRow({
           employee_id: String(pickFirst(match.employee_id, match.employeeId, match.id, "") || ""),
           employee_name: String(pickFirst(match.employee_name, match.employeeName, "—") || "—"),
-          employee_number: String(pickFirst(match.employee_number, match.employeeNumber, match.payroll_number, "—") || "—"),
+          employee_number: String(
+            pickFirst(match.employee_number, match.employeeNumber, match.payroll_number, "—") || "—"
+          ),
           email: String(pickFirst(match.email, match.employee_email, "—") || "—"),
 
           gross: Number(gross.toFixed(2)),
@@ -321,6 +353,7 @@ export default function PayslipPage() {
           postgrad_loan: Number(pgLoan.toFixed(2)),
 
           tax_code: taxCode,
+          tax_code_basis: taxCodeBasis,
           ni_category: niCat,
         });
       } catch (e: any) {
@@ -373,6 +406,20 @@ export default function PayslipPage() {
 
     return `${shown} is the tax code HMRC has issued for this employment. It affects how much of your pay is treated as tax-free before PAYE is calculated. Codes can change during the year when HMRC updates your record.`;
   }, [row?.tax_code]);
+
+  const taxBasisExplanationText = useMemo(() => {
+    const basis = String(row?.tax_code_basis || "").trim().toLowerCase();
+
+    if (basis === "week1_month1") {
+      return "Week 1 / Month 1 means PAYE is worked out for this pay period on its own, without looking back at earlier pay and tax in the tax year. HMRC may use this for some starter or temporary code situations.";
+    }
+
+    if (basis === "cumulative") {
+      return "Cumulative means PAYE is calculated using your pay and tax position across the tax year to date, not just this single period. This is the most common basis for regular payroll.";
+    }
+
+    return "Tax basis was not provided in the payslip data returned for this run.";
+  }, [row?.tax_code_basis]);
 
   if (!hydrated) {
     return (
@@ -492,6 +539,10 @@ export default function PayslipPage() {
             <div style={S.row}>
               <div style={S.label}>Tax code</div>
               <div style={S.value}>{row?.tax_code ?? "—"}</div>
+            </div>
+            <div style={S.row}>
+              <div style={S.label}>Tax basis</div>
+              <div style={S.value}>{formatTaxBasis(row?.tax_code_basis)}</div>
             </div>
             <div style={S.row}>
               <div style={S.label}>NI category</div>
@@ -665,6 +716,11 @@ export default function PayslipPage() {
 
             <div style={{ height: 12 }} />
 
+            <div style={{ fontWeight: 900, marginBottom: 6 }}>Tax basis</div>
+            <div style={S.small}>{taxBasisExplanationText}</div>
+
+            <div style={{ height: 12 }} />
+
             <div style={S.hint}>
               This explanation is a plain-English guide. It is not tax advice. HMRC rules, thresholds, and your personal circumstances decide the actual calculation.
             </div>
@@ -686,7 +742,6 @@ export default function PayslipPage() {
           }
 
           @media (max-width: 900px) {
-            /* Keep it readable on smaller screens */
             .wf-no-print { }
           }
         `}

@@ -1,4 +1,4 @@
-/* C:\Users\adamm\Projects\wageflow01\app\api\employees\next-number\route.ts
+/* C:\Projects\wageflow01\app\api\employees\next-number\route.ts
    Returns the next employee_number for the active company.
    Important: This is a server route. No JSX in here. Ever.
 */
@@ -8,6 +8,21 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+function json(status: number, body: any) {
+  return NextResponse.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+function isUuid(v: any): boolean {
+  const s = String(v ?? "").trim();
+  if (!s) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    s
+  );
+}
 
 async function getActiveCompanyId(): Promise<string> {
   const jar = await cookies();
@@ -57,13 +72,14 @@ function computeNext(existing: string[]) {
 
 export async function GET() {
   try {
-    const companyId = getActiveCompanyId();
+    const companyId = await getActiveCompanyId();
 
     if (!companyId) {
-      return NextResponse.json(
-        { ok: false, error: "No active company selected." },
-        { status: 400 }
-      );
+      return json(400, { ok: false, error: "No active company selected." });
+    }
+
+    if (!isUuid(companyId)) {
+      return json(400, { ok: false, error: "Active company id is not a valid UUID." });
     }
 
     const supabase = await createClient();
@@ -78,7 +94,7 @@ export async function GET() {
       .limit(250);
 
     if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      return json(500, { ok: false, error: error.message });
     }
 
     const existing = (data as Row[] | null)
@@ -87,14 +103,11 @@ export async function GET() {
 
     const next_employee_number = computeNext(existing);
 
-    return NextResponse.json(
-      { ok: true, next_employee_number },
-      { status: 200 }
-    );
+    return json(200, { ok: true, next_employee_number });
   } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: err?.message ?? "Failed to generate employee number." },
-      { status: 500 }
-    );
+    return json(500, {
+      ok: false,
+      error: err?.message ?? "Failed to generate employee number.",
+    });
   }
 }

@@ -1,4 +1,4 @@
-/* C:\Users\adamm\Projects\wageflow01\app\dashboard\employees\[id]\edit\page.tsx */
+/* C:\Projects\wageflow01\app\dashboard\employees\[id]\edit\page.tsx */
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -38,6 +38,12 @@ type EmployeeRow = {
 
   address?: any | null;
 
+  tax_code?: string | null;
+  tax_code_basis?: string | null;
+  tax_basis?: string | null;
+  ni_category?: string | null;
+  is_director?: boolean | null;
+
   [key: string]: any;
 };
 
@@ -68,6 +74,11 @@ type FormState = {
   county: string;
   postcode: string;
   country: string;
+
+  tax_code: string;
+  tax_code_basis: string;
+  ni_category: string;
+  is_director: boolean;
 };
 
 const CARD = "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
@@ -284,6 +295,11 @@ export default function EditEmployeePage() {
     county: "",
     postcode: "",
     country: "United Kingdom",
+
+    tax_code: "1257L",
+    tax_code_basis: "cumulative",
+    ni_category: "A",
+    is_director: false,
   });
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -453,6 +469,11 @@ export default function EditEmployeePage() {
         setEmployee(data);
 
         const addr = normalizeAddress((data as any).address);
+        const rawTaxCodeBasis = String(
+          (data as any).tax_code_basis || (data as any).tax_basis || "cumulative"
+        )
+          .trim()
+          .toLowerCase();
 
         const nextForm: FormState = {
           employee_number: String((data as any).employee_number || "").trim(),
@@ -492,6 +513,11 @@ export default function EditEmployeePage() {
           county: addr.county,
           postcode: addr.postcode,
           country: addr.country || "United Kingdom",
+
+          tax_code: String((data as any).tax_code || "1257L").trim().toUpperCase() || "1257L",
+          tax_code_basis: rawTaxCodeBasis === "week1_month1" ? "week1_month1" : "cumulative",
+          ni_category: String((data as any).ni_category || "A").trim().toUpperCase() || "A",
+          is_director: (data as any).is_director === true,
         };
 
         const derivedOnLoadStr = deriveHourlyStringFromForm(nextForm.annual_salary, nextForm.hours_per_week);
@@ -652,6 +678,11 @@ export default function EditEmployeePage() {
 
       ni_number: ni || null,
       national_insurance_number: ni || null,
+
+      tax_code: form.tax_code.trim().toUpperCase() || null,
+      tax_code_basis: form.tax_code_basis === "week1_month1" ? "week1_month1" : "cumulative",
+      ni_category: form.ni_category.trim().toUpperCase() || null,
+      is_director: form.is_director,
 
       address,
     };
@@ -1039,6 +1070,80 @@ export default function EditEmployeePage() {
 
                     <div className="mt-3 text-xs text-neutral-600">
                       If you leave these blank, they will be saved as empty (null) values.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <div className="rounded-lg border border-neutral-300 bg-white p-4">
+                    <div className="text-sm font-semibold text-neutral-900">Tax and NI</div>
+                    <div className="mt-1 text-xs text-neutral-600">
+                      These are defaults unless HMRC or the employee&apos;s documents say otherwise.
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="block text-sm text-neutral-800">Tax code</label>
+                        <input
+                          value={form.tax_code}
+                          onChange={(e) => setField("tax_code", e.target.value.toUpperCase())}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="tax_code"
+                          placeholder="1257L"
+                          maxLength={12}
+                        />
+                        <div className="mt-1 text-xs text-neutral-600">
+                          From the employee&apos;s P45 or HMRC notification. Default is 1257L.
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">NI category</label>
+                        <select
+                          value={form.ni_category}
+                          onChange={(e) => setField("ni_category", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="ni_category"
+                        >
+                          <option value="A">A – Standard rate</option>
+                          <option value="B">B – Married women / widows (reduced rate)</option>
+                          <option value="C">C – Over State Pension age</option>
+                          <option value="H">H – Apprentice under 25</option>
+                          <option value="J">J – Deferred NI</option>
+                          <option value="M">M – Under 21</option>
+                          <option value="V">V – Veteran</option>
+                          <option value="Z">Z – Under 21, deferred NI</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Tax basis</label>
+                        <select
+                          value={form.tax_code_basis}
+                          onChange={(e) => setField("tax_code_basis", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="tax_code_basis"
+                        >
+                          <option value="cumulative">Cumulative</option>
+                          <option value="week1_month1">Week 1 / Month 1 (emergency)</option>
+                        </select>
+                        <div className="mt-1 text-xs text-neutral-600">
+                          Use Week 1 / Month 1 only if HMRC instructs it.
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Director</label>
+                        <select
+                          value={form.is_director ? "yes" : "no"}
+                          onChange={(e) => setField("is_director", e.target.value === "yes")}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="is_director"
+                        >
+                          <option value="no">No</option>
+                          <option value="yes">Yes – annual NI method applies</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 </div>

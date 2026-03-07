@@ -8,22 +8,24 @@ export const revalidate = 0;
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-type TaxBasis = "Cumulative" | "Week1Month1" | null;
+type TaxCodeBasis = "cumulative" | "week1_month1" | null;
 
 type P45Row = {
   employee_id: string;
   employer_paye_ref: string | null;
   employer_name: string | null;
   works_number: string | null;
-  leaving_date: string | null; // YYYY-MM-DD
+  leaving_date: string | null;
   tax_code: string | null;
-  tax_basis: TaxBasis;
+  tax_code_basis: TaxCodeBasis;
   total_pay_to_date: number | null;
   total_tax_to_date: number | null;
   had_student_loan_deductions: boolean | null;
 };
 
-type P45Body = Partial<P45Row> & Record<string, unknown>;
+type P45Body = Partial<P45Row> & {
+  tax_basis?: string | null;
+} & Record<string, unknown>;
 
 function previewWriteBlocked() {
   const isPreview = process.env.VERCEL_ENV === "preview";
@@ -53,16 +55,27 @@ function safeNumber(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function normalizeTaxBasis(v: unknown): TaxBasis {
-  const s = String(v ?? "").trim();
+function normalizeTaxCodeBasis(v: unknown): TaxCodeBasis {
+  const s = String(v ?? "").trim().toLowerCase();
   if (!s) return null;
 
-  const upper = s.toUpperCase();
-  if (upper === "CUMULATIVE") return "Cumulative";
-  if (upper === "WEEK1MONTH1") return "Week1Month1";
-  if (upper === "W1M1") return "Week1Month1";
+  if (s === "cumulative") return "cumulative";
+  if (
+    s === "week1_month1" ||
+    s === "week1month1" ||
+    s === "week1month1" ||
+    s === "w1m1" ||
+    s === "wk1/mth1" ||
+    s === "wk1mth1" ||
+    s === "week1" ||
+    s === "month1"
+  ) {
+    return "week1_month1";
+  }
 
-  if (s === "Cumulative" || s === "Week1Month1") return s as TaxBasis;
+  if (s === "week 1 / month 1" || s === "week 1 month 1") {
+    return "week1_month1";
+  }
 
   return null;
 }
@@ -107,7 +120,16 @@ export async function GET(_req: Request, ctx: RouteContext) {
 
     if (!data) return new NextResponse(null, { status: 204 });
 
-    return NextResponse.json({ ok: true, data }, { status: 200 });
+    return NextResponse.json(
+      {
+        ok: true,
+        data: {
+          ...data,
+          tax_basis: (data as any).tax_code_basis ?? null,
+        },
+      },
+      { status: 200 }
+    );
   } catch {
     return new NextResponse(null, { status: 204 });
   }
@@ -144,8 +166,8 @@ export async function POST(req: Request, ctx: RouteContext) {
     employer_name: String(body.employer_name ?? "").trim() || null,
     works_number: String(body.works_number ?? "").trim() || null,
     leaving_date: toIsoDateOnly(body.leaving_date),
-    tax_code: String(body.tax_code ?? "").trim() || null,
-    tax_basis: normalizeTaxBasis(body.tax_basis),
+    tax_code: String(body.tax_code ?? "").trim().toUpperCase() || null,
+    tax_code_basis: normalizeTaxCodeBasis(body.tax_code_basis ?? body.tax_basis),
     total_pay_to_date: safeNumber(body.total_pay_to_date),
     total_tax_to_date: safeNumber(body.total_tax_to_date),
     had_student_loan_deductions:
@@ -162,20 +184,64 @@ export async function POST(req: Request, ctx: RouteContext) {
 
     if (error) {
       if (looksLikeMissingTableOrRls(error)) {
-        return NextResponse.json({ ok: true, id: employeeId, data: row, warning: "db_write_failed" }, { status: 201 });
+        return NextResponse.json(
+          {
+            ok: true,
+            id: employeeId,
+            data: {
+              ...row,
+              tax_basis: row.tax_code_basis,
+            },
+            warning: "db_write_failed",
+          },
+          { status: 201 }
+        );
       }
 
       return NextResponse.json(
-        { ok: true, id: employeeId, data: row, warning: "db_write_failed", detail: error.message },
+        {
+          ok: true,
+          id: employeeId,
+          data: {
+            ...row,
+            tax_basis: row.tax_code_basis,
+          },
+          warning: "db_write_failed",
+          detail: error.message,
+        },
         { status: 201 }
       );
     }
 
-    return NextResponse.json({ ok: true, id: employeeId, data: data ?? row }, { status: 201 });
+    return NextResponse.json(
+      {
+        ok: true,
+        id: employeeId,
+        data: data
+          ? {
+              ...data,
+              tax_basis: (data as any).tax_code_basis ?? null,
+            }
+          : {
+              ...row,
+              tax_basis: row.tax_code_basis,
+            },
+      },
+      { status: 201 }
+    );
   } catch (e: unknown) {
     const msg = e && typeof e === "object" && "message" in e ? String((e as any).message) : String(e);
     return NextResponse.json(
-      { ok: true, id: employeeId, data: row, warning: "db_write_failed", detail: msg },
+      {
+        ok: true,
+        id: employeeId,
+        data: {
+          ...row,
+          tax_basis: row.tax_code_basis,
+        },
+        warning: "db_write_failed",
+        detail: msg,
+      },
       { status: 201 }
     );
   }

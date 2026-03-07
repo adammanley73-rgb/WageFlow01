@@ -46,6 +46,7 @@ type EmployeeRow = {
 
   tax_code?: unknown;
   taxCode?: unknown;
+  tax_code_basis?: unknown;
   tax_basis?: unknown;
   taxBasis?: unknown;
 
@@ -90,6 +91,7 @@ type SettingsAppliedRow = {
   employee_uuid: string | null;
   effective_from: string;
   tax_code: string | null;
+  tax_code_basis: string | null;
   tax_basis: string | null;
   ni_category: string | null;
   student_loan_plan: string | null;
@@ -135,6 +137,22 @@ function normalizeFrequency(v: unknown): string {
   if (!s) return "";
   if (s === "4weekly" || s === "fourweekly" || s === "four-weekly") return "four_weekly";
   return s;
+}
+
+function normalizeTaxCodeBasis(v: unknown): "cumulative" | "week1_month1" {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (
+    s === "week1_month1" ||
+    s === "w1m1" ||
+    s === "week1month1" ||
+    s === "week1" ||
+    s === "month1" ||
+    s === "wk1/mth1" ||
+    s === "wk1mth1"
+  ) {
+    return "week1_month1";
+  }
+  return "cumulative";
 }
 
 function isMissingColumnError(err: unknown): boolean {
@@ -472,6 +490,7 @@ export async function POST(_req: Request, { params }: RouteContext) {
             "employee_uuid",
             "effective_from",
             "tax_code",
+            "tax_code_basis",
             "tax_basis",
             "ni_category",
             "student_loan_plan",
@@ -526,16 +545,16 @@ export async function POST(_req: Request, { params }: RouteContext) {
     const applied = appliedByKey.get(employeeKey) ?? null;
 
     const empTaxCode = pickFirst(emp.tax_code, emp.taxCode);
-    const empTaxBasis = pickFirst(emp.tax_basis, emp.taxBasis);
+    const empTaxCodeBasis = pickFirst(emp.tax_code_basis, emp.tax_basis, emp.taxBasis);
     const empNiCat = pickFirst(emp.ni_category, emp.niCategory);
 
     const empLoan = pickFirst(emp.student_loan, emp.loan_plan, emp.studentLoan, emp.student_loan_plan);
     const empPg = emp.postgraduate_loan ?? emp.has_pgl ?? emp.postgrad_loan ?? null;
 
-    const taxCodeUsed = String(applied?.tax_code ?? empTaxCode ?? "BR").trim() || "BR";
-    const taxBasisUsed = String(applied?.tax_basis ?? empTaxBasis ?? "w1m1").trim() || "w1m1";
+    const taxCodeUsed = String(applied?.tax_code ?? empTaxCode ?? "1257L").trim().toUpperCase() || "1257L";
+    const taxCodeBasisUsed = normalizeTaxCodeBasis(applied?.tax_code_basis ?? applied?.tax_basis ?? empTaxCodeBasis);
     const niCategoryUsed =
-      String(applied?.ni_category ?? empNiCat ?? defaultNiCategory(emp)).trim() || defaultNiCategory(emp);
+      String(applied?.ni_category ?? empNiCat ?? defaultNiCategory(emp)).trim().toUpperCase() || defaultNiCategory(emp);
 
     const studentLoanUsed = normalizeLoanPlan(applied?.student_loan_plan ?? empLoan ?? "none");
     const pgLoanUsed = Boolean(applied?.postgrad_loan ?? empPg ?? false);
@@ -549,8 +568,8 @@ export async function POST(_req: Request, { params }: RouteContext) {
       hoursUsedRaw == null || hoursUsedRaw === ""
         ? null
         : Number.isFinite(Number(hoursUsedRaw))
-        ? Number(hoursUsedRaw)
-        : null;
+          ? Number(hoursUsedRaw)
+          : null;
 
     const settingsHistoryIdUsed = applied?.id ?? null;
 
@@ -560,6 +579,7 @@ export async function POST(_req: Request, { params }: RouteContext) {
       company_id: companyId,
 
       tax_code_used: taxCodeUsed,
+      tax_code_basis_used: taxCodeBasisUsed,
       ni_category_used: niCategoryUsed,
       student_loan_used: studentLoanUsed,
       pg_loan_used: pgLoanUsed,
@@ -568,7 +588,6 @@ export async function POST(_req: Request, { params }: RouteContext) {
       pay_basis_used: payBasisUsed,
       hours_per_week_used: hoursUsed,
 
-      tax_basis_used: taxBasisUsed,
       settings_history_id_used: settingsHistoryIdUsed,
 
       basic_pay: 0,
@@ -602,7 +621,7 @@ export async function POST(_req: Request, { params }: RouteContext) {
         snapped_at: nowIso,
         settings_source: settingsHistoryIdUsed ? "history" : "defaults_or_employee",
         as_of_date: asOfDate,
-        tax_basis_used: taxBasisUsed,
+        tax_code_basis_used: taxCodeBasisUsed,
         employee_key: employeeKey,
         attach_mode: "due",
       },
