@@ -1,5 +1,3 @@
-// C:\Projects\wageflow01\app\dashboard\employees\[id]\wizard\declaration\page.tsx
-
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";

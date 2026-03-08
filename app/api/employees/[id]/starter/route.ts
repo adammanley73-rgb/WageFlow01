@@ -1,5 +1,3 @@
-// C:\Projects\wageflow01\app\api\employees\[id]\starter\route.ts
-
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
