@@ -13,6 +13,7 @@ type RunApi = any;
 
 type PayslipRow = {
   employee_id: string;
+  payroll_run_employee_id?: string | null;
 
   employee_name?: string | null;
   employee_number?: string | null;
@@ -35,6 +36,8 @@ type PayslipRow = {
   tax_code?: string | null;
   tax_code_basis?: string | null;
   ni_category?: string | null;
+
+  breakdown_available?: boolean;
 };
 
 const S = {
@@ -108,7 +111,6 @@ const S = {
     justifyContent: "flex-end",
     marginTop: 12,
   } as CSSProperties,
-
   sectionTitle: {
     marginTop: 14,
     paddingTop: 14,
@@ -117,14 +119,12 @@ const S = {
     fontWeight: 900,
     color: "rgba(0,0,0,0.85)",
   } as CSSProperties,
-
   twoCol: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: 12,
     marginTop: 10,
   } as CSSProperties,
-
   breakdownRow: {
     display: "grid",
     gridTemplateColumns: "1fr auto",
@@ -136,13 +136,11 @@ const S = {
     marginBottom: 8,
     fontSize: 13,
   } as CSSProperties,
-
   small: {
     fontSize: 12,
     color: "rgba(0,0,0,0.7)",
     lineHeight: 1.35,
   } as CSSProperties,
-
   hint: {
     marginTop: 10,
     padding: "10px 12px",
@@ -185,6 +183,40 @@ function formatTaxBasis(value: string | null | undefined): string {
   return "—";
 }
 
+function formatFrequency(value: any): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return "—";
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+function hasOwn(obj: any, key: string): boolean {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function hasAnyDefinedKey(obj: any, keys: string[]): boolean {
+  return keys.some((key) => {
+    if (!hasOwn(obj, key)) return false;
+    const value = obj[key];
+    if (value === null || value === undefined) return false;
+    if (typeof value === "string") return value.trim() !== "";
+    return true;
+  });
+}
+
+function findEmployeeRow(employees: any[], employeeParam: string) {
+  const wanted = String(employeeParam || "").trim();
+  if (!wanted) return null;
+
+  return (
+    employees.find((e: any) => String(e?.employee_id || "").trim() === wanted) ||
+    employees.find((e: any) => String(e?.employeeId || "").trim() === wanted) ||
+    employees.find((e: any) => String(e?.payroll_run_employee_id || "").trim() === wanted) ||
+    employees.find((e: any) => String(e?.payrollRunEmployeeId || "").trim() === wanted) ||
+    employees.find((e: any) => String(e?.id || "").trim() === wanted) ||
+    null
+  );
+}
+
 export default function PayslipPage() {
   const params = useParams();
   const runId = String((params as any)?.id || "");
@@ -223,7 +255,7 @@ export default function PayslipPage() {
             if (name) setCompanyName(name);
           }
         } catch {
-          // ignore
+          // ignore company fetch failures
         }
 
         const res = await fetch(`/api/payroll/${runId}`, { cache: "no-store" });
@@ -236,12 +268,7 @@ export default function PayslipPage() {
 
         const runObj: any = j?.run || null;
         const employees: any[] = Array.isArray(j?.employees) ? j.employees : [];
-
-        const match =
-          employees.find((e: any) => String(e?.employee_id || "") === employeeId) ||
-          employees.find((e: any) => String(e?.employeeId || "") === employeeId) ||
-          employees.find((e: any) => String(e?.id || "") === employeeId) ||
-          null;
+        const match = findEmployeeRow(employees, employeeId);
 
         if (!mounted) return;
 
@@ -253,21 +280,16 @@ export default function PayslipPage() {
           return;
         }
 
-        const gross = toNumberSafe(pickFirst(match.gross, match.gross_pay, match.total_gross, match.gross_pay_used, 0));
+        const gross = toNumberSafe(
+          pickFirst(match.gross, match.gross_pay, match.total_gross, match.gross_pay_used, 0)
+        );
 
         const tax = toNumberSafe(
           pickFirst(match.tax, match.total_tax, match.tax_pay, match.paye_tax, match.income_tax, 0)
         );
 
         const niEmp = toNumberSafe(
-          pickFirst(
-            match.ni,
-            match.ni_employee,
-            match.employee_ni,
-            match.niEmployee,
-            match.employeeNi,
-            0
-          )
+          pickFirst(match.ni, match.ni_employee, match.employee_ni, match.niEmployee, match.employeeNi, 0)
         );
 
         const pensionEmp = toNumberSafe(
@@ -282,10 +304,17 @@ export default function PayslipPage() {
           pickFirst(match.attachment_of_earnings, match.attachmentOfEarnings, 0)
         );
 
-        const other = toNumberSafe(pickFirst(match.other_deductions, match.otherDeductions, 0));
+        const other = toNumberSafe(
+          pickFirst(match.other_deductions, match.otherDeductions, 0)
+        );
 
-        const studentLoan = toNumberSafe(pickFirst(match.student_loan, match.studentLoan, 0));
-        const pgLoan = toNumberSafe(pickFirst(match.pg_loan, match.postgrad_loan, match.pgLoan, 0));
+        const studentLoan = toNumberSafe(
+          pickFirst(match.student_loan, match.studentLoan, 0)
+        );
+
+        const pgLoan = toNumberSafe(
+          pickFirst(match.pg_loan, match.postgrad_loan, match.pgLoan, 0)
+        );
 
         const net = toNumberSafe(
           pickFirst(
@@ -303,40 +332,87 @@ export default function PayslipPage() {
         const computedKnownDeductions = tax + niEmp + pensionEmp + other + aeo + studentLoan + pgLoan;
 
         const deductions =
-          deductionsDirect && deductionsDirect > 0
+          deductionsDirect > 0
             ? deductionsDirect
             : Number((gross - net).toFixed(2));
 
         const remainderOther =
-          deductions > 0 && computedKnownDeductions > 0
+          deductions > 0 && deductions > computedKnownDeductions
             ? Math.max(0, Number((deductions - computedKnownDeductions).toFixed(2)))
             : 0;
 
-        const taxCode = String(
-          pickFirst(match.tax_code_used, match.tax_code, match.taxCode, "") || ""
-        ).trim() || null;
+        const taxCode =
+          String(
+            pickFirst(match.tax_code_used, match.tax_code, match.taxCode, "") || ""
+          ).trim() || null;
 
-        const taxCodeBasis = String(
-          pickFirst(
-            match.tax_code_basis_used,
-            match.tax_code_basis,
-            match.tax_basis_used,
-            match.tax_basis,
-            ""
-          ) || ""
-        ).trim() || null;
+        const taxCodeBasis =
+          String(
+            pickFirst(
+              match.tax_code_basis_used,
+              match.tax_code_basis,
+              match.tax_basis_used,
+              match.tax_basis,
+              ""
+            ) || ""
+          ).trim() || null;
 
-        const niCat = String(
-          pickFirst(match.ni_category_used, match.ni_category, match.niCategory, "") || ""
-        ).trim() || null;
+        const niCat =
+          String(
+            pickFirst(match.ni_category_used, match.ni_category, match.niCategory, "") || ""
+          ).trim() || null;
+
+        const breakdownAvailable =
+          String(match?.calc_mode || "").trim().toLowerCase() === "full" ||
+          hasAnyDefinedKey(match, [
+            "tax",
+            "total_tax",
+            "tax_pay",
+            "paye_tax",
+            "income_tax",
+            "ni",
+            "ni_employee",
+            "employee_ni",
+            "niEmployee",
+            "employeeNi",
+            "pension_employee",
+            "pensionEmployee",
+            "employee_pension",
+            "pension_employer",
+            "pensionEmployer",
+            "employer_pension",
+            "other_deductions",
+            "otherDeductions",
+            "attachment_of_earnings",
+            "attachmentOfEarnings",
+            "student_loan",
+            "studentLoan",
+            "pg_loan",
+            "postgrad_loan",
+            "pgLoan",
+            "deductions",
+            "total_deductions",
+            "deduction_total",
+          ]);
 
         setRow({
-          employee_id: String(pickFirst(match.employee_id, match.employeeId, match.id, "") || ""),
+          employee_id: String(pickFirst(match.employee_id, match.employeeId, "") || ""),
+          payroll_run_employee_id: String(
+            pickFirst(match.payroll_run_employee_id, match.payrollRunEmployeeId, match.id, "") || ""
+          ),
           employee_name: String(pickFirst(match.employee_name, match.employeeName, "—") || "—"),
           employee_number: String(
-            pickFirst(match.employee_number, match.employeeNumber, match.payroll_number, "—") || "—"
+            pickFirst(
+              match.employee_number,
+              match.employeeNumber,
+              match.payroll_number,
+              match.payrollNumber,
+              "—"
+            ) || "—"
           ),
-          email: String(pickFirst(match.email, match.employee_email, "—") || "—"),
+          email: String(
+            pickFirst(match.email, match.employee_email, match.employeeEmail, "—") || "—"
+          ),
 
           gross: Number(gross.toFixed(2)),
           deductions: Number(deductions.toFixed(2)),
@@ -355,6 +431,8 @@ export default function PayslipPage() {
           tax_code: taxCode,
           tax_code_basis: taxCodeBasis,
           ni_category: niCat,
+
+          breakdown_available: breakdownAvailable,
         });
       } catch (e: any) {
         if (!mounted) return;
@@ -392,7 +470,7 @@ export default function PayslipPage() {
 
   const frequencyText = useMemo(() => {
     const r: any = run || {};
-    return String(pickFirst(r.frequency, r.pay_frequency, r.payFrequency, "—") || "—");
+    return formatFrequency(pickFirst(r.frequency, r.pay_frequency, r.payFrequency, "—"));
   }, [run]);
 
   const taxCodeExampleText = useMemo(() => {
@@ -455,8 +533,7 @@ export default function PayslipPage() {
   const sl = toNumberSafe(row?.student_loan);
   const pgl = toNumberSafe(row?.postgrad_loan);
 
-  const anyDetailedDeduction =
-    tax > 0 || niEmp > 0 || penEmp > 0 || otherDed > 0 || aeo > 0 || sl > 0 || pgl > 0;
+  const breakdownAvailable = Boolean(row?.breakdown_available);
 
   return (
     <PageShell>
@@ -605,56 +682,56 @@ export default function PayslipPage() {
             <div style={S.breakdownRow}>
               <div>PAYE income tax</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {row && anyDetailedDeduction ? gbp(tax) : "Not available yet"}
+                {row ? (breakdownAvailable ? gbp(tax) : "Not available yet") : "—"}
               </div>
             </div>
 
             <div style={S.breakdownRow}>
               <div>National Insurance (employee)</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {row && anyDetailedDeduction ? gbp(niEmp) : "Not available yet"}
+                {row ? (breakdownAvailable ? gbp(niEmp) : "Not available yet") : "—"}
               </div>
             </div>
 
             <div style={S.breakdownRow}>
               <div>Pension (employee)</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {row && anyDetailedDeduction ? gbp(penEmp) : "Not available yet"}
+                {row ? (breakdownAvailable ? gbp(penEmp) : "Not available yet") : "—"}
               </div>
             </div>
 
             <div style={S.breakdownRow}>
               <div>Pension (employer, not deducted)</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {row && anyDetailedDeduction ? gbp(penEr) : "Not available yet"}
+                {row ? (breakdownAvailable ? gbp(penEr) : "Not available yet") : "—"}
               </div>
             </div>
 
             <div style={S.breakdownRow}>
               <div>Student loan</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {row && anyDetailedDeduction ? gbp(sl) : "Not available yet"}
+                {row ? (breakdownAvailable ? gbp(sl) : "Not available yet") : "—"}
               </div>
             </div>
 
             <div style={S.breakdownRow}>
               <div>Postgraduate loan</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {row && anyDetailedDeduction ? gbp(pgl) : "Not available yet"}
+                {row ? (breakdownAvailable ? gbp(pgl) : "Not available yet") : "—"}
               </div>
             </div>
 
             <div style={S.breakdownRow}>
               <div>Attachment of earnings / court orders</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {row && anyDetailedDeduction ? gbp(aeo) : "Not available yet"}
+                {row ? (breakdownAvailable ? gbp(aeo) : "Not available yet") : "—"}
               </div>
             </div>
 
             <div style={S.breakdownRow}>
               <div>Other deductions</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {row && anyDetailedDeduction ? gbp(otherDed) : "Not available yet"}
+                {row ? (breakdownAvailable ? gbp(otherDed) : "Not available yet") : "—"}
               </div>
             </div>
 
@@ -673,7 +750,7 @@ export default function PayslipPage() {
             </div>
 
             <div style={S.hint}>
-              If the run API does not return separate PAYE, NI, pension, and loan figures yet, WageFlow will show “Not available yet” rather than lying. Totals still remain correct.
+              WageFlow now shows detailed PAYE, NI, pension, and loan values whenever the run API returns them. If a figure is genuinely not provided yet, only then will it show “Not available yet”. Revolutionary, I know.
             </div>
           </div>
 
@@ -681,17 +758,17 @@ export default function PayslipPage() {
             <div style={{ fontWeight: 900, marginBottom: 8 }}>What these items mean</div>
 
             <div style={S.small}>
-              1. Gross pay. Your total pay for the period before deductions. This can include basic pay, overtime, bonuses, and statutory payments (such as SSP or SMP) if applicable.
+              1. Gross pay. Your total pay for the period before deductions. This can include basic pay, overtime, bonuses, and statutory payments such as SSP or SMP if applicable.
             </div>
             <div style={{ height: 8 }} />
 
             <div style={S.small}>
-              2. PAYE income tax. Income Tax withheld under Pay As You Earn. The amount depends on your tax code, taxable pay, and whether HMRC applies cumulative rules (most common) or Week 1 / Month 1 rules.
+              2. PAYE income tax. Income Tax withheld under Pay As You Earn. The amount depends on your tax code, taxable pay, and whether HMRC applies cumulative rules or Week 1 / Month 1 rules.
             </div>
             <div style={{ height: 8 }} />
 
             <div style={S.small}>
-              3. National Insurance (NI). A statutory contribution based on your NI category and earnings thresholds. Payslips usually show employee NI. Employer NI exists too, but it is not deducted from your pay.
+              3. National Insurance. A statutory contribution based on your NI category and earnings thresholds. Payslips usually show employee NI. Employer NI exists too, but it is not deducted from your pay.
             </div>
             <div style={{ height: 8 }} />
 
