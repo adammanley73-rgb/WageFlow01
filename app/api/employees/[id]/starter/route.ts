@@ -9,6 +9,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 type StarterDeclaration = "A" | "B" | "C" | null;
 type StudentLoanPlanDb = "plan1" | "plan2" | "plan4" | "plan5" | null;
 type StudentLoanPlanUi = "none" | "plan1" | "plan2" | "plan4" | "plan5" | null;
+type TaxCodeBasis = "cumulative" | "week1_month1";
 
 type StarterRow = {
   employee_id: string; // references employees.id (UUID primary key)
@@ -27,6 +28,13 @@ type StarterResponseRow = {
 };
 
 type StarterBody = Partial<StarterRow> & Record<string, unknown>;
+
+type StarterDrivenEmployeeUpdate = {
+  tax_code: string;
+  tax_code_basis: TaxCodeBasis;
+  student_loan_plan: StudentLoanPlanDb;
+  postgraduate_loan: boolean;
+};
 
 function json(status: number, body: unknown) {
   return NextResponse.json(body, {
@@ -141,7 +149,7 @@ function validateStarterBody(body: StarterBody) {
     const rawLoanPlan = String(body.student_loan_plan ?? "").trim();
     if (!rawLoanPlan) {
       errors.push("student_loan_plan cannot be blank when provided.");
-    } else if (String(rawLoanPlan).toLowerCase() !== "none" && studentLoanPlan === null) {
+    } else if (rawLoanPlan.toLowerCase() !== "none" && studentLoanPlan === null) {
       errors.push('student_loan_plan must be one of "none", "plan1", "plan2", "plan4", or "plan5".');
     }
   }
@@ -177,6 +185,43 @@ function validateStarterBody(body: StarterBody) {
   };
 }
 
+function getStarterDrivenEmployeeUpdate(
+  row: Pick<StarterRow, "p45_provided" | "starter_declaration" | "student_loan_plan" | "postgraduate_loan">
+): StarterDrivenEmployeeUpdate | null {
+  if (row.p45_provided !== false) {
+    return null;
+  }
+
+  const declaration = row.starter_declaration;
+  const studentLoanPlan = row.student_loan_plan ?? null;
+  const postgraduateLoan = Boolean(row.postgraduate_loan);
+
+  if (declaration === "C") {
+    return {
+      tax_code: "BR",
+      tax_code_basis: "week1_month1",
+      student_loan_plan: studentLoanPlan,
+      postgraduate_loan: postgraduateLoan,
+    };
+  }
+
+  if (declaration === "B") {
+    return {
+      tax_code: "1257L",
+      tax_code_basis: "week1_month1",
+      student_loan_plan: studentLoanPlan,
+      postgraduate_loan: postgraduateLoan,
+    };
+  }
+
+  return {
+    tax_code: "1257L",
+    tax_code_basis: "cumulative",
+    student_loan_plan: studentLoanPlan,
+    postgraduate_loan: postgraduateLoan,
+  };
+}
+
 async function getEmployeeKeys(
   supabase: Awaited<ReturnType<typeof createClient>>,
   routeEmployeeId: string
@@ -189,8 +234,8 @@ async function getEmployeeKeys(
 
   if (byEmployeeId.data) {
     return {
-      uuid: String((byEmployeeId.data as any).id),
-      company_id: String((byEmployeeId.data as any).company_id),
+      uuid: String((byEmployeeId.data as { id: string }).id),
+      company_id: String((byEmployeeId.data as { company_id: string }).company_id),
     };
   }
 
@@ -203,8 +248,8 @@ async function getEmployeeKeys(
 
     if (byId.data) {
       return {
-        uuid: String((byId.data as any).id),
-        company_id: String((byId.data as any).company_id),
+        uuid: String((byId.data as { id: string }).id),
+        company_id: String((byId.data as { company_id: string }).company_id),
       };
     }
   }
@@ -341,10 +386,9 @@ export async function POST(req: Request, ctx: RouteContext) {
       validated.row.starter_declaration !== null
         ? validated.row.starter_declaration
         : existingRow.starter_declaration ?? null,
-    student_loan_plan:
-      hasOwn(body, "student_loan_plan")
-        ? validated.row.student_loan_plan
-        : existingRow.student_loan_plan ?? null,
+    student_loan_plan: hasOwn(body, "student_loan_plan")
+      ? validated.row.student_loan_plan
+      : existingRow.student_loan_plan ?? null,
     postgraduate_loan:
       validated.row.postgraduate_loan !== null
         ? validated.row.postgraduate_loan
@@ -376,7 +420,7 @@ export async function POST(req: Request, ctx: RouteContext) {
     } else {
       const { error: insertError } = await supabase.from("employee_starters").insert(row);
 
-      const pgCode = String((insertError as any)?.code ?? "");
+      const pgCode = String((insertError as { code?: string } | null)?.code ?? "");
       if (pgCode === "23505") {
         const { error: updateError } = await supabase
           .from("employee_starters")
@@ -413,11 +457,43 @@ export async function POST(req: Request, ctx: RouteContext) {
       });
     }
 
-    const { data: saved } = await supabase
+    const starterDrivenEmployeeUpdate = getStarterDrivenEmployeeUpdate(row);
+
+    if (starterDrivenEmployeeUpdate) {
+      const { error: employeeUpdateError } = await supabase
+        .from("employees")
+        .update({
+          tax_code: starterDrivenEmployeeUpdate.tax_code,
+          tax_code_basis: starterDrivenEmployeeUpdate.tax_code_basis,
+          student_loan_plan: starterDrivenEmployeeUpdate.student_loan_plan,
+          postgraduate_loan: starterDrivenEmployeeUpdate.postgraduate_loan,
+        })
+        .eq("id", employeeKeys.uuid);
+
+      if (employeeUpdateError) {
+        return json(500, {
+          ok: false,
+          error: "EMPLOYEE_SYNC_FAILED",
+          message: "Starter details were saved, but syncing employee tax settings failed.",
+          ...dbErrPayload(employeeUpdateError),
+        });
+      }
+    }
+
+    const { data: saved, error: savedError } = await supabase
       .from("employee_starters")
       .select("*")
       .eq("employee_id", employeeKeys.uuid)
       .maybeSingle();
+
+    if (savedError && !looksLikeMissingTableOrRls(savedError)) {
+      return json(500, {
+        ok: false,
+        error: "LOAD_FAILED",
+        message: "Starter details were saved, but reloading them failed.",
+        ...dbErrPayload(savedError),
+      });
+    }
 
     return json(201, {
       ok: true,

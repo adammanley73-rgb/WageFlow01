@@ -340,9 +340,9 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
 
   const gross = round2(toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, att?.gross, 0)));
 
-  let tax = round2(toNumberSafe(pickFirst(att?.tax, att?.paye_tax, att?.income_tax, 0)));
-  const employeeNi = round2(toNumberSafe(pickFirst(att?.ni_employee, att?.employee_ni, att?.ni, 0)));
-  const employerNi = round2(toNumberSafe(pickFirst(att?.ni_employer, att?.employer_ni, 0)));
+  const storedTax = round2(toNumberSafe(pickFirst(att?.tax, att?.paye_tax, att?.income_tax, 0)));
+  const storedEmployeeNi = round2(toNumberSafe(pickFirst(att?.ni_employee, att?.employee_ni, att?.ni, 0)));
+  const storedEmployerNi = round2(toNumberSafe(pickFirst(att?.ni_employer, att?.employer_ni, 0)));
   const pensionEmployee = round2(
     toNumberSafe(pickFirst(att?.pension_employee, att?.pensionEmployee, att?.employee_pension, 0))
   );
@@ -355,6 +355,13 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
   const postgradLoanDeduction = round2(
     toNumberSafe(pickFirst(att?.pg_loan, att?.postgrad_loan, att?.pgLoan, 0))
   );
+  const storedNet = round2(toNumberSafe(pickFirst(att?.net_pay, att?.netPay, att?.net, gross)));
+
+  let tax = storedTax;
+  let employeeNi = storedEmployeeNi;
+  let employerNi = storedEmployerNi;
+  let usedTaxFallback = false;
+  let usedNiFallback = false;
 
   const taxCodeUsedRaw = pickFirst(
     att?.tax_code_used,
@@ -410,7 +417,9 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
         grossForPeriod: gross,
         taxCode: formatTaxCodeForCalc(taxCodeUsed, taxCodeBasisUsed),
         period: 1,
-        ytdTaxableBeforeThisPeriod: toNumberSafe(pickFirst(att?.ytd_taxable_before, att?.ytd_gross_before, emp?.ytd_gross, 0)),
+        ytdTaxableBeforeThisPeriod: toNumberSafe(
+          pickFirst(att?.ytd_taxable_before, att?.ytd_gross_before, emp?.ytd_gross, 0)
+        ),
         ytdTaxPaidBeforeThisPeriod: toNumberSafe(pickFirst(att?.ytd_tax_before, emp?.ytd_tax, 0)),
         taxYear: Number.isFinite(taxYear) ? taxYear : undefined,
       });
@@ -418,6 +427,22 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
       const computedTax = round2(Number((payResult as any)?.tax ?? 0));
       if (computedTax > 0) {
         tax = computedTax;
+        usedTaxFallback = true;
+      }
+    } catch {
+      // leave stored/fallback value as-is
+    }
+  }
+
+  if (gross > 0 && runFrequency === "monthly" && niCategoryUsed && employeeNi <= 0 && employerNi <= 0) {
+    try {
+      const ni = computeApproxMonthlyNi(gross, niCategoryUsed);
+      const cat = String(niCategoryUsed || "").trim().toUpperCase();
+
+      if (ni.employee > 0 || ni.employer > 0 || cat === "C") {
+        employeeNi = ni.employee;
+        employerNi = ni.employer;
+        usedNiFallback = true;
       }
     } catch {
       // leave stored/fallback value as-is
@@ -428,7 +453,24 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
     tax + employeeNi + pensionEmployee + otherDeductions + aoe + studentLoanDeduction + postgradLoanDeduction
   );
 
-  const net = round2(toNumberSafe(pickFirst(att?.net_pay, att?.netPay, att?.net, gross - deductions)));
+  const derivedNet = round2(Math.max(0, gross - deductions));
+
+  const storedRowLooksGrossOnly =
+    gross > 0 &&
+    Math.abs(storedNet - gross) <= 0.01 &&
+    storedTax <= 0 &&
+    storedEmployeeNi <= 0 &&
+    storedEmployerNi <= 0;
+
+  const netShouldBeDerived =
+    gross > 0 &&
+    (usedTaxFallback ||
+      usedNiFallback ||
+      storedRowLooksGrossOnly ||
+      storedNet <= 0 ||
+      (Math.abs(storedNet - derivedNet) > 0.01 && (storedTax <= 0 || storedEmployeeNi <= 0)));
+
+  const net = round2(netShouldBeDerived ? derivedNet : storedNet);
 
   const safeId = String(pickFirst(att?.id, "") || "");
   const calcMode = String(pickFirst(att?.calc_mode, "uncomputed") || "uncomputed");
@@ -542,6 +584,32 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
 
     hours_per_week_used: pickFirst(att?.hours_per_week_used, emp?.hours_per_week, emp?.hoursPerWeek, null),
   };
+}
+
+function summariseEmployeeRows(employees: any[]) {
+  const gross = round2(
+    employees.reduce((sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.gross, row?.gross_pay, 0)), 0)
+  );
+  const tax = round2(
+    employees.reduce((sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.tax, row?.total_tax, 0)), 0)
+  );
+  const ni = round2(
+    employees.reduce(
+      (sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.ni_employee, row?.employee_ni, row?.ni, 0)),
+      0
+    )
+  );
+  const deductions = round2(
+    employees.reduce(
+      (sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.deductions, row?.total_deductions, 0)),
+      0
+    )
+  );
+  const net = round2(
+    employees.reduce((sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.net, row?.net_pay, 0)), 0)
+  );
+
+  return { gross, tax, ni, deductions, net };
 }
 
 function deriveSeededMode(run: any, attachments: any[]): boolean {
@@ -695,16 +763,32 @@ async function getRunAndEmployees(supabase: any, runId: string, includeDebug: bo
     return buildEmployeeRow(att, emp, run);
   });
 
-  const totalGross = round2(toNumberSafe(pickFirst(run?.total_gross_pay, 0)));
-  const totalTax = round2(toNumberSafe(pickFirst(run?.total_tax, 0)));
-  const totalNi = round2(toNumberSafe(pickFirst(run?.total_ni, 0)));
-  const totalNet = round2(toNumberSafe(pickFirst(run?.total_net_pay, 0)));
+  const storedTotalGross = round2(toNumberSafe(pickFirst(run?.total_gross_pay, 0)));
+  const storedTotalTax = round2(toNumberSafe(pickFirst(run?.total_tax, 0)));
+  const storedTotalNi = round2(toNumberSafe(pickFirst(run?.total_ni, 0)));
+  const storedTotalNet = round2(toNumberSafe(pickFirst(run?.total_net_pay, 0)));
 
-  const rowDeductions = round2(
-    employees.reduce((sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.deductions, row?.total_deductions, 0)), 0)
-  );
-  const derivedDeductions = round2(totalGross - totalNet);
-  const totalDeductions = rowDeductions > 0 ? rowDeductions : derivedDeductions;
+  const rowTotals = summariseEmployeeRows(employees);
+  const storedDerivedDeductions = round2(storedTotalGross - storedTotalNet);
+
+  const storedTotalsLookStale =
+    employees.length > 0 &&
+    ((rowTotals.tax > 0 && storedTotalTax === 0) ||
+      (rowTotals.ni > 0 && storedTotalNi === 0) ||
+      (rowTotals.net > 0 && Math.abs(storedTotalNet - rowTotals.net) > 0.01 && (storedTotalTax === 0 || storedTotalNi === 0)) ||
+      (rowTotals.deductions > 0 &&
+        Math.abs(storedDerivedDeductions - rowTotals.deductions) > 0.01 &&
+        (storedTotalTax === 0 || storedTotalNi === 0)));
+
+  const totalGross = storedTotalsLookStale && rowTotals.gross > 0 ? rowTotals.gross : storedTotalGross;
+  const totalTax = storedTotalsLookStale ? rowTotals.tax : storedTotalTax;
+  const totalNi = storedTotalsLookStale ? rowTotals.ni : storedTotalNi;
+  const totalNet = storedTotalsLookStale && rowTotals.net > 0 ? rowTotals.net : storedTotalNet;
+  const totalDeductions = storedTotalsLookStale
+    ? rowTotals.deductions
+    : rowTotals.deductions > 0
+      ? rowTotals.deductions
+      : storedDerivedDeductions;
 
   const totals = {
     gross: totalGross,
@@ -1091,7 +1175,11 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     .in("code", codesWeNeed);
 
   if (generatedTypeErr) {
-    return { ok: false as const, status: 500, error: `Failed to load generated pay element types: ${generatedTypeErr.message}` };
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to load generated pay element types: ${generatedTypeErr.message}`,
+    };
   }
 
   const generatedTypeByCode = new Map<string, any>();
@@ -1706,7 +1794,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   if (isMarkCompleted) {
     if (!isApproveRole(role)) {
-      return json(403, { ok: false, code: "INSUFFICIENT_ROLE", message: "You do not have permission to mark completed." });
+      return json(403, {
+        ok: false,
+        code: "INSUFFICIENT_ROLE",
+        message: "You do not have permission to mark completed.",
+      });
     }
 
     if (!isConfirmTrue(body?.confirm)) {
