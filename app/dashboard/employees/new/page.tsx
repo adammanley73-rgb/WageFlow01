@@ -690,8 +690,8 @@ export default function NewEmployeePage() {
 
             <form onSubmit={onSubmit} className="mt-6 space-y-6">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="block text-sm text-neutral-800">Employee number</label>
+                <div className="md:col-span-2">
+                  <label className="block text-sm text-neutral-800">Employee number (Auto-generated)</label>
                   <input
                     value={form.employee_number}
                     onChange={(e) => setField("employee_number", e.target.value)}
@@ -702,45 +702,6 @@ export default function NewEmployeePage() {
                   <div className="mt-1 text-xs text-neutral-600">
                     {empNoErr ? empNoErr : "Auto-filled. You can change it if needed."}
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-neutral-800">Has a P45 been supplied?</label>
-                  <div className="mt-1 flex gap-3">
-                    <button
-                      type="button"
-                      className={p45ButtonClass(form.p45_provided === true)}
-                      onClick={() => setField("p45_provided", true)}
-                    >
-                      Yes
-                    </button>
-                    <button
-                      type="button"
-                      className={p45ButtonClass(form.p45_provided === false)}
-                      onClick={() => setField("p45_provided", false)}
-                    >
-                      No
-                    </button>
-                  </div>
-                  <div className="mt-1 text-xs text-neutral-600">
-                    Required. This decides whether WageFlow routes to P45 details or New Starter Declaration.
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-neutral-800">Pay frequency</label>
-                  <select
-                    value={form.pay_frequency}
-                    onChange={(e) => setField("pay_frequency", e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                    name="pay_frequency"
-                  >
-                    {payFrequencyOptions.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
                 </div>
 
                 <div>
@@ -777,7 +738,7 @@ export default function NewEmployeePage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm text-neutral-800">NI number</label>
+                  <label className="block text-sm text-neutral-800">National Insurance Number</label>
                   <input
                     value={form.ni_number}
                     onChange={(e) => setField("ni_number", formatNiInput(e.target.value))}
@@ -802,8 +763,24 @@ export default function NewEmployeePage() {
                   </div>
                 </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm text-neutral-800">Email</label>
+                <div>
+                  <label className="block text-sm text-neutral-800">Pay frequency</label>
+                  <select
+                    value={form.pay_frequency}
+                    onChange={(e) => setField("pay_frequency", e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                    name="pay_frequency"
+                  >
+                    {payFrequencyOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-800">Email address</label>
                   <input
                     value={form.email}
                     onChange={(e) => setField("email", e.target.value)}
@@ -812,6 +789,29 @@ export default function NewEmployeePage() {
                     name="email"
                     inputMode="email"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-800">Has a P45 been supplied?</label>
+                  <div className="mt-1 flex gap-3">
+                    <button
+                      type="button"
+                      className={p45ButtonClass(form.p45_provided === true)}
+                      onClick={() => setField("p45_provided", true)}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      className={p45ButtonClass(form.p45_provided === false)}
+                      onClick={() => setField("p45_provided", false)}
+                    >
+                      No
+                    </button>
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-600">
+                    Required. This decides whether WageFlow routes to P45 details or New Starter Declaration.
+                  </div>
                 </div>
 
                 <div>
