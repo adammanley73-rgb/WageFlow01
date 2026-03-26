@@ -1,4 +1,4 @@
-// C:\Projects\wageflow01\app\api\payroll\[id]\route.ts
+﻿// C:\Projects\wageflow01\app\api\payroll\[id]\route.ts
 
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -75,7 +75,9 @@ function parseBoolStrict(v: any): boolean | null {
 }
 
 function getObjectSafe(value: any): Record<string, any> | null {
-  if (!value) return null;
+  if (!value) {
+    return null;
+  }
 
   if (typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, any>;
@@ -119,21 +121,40 @@ function normalisePayElementSide(value: any): "earning" | "deduction" {
   return s === "deduction" ? "deduction" : "earning";
 }
 
-function formatTaxCodeForCalc(taxCode: any, basis: any): string {
-  const base = String(taxCode ?? "").trim() || "1257L";
+function getNonCumulativeTaxMarker(payFrequency: any): "M1" | "W1" {
+  const s = String(payFrequency ?? "").trim().toLowerCase();
+  if (!s || s === "monthly") return "M1";
+  return "W1";
+}
+
+function formatTaxCodeForCalc(taxCode: any, basis: any, payFrequency?: any): string {
+  const rawBase = (String(taxCode ?? "").trim() || "1257L").toUpperCase();
   const basisNorm = String(basis ?? "").trim().toLowerCase();
 
-  if (
+  const basisRequestsNonCumulative =
     basisNorm === "week1_month1" ||
     basisNorm === "w1m1" ||
     basisNorm === "week1month1" ||
     basisNorm === "week1" ||
     basisNorm === "month1" ||
     basisNorm === "wk1/mth1" ||
-    basisNorm === "wk1mth1"
-  ) {
-    if (base.toLowerCase().includes("wk1") || base.toLowerCase().includes("mth1")) return base;
-    return `${base} wk1/mth1`;
+    basisNorm === "wk1mth1";
+
+  const baseHasNonCumulativeMarker = /\b(?:WK1\/MTH1|WK1MTH1|W1M1|W1|M1)\b/i.test(rawBase);
+
+  const cleanedBase = rawBase
+    .replace(/\bWK1\/MTH1\b/gi, " ")
+    .replace(/\bWK1MTH1\b/gi, " ")
+    .replace(/\bW1M1\b/gi, " ")
+    .replace(/\bW1\b/gi, " ")
+    .replace(/\bM1\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const base = cleanedBase || "1257L";
+
+  if (basisRequestsNonCumulative || baseHasNonCumulativeMarker) {
+    return `${base} ${getNonCumulativeTaxMarker(payFrequency)}`.trim();
   }
 
   return base;
@@ -320,8 +341,8 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
       emp?.name,
       [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
       [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-      "—"
-    ) || "—"
+      "â€”"
+    ) || "â€”"
   );
 
   const employeeNumber = String(
@@ -332,11 +353,11 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
       emp?.payrollNumber,
       emp?.payroll_no,
       emp?.payrollNo,
-      "—"
-    ) || "—"
+      "â€”"
+    ) || "â€”"
   );
 
-  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "—") || "—");
+  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "â€”") || "â€”");
 
   const gross = round2(toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, att?.gross, 0)));
 
@@ -415,7 +436,7 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
 
       const payResult = calculatePay({
         grossForPeriod: gross,
-        taxCode: formatTaxCodeForCalc(taxCodeUsed, taxCodeBasisUsed),
+        taxCode: formatTaxCodeForCalc(taxCodeUsed, taxCodeBasisUsed, runFrequency),
         period: 1,
         ytdTaxableBeforeThisPeriod: toNumberSafe(
           pickFirst(att?.ytd_taxable_before, att?.ytd_gross_before, emp?.ytd_gross, 0)
@@ -655,8 +676,8 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
         emp?.name,
         [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
         [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-        "—"
-      ) || "—"
+        "â€”"
+      ) || "â€”"
     );
 
     const codes: string[] = [];
@@ -685,6 +706,135 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
   }
 
   return { items, blockingCount, warningCount, total: items.length };
+}
+
+function deriveRtiLogType(_run: any): "FPS" | "EPS" | "EYU" {
+  return "FPS";
+}
+
+function deriveRtiLogPeriod(run: any): string {
+  const frequency = String(
+    pickFirst(run?.frequency, run?.pay_frequency, run?.payFrequency, run?.pay_schedule_frequency_used, "") || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const start = String(pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || "").trim();
+  const end = String(pickFirst(run?.period_end, run?.pay_period_end, run?.end_date, "") || "").trim();
+  const payDate = String(pickFirst(run?.pay_date, run?.payDate, "") || "").trim();
+
+  const freqLabel = frequency ? `${frequency.charAt(0).toUpperCase()}${frequency.slice(1)} ` : "";
+
+  if (isIsoDateOnly(start) && isIsoDateOnly(end)) {
+    return `${freqLabel}${start} to ${end}`.trim();
+  }
+
+  if (isIsoDateOnly(payDate)) {
+    return `${freqLabel}pay date ${payDate}`.trim();
+  }
+
+  return String(pickFirst(run?.run_name, run?.runName, "Payroll run") || "Payroll run");
+}
+
+async function upsertRtiLogForRun(
+  supabase: any,
+  runId: string,
+  companyId: string,
+  run: any,
+  nextStatus: "pending" | "submitted" | "accepted" | "rejected",
+  message: string
+) {
+  const type = deriveRtiLogType(run);
+  const period = deriveRtiLogPeriod(run);
+  const nowIso = new Date().toISOString();
+
+  const { data: existing, error: existingErr } = await supabase
+    .from("rti_logs")
+    .select("id,reference,status,submitted_at")
+    .eq("pay_run_id", runId)
+    .eq("company_id", companyId)
+    .eq("type", type)
+    .order("submitted_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingErr) {
+    return {
+      ok: false as const,
+      error: {
+        code: existingErr.code,
+        message: existingErr.message,
+        details: existingErr.details,
+        hint: existingErr.hint,
+      },
+    };
+  }
+
+  const payload: any = {
+    pay_run_id: runId,
+    company_id: companyId,
+    type,
+    period,
+    status: nextStatus,
+    message,
+    submitted_at: nowIso,
+  };
+
+  if (existing?.reference) {
+    payload.reference = existing.reference;
+  }
+
+  if (existing?.id) {
+    const { error: updateErr } = await supabase.from("rti_logs").update(payload).eq("id", String(existing.id));
+
+    if (updateErr) {
+      return {
+        ok: false as const,
+        error: {
+          code: updateErr.code,
+          message: updateErr.message,
+          details: updateErr.details,
+          hint: updateErr.hint,
+        },
+      };
+    }
+
+    return {
+      ok: true as const,
+      existed: true,
+      id: String(existing.id),
+      type,
+      period,
+      status: nextStatus,
+    };
+  }
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from("rti_logs")
+    .insert(payload)
+    .select("id")
+    .maybeSingle();
+
+  if (insertErr) {
+    return {
+      ok: false as const,
+      error: {
+        code: insertErr.code,
+        message: insertErr.message,
+        details: insertErr.details,
+        hint: insertErr.hint,
+      },
+    };
+  }
+
+  return {
+    ok: true as const,
+    existed: false,
+    id: String(inserted?.id || ""),
+    type,
+    period,
+    status: nextStatus,
+  };
 }
 
 async function getRunAndEmployees(supabase: any, runId: string, includeDebug: boolean) {
@@ -735,22 +885,29 @@ async function getRunAndEmployees(supabase: any, runId: string, includeDebug: bo
     )
   );
 
-  const { data: emps, error: empErr } = await supabase
-    .from("employees")
-    .select("*")
-    .in("id", employeeIds)
-    .eq("company_id", companyId);
+  let empRows: any[] = [];
 
-  if (empErr) {
-    return {
-      ok: false as const,
-      status: 500,
-      error: "Failed to load employees for payroll run.",
-      debug: includeDebug ? { ...debug, empErr: empErr.message } : undefined,
-    };
+  if (employeeIds.length > 0) {
+    const { data: emps, error: empErr } = await supabase
+      .from("employees")
+      .select("*")
+      .in("id", employeeIds)
+      .eq("company_id", companyId);
+
+    if (empErr) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: "Failed to load employees for payroll run.",
+        debug: includeDebug ? { ...debug, empErr: empErr.message } : undefined,
+      };
+    }
+
+    empRows = Array.isArray(emps) ? emps : [];
   }
 
-  const empRows = Array.isArray(emps) ? emps : [];
+  debug.stage.employeeFetch = { ok: true, requested: employeeIds.length, found: empRows.length };
+
   const empById = new Map<string, any>();
   for (const e of empRows) {
     const id = String((e as any)?.id || "").trim();
@@ -775,7 +932,9 @@ async function getRunAndEmployees(supabase: any, runId: string, includeDebug: bo
     employees.length > 0 &&
     ((rowTotals.tax > 0 && storedTotalTax === 0) ||
       (rowTotals.ni > 0 && storedTotalNi === 0) ||
-      (rowTotals.net > 0 && Math.abs(storedTotalNet - rowTotals.net) > 0.01 && (storedTotalTax === 0 || storedTotalNi === 0)) ||
+      (rowTotals.net > 0 &&
+        Math.abs(storedTotalNet - rowTotals.net) > 0.01 &&
+        (storedTotalTax === 0 || storedTotalNi === 0)) ||
       (rowTotals.deductions > 0 &&
         Math.abs(storedDerivedDeductions - rowTotals.deductions) > 0.01 &&
         (storedTotalTax === 0 || storedTotalNi === 0)));
@@ -1261,7 +1420,7 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
 
     if (gross > 0) {
       if (runFrequency === "monthly") {
-        const calcTaxCode = formatTaxCodeForCalc(rawTaxCode, rawTaxBasis);
+        const calcTaxCode = formatTaxCodeForCalc(rawTaxCode, rawTaxBasis, runFrequency);
 
         try {
           const payResult = calculatePay({
@@ -1775,6 +1934,24 @@ export async function PATCH(req: Request, { params }: Ctx) {
       return json(isTransition ? 409 : 500, { ok: false, debugSource: "payroll_run_route_rls_v2", error: msg });
     }
 
+    const rtiLog = await upsertRtiLogForRun(
+      supabase,
+      id,
+      companyId,
+      run,
+      "pending",
+      "FPS marked RTI submitted from payroll run"
+    );
+
+    if (!rtiLog.ok) {
+      return json(500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        error: `Run status changed to RTI submitted, but RTI log update failed: ${String(rtiLog.error?.message || "unknown error")}`,
+        action: "mark_rti_submitted",
+      });
+    }
+
     const post = await getRunAndEmployees(supabase, id, false);
     if (!post.ok) {
       return json(post.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v2", error: post.error });
@@ -1784,6 +1961,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       ok: true,
       debugSource: "payroll_run_route_rls_v2",
       action: "mark_rti_submitted",
+      rtiLog,
       run: post.run,
       employees: post.employees,
       totals: post.totals,
@@ -2237,6 +2415,24 @@ export async function PATCH(req: Request, { params }: Ctx) {
       return json(isTransition ? 409 : 500, { ok: false, debugSource: "payroll_run_route_rls_v2", error: msg });
     }
 
+    const rtiLog = await upsertRtiLogForRun(
+      supabase,
+      id,
+      companyId,
+      run,
+      "pending",
+      "FPS queued on payroll run approval"
+    );
+
+    if (!rtiLog.ok) {
+      return json(500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        error: `Run approved, but RTI log queueing failed: ${String(rtiLog.error?.message || "unknown error")}`,
+        action: "approve",
+      });
+    }
+
     const post = await getRunAndEmployees(supabase, id, false);
     if (!post.ok) {
       return json(post.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v2", error: post.error });
@@ -2246,6 +2442,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       ok: true,
       debugSource: "payroll_run_route_rls_v2",
       action: "approve",
+      rtiLog,
       run: post.run,
       employees: post.employees,
       totals: post.totals,
