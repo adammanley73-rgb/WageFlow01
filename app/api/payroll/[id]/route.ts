@@ -121,6 +121,387 @@ function normalisePayElementSide(value: any): "earning" | "deduction" {
   return s === "deduction" ? "deduction" : "earning";
 }
 
+type LocalNormalisedPayElement = {
+  payrollRunEmployeeId: string;
+  payElementTypeId: string;
+  code: string;
+  side: "earning" | "deduction";
+  amount: number;
+  effectivePensionable: boolean;
+  effectiveAeQualifying: boolean;
+  effectiveSalarySacrifice: boolean;
+};
+
+type EmployeePensionSettings = {
+  enabled: boolean;
+  basis: "qualifying_earnings" | "pensionable_pay" | "basic_pay";
+  method: "net_pay" | "relief_at_source" | "salary_sacrifice";
+  employeePercent: number;
+  employerPercent: number;
+};
+
+type MonthlyPayeAndNiResult = {
+  paye: number;
+  employeeNi: number;
+  employerNi: number;
+};
+
+type PensionOverlayResult = {
+  pensionBasisAmount: number;
+  qualifyingEarnings: number;
+  pensionEmployee: number;
+  pensionEmployer: number;
+  grossForTax: number;
+  grossForEmployeeNi: number;
+  grossForEmployerNi: number;
+  paye: number;
+  employeeNi: number;
+  employerNi: number;
+  employeePensionCode: "EE_PEN" | "EE_PEN_RAS" | "EE_PEN_SAL_SAC";
+};
+
+function resolveBooleanOverride(overrideValue: any, defaultValue: any): boolean {
+  const override = parseBoolStrict(overrideValue);
+  if (override !== null) return override;
+
+  const fallback = parseBoolStrict(defaultValue);
+  return fallback === true;
+}
+
+function normalizePercentMaybe(value: any): number {
+  const n = toNumberSafe(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (n > 0 && n < 1) return round2(n * 100);
+  return round2(n);
+}
+
+function normalizePensionBasisValue(
+  value: any
+): "qualifying_earnings" | "pensionable_pay" | "basic_pay" {
+  const s = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+
+  if (
+    s === "qualifying_earnings" ||
+    s === "qualifying" ||
+    s === "qe" ||
+    s === "ae_qualifying" ||
+    s === "auto_enrolment_qualifying"
+  ) {
+    return "qualifying_earnings";
+  }
+
+  if (
+    s === "pensionable_pay" ||
+    s === "pensionable" ||
+    s === "pensionable_earnings" ||
+    s === "pensionable_pay_basis"
+  ) {
+    return "pensionable_pay";
+  }
+
+  if (s === "basic_pay" || s === "basic" || s === "basic_only") {
+    return "basic_pay";
+  }
+
+  return "qualifying_earnings";
+}
+
+function normalizePensionMethodValue(
+  value: any
+): "net_pay" | "relief_at_source" | "salary_sacrifice" {
+  const s = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+
+  if (
+    s === "relief_at_source" ||
+    s === "ras" ||
+    s === "reliefatsource" ||
+    s === "relief_at_source_method"
+  ) {
+    return "relief_at_source";
+  }
+
+  if (
+    s === "salary_sacrifice" ||
+    s === "salarysacrifice" ||
+    s === "sal_sac" ||
+    s === "sacrifice"
+  ) {
+    return "salary_sacrifice";
+  }
+
+  return "net_pay";
+}
+
+function pickPensionBasisAmount(
+  basis: "qualifying_earnings" | "pensionable_pay" | "basic_pay",
+  basicPay: number,
+  pensionablePay: number,
+  qualifyingPay: number
+): number {
+  const basic = round2(Math.max(0, basicPay || 0));
+  const pensionable = round2(Math.max(0, pensionablePay || 0));
+  const qualifying = round2(Math.max(0, qualifyingPay || 0));
+
+  if (basis === "basic_pay") {
+    if (basic > 0) return basic;
+    if (pensionable > 0) return pensionable;
+    return qualifying;
+  }
+
+  if (basis === "pensionable_pay") {
+    if (pensionable > 0) return pensionable;
+    if (basic > 0) return basic;
+    return qualifying;
+  }
+
+  if (qualifying > 0) return qualifying;
+  if (pensionable > 0) return pensionable;
+  return basic;
+}
+
+function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
+  const explicitEnabled = parseBoolStrict(
+    pickFirst(
+      emp?.pension_enabled,
+      emp?.pensionEnabled,
+      emp?.pension_enrolled,
+      emp?.pensionEnrolled,
+      emp?.pension_active,
+      emp?.pensionActive,
+      emp?.auto_enrolment_enabled,
+      emp?.autoEnrolmentEnabled,
+      emp?.auto_enrolment_active,
+      emp?.autoEnrolmentActive,
+      emp?.ae_enabled,
+      emp?.aeEnabled,
+      emp?.ae_enrolled,
+      emp?.aeEnrolled,
+      emp?.ae_active,
+      emp?.aeActive,
+      null
+    )
+  );
+
+  const employeePercent = normalizePercentMaybe(
+    pickFirst(
+      emp?.pension_employee_percent,
+      emp?.pensionEmployeePercent,
+      emp?.employee_pension_percent,
+      emp?.employeePensionPercent,
+      emp?.pension_employee_rate,
+      emp?.pensionEmployeeRate,
+      emp?.employee_pension_rate,
+      emp?.employeePensionRate,
+      emp?.employee_contribution_percent,
+      emp?.employeeContributionPercent,
+      emp?.employee_contribution_rate,
+      emp?.employeeContributionRate,
+      emp?.pension_percent_employee,
+      emp?.pensionPercentEmployee,
+      emp?.pension_pct_employee,
+      emp?.pensionPctEmployee,
+      0
+    )
+  );
+
+  const employerPercent = normalizePercentMaybe(
+    pickFirst(
+      emp?.pension_employer_percent,
+      emp?.pensionEmployerPercent,
+      emp?.employer_pension_percent,
+      emp?.employerPensionPercent,
+      emp?.pension_employer_rate,
+      emp?.pensionEmployerRate,
+      emp?.employer_pension_rate,
+      emp?.employerPensionRate,
+      emp?.employer_contribution_percent,
+      emp?.employerContributionPercent,
+      emp?.employer_contribution_rate,
+      emp?.employerContributionRate,
+      emp?.pension_percent_employer,
+      emp?.pensionPercentEmployer,
+      emp?.pension_pct_employer,
+      emp?.pensionPctEmployer,
+      0
+    )
+  );
+
+  const enabled = explicitEnabled !== null ? explicitEnabled : employeePercent > 0 || employerPercent > 0;
+
+  const basis = normalizePensionBasisValue(
+    pickFirst(
+      emp?.pension_basis,
+      emp?.pensionBasis,
+      emp?.pension_basis_type,
+      emp?.pensionBasisType,
+      emp?.pensionable_basis,
+      emp?.pensionableBasis,
+      emp?.pension_earnings_basis,
+      emp?.pensionEarningsBasis,
+      emp?.ae_basis,
+      emp?.aeBasis,
+      emp?.auto_enrolment_basis,
+      emp?.autoEnrolmentBasis,
+      "qualifying_earnings"
+    )
+  );
+
+  const method = normalizePensionMethodValue(
+    pickFirst(
+      emp?.pension_method,
+      emp?.pensionMethod,
+      emp?.pension_contribution_method,
+      emp?.pensionContributionMethod,
+      emp?.pension_tax_treatment,
+      emp?.pensionTaxTreatment,
+      emp?.ae_method,
+      emp?.aeMethod,
+      emp?.auto_enrolment_method,
+      emp?.autoEnrolmentMethod,
+      "net_pay"
+    )
+  );
+
+  return {
+    enabled,
+    basis,
+    method,
+    employeePercent,
+    employerPercent,
+  };
+}
+
+function getAeQualifyingEarningsBounds(payFrequency: any): { lower: number; upper: number } {
+  const s = String(payFrequency ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+
+  if (s === "weekly" || s === "week" || s === "1_week") {
+    return { lower: 120, upper: 967 };
+  }
+
+  if (s === "fortnightly" || s === "fortnight" || s === "2_weeks") {
+    return { lower: 240, upper: 1934 };
+  }
+
+  if (s === "4_weekly" || s === "four_weekly" || s === "4_weeks" || s === "four_weeks") {
+    return { lower: 480, upper: 3867 };
+  }
+
+  if (s === "quarterly" || s === "quarter" || s === "1_quarter") {
+    return { lower: 1560, upper: 12568 };
+  }
+
+  if (s === "biannual" || s === "bi_annual" || s === "semiannual" || s === "semi_annual") {
+    return { lower: 3120, upper: 25135 };
+  }
+
+  if (s === "annual" || s === "yearly" || s === "year") {
+    return { lower: 6240, upper: 50270 };
+  }
+
+  return { lower: 520, upper: 4189 };
+}
+
+function computeQualifyingEarnings(qualifyingSourcePay: number, payFrequency: any): number {
+  const source = round2(Math.max(0, qualifyingSourcePay || 0));
+  if (source <= 0) return 0;
+
+  const { lower, upper } = getAeQualifyingEarningsBounds(payFrequency);
+  return round2(Math.max(Math.min(source, upper) - lower, 0));
+}
+
+function normaliseLocalPayElement(row: any, type: any): LocalNormalisedPayElement {
+  const payrollRunEmployeeId = String(pickFirst(row?.payroll_run_employee_id, row?.payrollRunEmployeeId, "") || "").trim();
+  const payElementTypeId = String(pickFirst(row?.pay_element_type_id, row?.payElementTypeId, "") || "").trim();
+  const code = String(pickFirst(type?.code, row?.code, "") || "").trim().toUpperCase();
+  const side = normalisePayElementSide(pickFirst(type?.side, row?.side, null));
+  const amount = round2(toNumberSafe(pickFirst(row?.amount, 0)));
+
+  const effectivePensionable = resolveBooleanOverride(
+    pickFirst(
+      row?.pensionable_override,
+      row?.pensionableOverride,
+      row?.pensionable,
+      row?.is_pensionable,
+      row?.isPensionable,
+      null
+    ),
+    pickFirst(
+      type?.pensionable_default,
+      type?.pensionableDefault,
+      type?.is_pensionable_default,
+      type?.isPensionableDefault,
+      type?.pensionable,
+      type?.is_pensionable,
+      null
+    )
+  );
+
+  const effectiveAeQualifying = resolveBooleanOverride(
+    pickFirst(
+      row?.ae_qualifying_override,
+      row?.aeQualifyingOverride,
+      row?.ae_qualifying,
+      row?.aeQualifying,
+      row?.is_ae_qualifying,
+      row?.isAeQualifying,
+      null
+    ),
+    pickFirst(
+      type?.ae_qualifying_default,
+      type?.aeQualifyingDefault,
+      type?.is_ae_qualifying_default,
+      type?.isAeQualifyingDefault,
+      type?.ae_qualifying,
+      type?.aeQualifying,
+      null
+    )
+  );
+
+  const effectiveSalarySacrifice = resolveBooleanOverride(
+    pickFirst(
+      row?.salary_sacrifice_override,
+      row?.salarySacrificeOverride,
+      row?.salary_sacrifice,
+      row?.salarySacrifice,
+      row?.is_salary_sacrifice,
+      row?.isSalarySacrifice,
+      null
+    ),
+    pickFirst(
+      type?.is_salary_sacrifice_type,
+      type?.isSalarySacrificeType,
+      type?.salary_sacrifice_default,
+      type?.salarySacrificeDefault,
+      type?.is_salary_sacrifice_default,
+      type?.isSalarySacrificeDefault,
+      null
+    )
+  );
+
+  return {
+    payrollRunEmployeeId,
+    payElementTypeId,
+    code,
+    side,
+    amount,
+    effectivePensionable,
+    effectiveAeQualifying,
+    effectiveSalarySacrifice,
+  };
+}
+
 function getNonCumulativeTaxMarker(payFrequency: any): "M1" | "W1" {
   const s = String(payFrequency ?? "").trim().toLowerCase();
   if (!s || s === "monthly") return "M1";
@@ -184,6 +565,135 @@ function computeApproxMonthlyNi(gross: number, niCategory: any) {
   return {
     employee: round2(employee),
     employer: round2(employer),
+  };
+}
+
+function computeMonthlyPayeAndNiFromGross(args: {
+  grossForTax: number;
+  grossForEmployeeNi: number;
+  grossForEmployerNi: number;
+  taxCode: any;
+  taxBasis: any;
+  payFrequency: any;
+  taxYear?: number;
+  niCategory: any;
+}): MonthlyPayeAndNiResult {
+  const payFrequency = String(args.payFrequency ?? "").trim().toLowerCase();
+  if (payFrequency !== "monthly") {
+    return {
+      paye: 0,
+      employeeNi: 0,
+      employerNi: 0,
+    };
+  }
+
+  const grossForTax = round2(Math.max(0, args.grossForTax || 0));
+  const grossForEmployeeNi = round2(Math.max(0, args.grossForEmployeeNi || 0));
+  const grossForEmployerNi = round2(Math.max(0, args.grossForEmployerNi || 0));
+
+  let paye = 0;
+  try {
+    const payResult = calculatePay({
+      grossForPeriod: grossForTax,
+      taxCode: formatTaxCodeForCalc(args.taxCode, args.taxBasis, payFrequency),
+      period: 1,
+      ytdTaxableBeforeThisPeriod: 0,
+      ytdTaxPaidBeforeThisPeriod: 0,
+      taxYear: args.taxYear,
+    });
+
+    paye = round2(Number((payResult as any)?.tax ?? 0));
+  } catch {
+    paye = 0;
+  }
+
+  const employeeNi = computeApproxMonthlyNi(grossForEmployeeNi, args.niCategory).employee;
+  const employerNi = computeApproxMonthlyNi(grossForEmployerNi, args.niCategory).employer;
+
+  return {
+    paye: round2(paye),
+    employeeNi: round2(employeeNi),
+    employerNi: round2(employerNi),
+  };
+}
+
+function overlayPensionFromEmployeeSettings(args: {
+  gross: number;
+  basicPay: number;
+  pensionablePay: number;
+  aeQualifyingSourcePay: number;
+  payFrequency: any;
+  taxYear?: number;
+  taxCode: any;
+  taxBasis: any;
+  niCategory: any;
+  settings: EmployeePensionSettings;
+}): PensionOverlayResult {
+  const gross = round2(Math.max(0, args.gross || 0));
+  const basicPay = round2(Math.max(0, args.basicPay || 0));
+  const pensionablePay = round2(Math.max(0, args.pensionablePay || 0));
+  const aeQualifyingSourcePay = round2(Math.max(0, args.aeQualifyingSourcePay || 0));
+  const settings = args.settings;
+
+  const qualifyingEarnings = computeQualifyingEarnings(
+    aeQualifyingSourcePay > 0 ? aeQualifyingSourcePay : gross,
+    args.payFrequency
+  );
+
+  const pensionBasisAmount = settings.enabled
+    ? pickPensionBasisAmount(settings.basis, basicPay, pensionablePay, qualifyingEarnings)
+    : 0;
+
+  const pensionEmployee = settings.enabled
+    ? round2((pensionBasisAmount * settings.employeePercent) / 100)
+    : 0;
+
+  const pensionEmployer = settings.enabled
+    ? round2((pensionBasisAmount * settings.employerPercent) / 100)
+    : 0;
+
+  let grossForTax = gross;
+  let grossForEmployeeNi = gross;
+  let grossForEmployerNi = gross;
+  let employeePensionCode: "EE_PEN" | "EE_PEN_RAS" | "EE_PEN_SAL_SAC" = "EE_PEN";
+
+  if (settings.enabled) {
+    if (settings.method === "net_pay") {
+      employeePensionCode = "EE_PEN";
+      grossForTax = round2(Math.max(0, gross - pensionEmployee));
+    } else if (settings.method === "relief_at_source") {
+      employeePensionCode = "EE_PEN_RAS";
+    } else if (settings.method === "salary_sacrifice") {
+      employeePensionCode = "EE_PEN_SAL_SAC";
+      grossForTax = round2(Math.max(0, gross - pensionEmployee));
+      grossForEmployeeNi = round2(Math.max(0, gross - pensionEmployee));
+      grossForEmployerNi = round2(Math.max(0, gross - pensionEmployee));
+    }
+  }
+
+  const computed = computeMonthlyPayeAndNiFromGross({
+    grossForTax,
+    grossForEmployeeNi,
+    grossForEmployerNi,
+    taxCode: args.taxCode,
+    taxBasis: args.taxBasis,
+    payFrequency: args.payFrequency,
+    taxYear: args.taxYear,
+    niCategory: args.niCategory,
+  });
+
+  return {
+    pensionBasisAmount: round2(pensionBasisAmount),
+    qualifyingEarnings: round2(qualifyingEarnings),
+    pensionEmployee: round2(pensionEmployee),
+    pensionEmployer: round2(pensionEmployer),
+    grossForTax: round2(grossForTax),
+    grossForEmployeeNi: round2(grossForEmployeeNi),
+    grossForEmployerNi: round2(grossForEmployerNi),
+    paye: round2(computed.paye),
+    employeeNi: round2(computed.employeeNi),
+    employerNi: round2(computed.employerNi),
+    employeePensionCode,
   };
 }
 
@@ -341,8 +851,8 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
       emp?.name,
       [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
       [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-      "â€”"
-    ) || "â€”"
+      "-"
+    ) || "-"
   );
 
   const employeeNumber = String(
@@ -353,11 +863,11 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
       emp?.payrollNumber,
       emp?.payroll_no,
       emp?.payrollNo,
-      "â€”"
-    ) || "â€”"
+      "-"
+    ) || "-"
   );
 
-  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "â€”") || "â€”");
+  const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "-") || "-");
 
   const gross = round2(toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, att?.gross, 0)));
 
@@ -429,13 +939,26 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
     .trim()
     .toLowerCase();
 
+  const pensionSettings = readEmployeePensionSettings(emp);
+  const taxReductionFromPension =
+    pensionSettings.method === "salary_sacrifice" || pensionSettings.method === "net_pay"
+      ? pensionEmployee
+      : 0;
+  const niReductionFromPension =
+    pensionSettings.method === "salary_sacrifice"
+      ? pensionEmployee
+      : 0;
+
+  const grossForTaxFallback = round2(Math.max(0, gross - taxReductionFromPension));
+  const grossForNiFallback = round2(Math.max(0, gross - niReductionFromPension));
+
   if (tax <= 0 && gross > 0 && runFrequency === "monthly" && taxCodeUsed) {
     try {
       const periodStartSrc = String(pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || "");
       const taxYear = parseInt(periodStartSrc.slice(0, 4), 10);
 
       const payResult = calculatePay({
-        grossForPeriod: gross,
+        grossForPeriod: grossForTaxFallback,
         taxCode: formatTaxCodeForCalc(taxCodeUsed, taxCodeBasisUsed, runFrequency),
         period: 1,
         ytdTaxableBeforeThisPeriod: toNumberSafe(
@@ -455,16 +978,20 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
     }
   }
 
-  if (gross > 0 && runFrequency === "monthly" && niCategoryUsed && employeeNi <= 0 && employerNi <= 0) {
+  if (gross > 0 && runFrequency === "monthly" && niCategoryUsed && (employeeNi <= 0 || employerNi <= 0)) {
     try {
-      const ni = computeApproxMonthlyNi(gross, niCategoryUsed);
+      const ni = computeApproxMonthlyNi(grossForNiFallback, niCategoryUsed);
       const cat = String(niCategoryUsed || "").trim().toUpperCase();
 
-      if (ni.employee > 0 || ni.employer > 0 || cat === "C") {
+      if ((employeeNi <= 0 && ni.employee > 0) || cat === "C") {
         employeeNi = ni.employee;
-        employerNi = ni.employer;
-        usedNiFallback = true;
       }
+
+      if (employerNi <= 0 && ni.employer >= 0) {
+        employerNi = ni.employer;
+      }
+
+      usedNiFallback = true;
     } catch {
       // leave stored/fallback value as-is
     }
@@ -676,8 +1203,8 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
         emp?.name,
         [emp?.first_name, emp?.last_name].filter(Boolean).join(" ").trim(),
         [emp?.firstName, emp?.lastName].filter(Boolean).join(" ").trim(),
-        "â€”"
-      ) || "â€”"
+        "-"
+      ) || "-"
     );
 
     const codes: string[] = [];
@@ -1309,9 +1836,39 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     return { ok: false as const, status: 409, error: "No attached employees found for local full compute." };
   }
 
+  const employeeIds = Array.from(
+    new Set(
+      attachments
+        .map((r: any) => String(pickFirst(r?.employee_id, r?.employeeId, "") || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const empById = new Map<string, any>();
+  if (employeeIds.length > 0) {
+    const { data: empRowsRaw, error: empErr } = await supabase
+      .from("employees")
+      .select("*")
+      .in("id", employeeIds)
+      .eq("company_id", companyId);
+
+    if (empErr) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: `Failed to load employees for local full compute: ${empErr.message}`,
+      };
+    }
+
+    for (const emp of Array.isArray(empRowsRaw) ? empRowsRaw : []) {
+      const employeeId = String((emp as any)?.id || "").trim();
+      if (employeeId) empById.set(employeeId, emp);
+    }
+  }
+
   const { data: elementRowsRaw, error: elementErr } = await supabase
     .from("payroll_run_pay_elements")
-    .select("id,payroll_run_employee_id,pay_element_type_id,amount,description_override")
+    .select("*")
     .in("payroll_run_employee_id", preIds);
 
   if (elementErr) {
@@ -1322,15 +1879,15 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
   const typeIds = Array.from(
     new Set(
       elementRows
-        .map((r: any) => String(pickFirst(r?.pay_element_type_id, "") || "").trim())
+        .map((r: any) => String(pickFirst(r?.pay_element_type_id, r?.payElementTypeId, "") || "").trim())
         .filter(Boolean)
     )
   );
 
-  const codesWeNeed = ["PAYE", "EE_NI", "ER_NI"];
+  const codesWeNeed = ["PAYE", "EE_NI", "ER_NI", "EE_PEN", "EE_PEN_RAS", "EE_PEN_SAL_SAC", "ER_PEN"];
   const { data: generatedTypesRaw, error: generatedTypeErr } = await supabase
     .from("pay_element_types")
-    .select("id,code,side")
+    .select("*")
     .in("code", codesWeNeed);
 
   if (generatedTypeErr) {
@@ -1347,11 +1904,11 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     if (code) generatedTypeByCode.set(code, t);
   }
 
-  let typeById = new Map<string, any>();
+  const typeById = new Map<string, any>();
   if (typeIds.length > 0) {
     const { data: typeRowsRaw, error: typeErr } = await supabase
       .from("pay_element_types")
-      .select("id,code,side")
+      .select("*")
       .in("id", typeIds);
 
     if (typeErr) {
@@ -1364,12 +1921,19 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     }
   }
 
-  const byPreId = new Map<string, any[]>();
-  for (const row of elementRows) {
-    const preId = String((row as any)?.payroll_run_employee_id || "").trim();
+  const generatedCodeSet = new Set<string>(codesWeNeed);
+
+  const byPreId = new Map<string, LocalNormalisedPayElement[]>();
+  for (const rawRow of elementRows) {
+    const preId = String(pickFirst((rawRow as any)?.payroll_run_employee_id, "") || "").trim();
     if (!preId) continue;
+
+    const typeId = String(pickFirst((rawRow as any)?.pay_element_type_id, "") || "").trim();
+    const type = typeId ? typeById.get(typeId) : null;
+    const normalised = normaliseLocalPayElement(rawRow, type);
+
     if (!byPreId.has(preId)) byPreId.set(preId, []);
-    byPreId.get(preId)!.push(row);
+    byPreId.get(preId)!.push(normalised);
   }
 
   const runFrequency = String(pickFirst(run?.frequency, "") || "").trim().toLowerCase();
@@ -1383,30 +1947,51 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     const preId = String(pickFirst(att?.id, "") || "").trim();
     if (!preId) continue;
 
+    const employeeId = String(pickFirst(att?.employee_id, att?.employeeId, "") || "").trim();
+    const emp = employeeId ? empById.get(employeeId) : null;
+
     const rows = byPreId.get(preId) || [];
 
     let gross = 0;
+    let basicPay = 0;
+    let pensionablePay = 0;
+    let aeQualifyingSourcePay = 0;
     let employeeElementDeductions = 0;
 
     for (const row of rows) {
-      const typeId = String(pickFirst((row as any)?.pay_element_type_id, "") || "").trim();
-      const amount = round2(toNumberSafe((row as any)?.amount));
-      const type = typeId ? typeById.get(typeId) : null;
-      const code = String((type as any)?.code || "").trim().toUpperCase();
-      const side = normalisePayElementSide((type as any)?.side);
+      const code = String(row.code || "").trim().toUpperCase();
+      const amount = round2(toNumberSafe(row.amount));
 
-      if (side === "earning") {
+      if (row.side === "earning") {
         gross += amount;
+
+        if (code === "BASIC") {
+          basicPay += amount;
+        }
+
+        if (row.effectivePensionable) {
+          pensionablePay += amount;
+        }
+
+        if (row.effectiveAeQualifying) {
+          aeQualifyingSourcePay += amount;
+        }
+
         continue;
       }
 
-      if (code === "PAYE" || code === "EE_NI" || code === "ER_NI") continue;
+      if (generatedCodeSet.has(code)) continue;
 
       employeeElementDeductions += amount;
     }
 
     gross = round2(gross);
+    basicPay = round2(basicPay);
+    pensionablePay = round2(pensionablePay > 0 ? pensionablePay : gross);
+    aeQualifyingSourcePay = round2(aeQualifyingSourcePay > 0 ? aeQualifyingSourcePay : gross);
     employeeElementDeductions = round2(employeeElementDeductions);
+
+    const pensionSettings = readEmployeePensionSettings(emp);
 
     const rawTaxCode = pickFirst(att?.tax_code_used, null);
     const rawTaxBasis = pickFirst(att?.tax_code_basis_used, null);
@@ -1414,42 +1999,34 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
       .trim()
       .toUpperCase();
 
-    let paye = 0;
-    let employeeNi = 0;
-    let employerNi = 0;
+    const pensionOverlay = overlayPensionFromEmployeeSettings({
+      gross,
+      basicPay,
+      pensionablePay,
+      aeQualifyingSourcePay,
+      payFrequency: runFrequency,
+      taxYear,
+      taxCode: rawTaxCode,
+      taxBasis: rawTaxBasis,
+      niCategory,
+      settings: pensionSettings,
+    });
 
-    if (gross > 0) {
-      if (runFrequency === "monthly") {
-        const calcTaxCode = formatTaxCodeForCalc(rawTaxCode, rawTaxBasis, runFrequency);
+    const paye = round2(pensionOverlay.paye);
+    const employeeNi = round2(pensionOverlay.employeeNi);
+    const employerNi = round2(pensionOverlay.employerNi);
+    const pensionEmployee = round2(pensionOverlay.pensionEmployee);
+    const pensionEmployer = round2(pensionOverlay.pensionEmployer);
 
-        try {
-          const payResult = calculatePay({
-            grossForPeriod: gross,
-            taxCode: calcTaxCode,
-            period: 1,
-            ytdTaxableBeforeThisPeriod: 0,
-            ytdTaxPaidBeforeThisPeriod: 0,
-            taxYear,
-          });
-
-          paye = round2(Number((payResult as any)?.tax ?? 0));
-        } catch {
-          paye = 0;
-        }
-
-        const ni = computeApproxMonthlyNi(gross, niCategory);
-        employeeNi = ni.employee;
-        employerNi = ni.employer;
-      }
-    }
-
-    const net = round2(Math.max(0, gross - employeeElementDeductions - paye - employeeNi));
+    const net = round2(Math.max(0, gross - employeeElementDeductions - paye - employeeNi - pensionEmployee));
 
     const patch: any = {
       gross_pay: gross,
       tax: paye,
       ni_employee: employeeNi,
       ni_employer: employerNi,
+      pension_employee: pensionEmployee,
+      pension_employer: pensionEmployer,
       other_deductions: employeeElementDeductions,
       net_pay: net,
       calc_mode: "full",
@@ -1522,6 +2099,52 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
           ok: false as const,
           status: 500,
           error: `Failed to upsert ER_NI pay element for row ${preId}: ${String(up.error?.message || "unknown error")}`,
+        };
+      }
+    }
+
+    const employeePensionDescriptions: Record<string, string> = {
+      EE_PEN: "Employee pension (generated by local full compute fallback)",
+      EE_PEN_RAS: "Employee pension relief at source (generated by local full compute fallback)",
+      EE_PEN_SAL_SAC: "Employee pension salary sacrifice (generated by local full compute fallback)",
+    };
+
+    for (const code of ["EE_PEN", "EE_PEN_RAS", "EE_PEN_SAL_SAC"] as const) {
+      const type = generatedTypeByCode.get(code);
+      if (!type?.id) continue;
+
+      const amount = code === pensionOverlay.employeePensionCode ? pensionEmployee : 0;
+      const up = await upsertGeneratedPayElement(
+        supabase,
+        preId,
+        String(type.id),
+        amount,
+        employeePensionDescriptions[code]
+      );
+
+      if (!up.ok) {
+        return {
+          ok: false as const,
+          status: 500,
+          error: `Failed to upsert ${code} pay element for row ${preId}: ${String(up.error?.message || "unknown error")}`,
+        };
+      }
+    }
+
+    const erPenType = generatedTypeByCode.get("ER_PEN");
+    if (erPenType?.id) {
+      const up = await upsertGeneratedPayElement(
+        supabase,
+        preId,
+        String(erPenType.id),
+        pensionEmployer,
+        "Employer pension (generated by local full compute fallback)"
+      );
+      if (!up.ok) {
+        return {
+          ok: false as const,
+          status: 500,
+          error: `Failed to upsert ER_PEN pay element for row ${preId}: ${String(up.error?.message || "unknown error")}`,
         };
       }
     }
@@ -2225,53 +2848,41 @@ export async function PATCH(req: Request, { params }: Ctx) {
       flagPre?.attachedFlag,
       flagPost?.attachedFlag,
       Boolean(flagPre?.hasAttachedFlag)
-    );
+    );    let localFallback: any = await localComputeFullFromElements(supabase, id, companyId, run);
+    if (!localFallback.ok) {
+      return json(localFallback.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        action: "compute_full",
+        error: localFallback.error || "Local full compute fallback failed",
+        computeVia: rpc?.via,
+        totalsRefreshOk: Boolean(totalsRefresh?.ok),
+        localFallback,
+      });
+    }
+
+    const totalsRefreshAfterLocal: any = await refreshRunTotalsFromAttachments(supabase, id, companyId);
+    if (!totalsRefreshAfterLocal?.ok) {
+      return json(totalsRefreshAfterLocal?.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        action: "compute_full",
+        error: totalsRefreshAfterLocal?.error || "Totals refresh failed after local full compute fallback",
+        computeVia: rpc?.via,
+        localFallback,
+      });
+    }
 
     let post = await getRunAndEmployees(supabase, id, false);
     if (!post.ok) {
-      return json(post.status || 500, { ok: false, debugSource: "payroll_run_route_rls_v2", error: post.error });
-    }
-
-    const needsLocalFallback = Boolean(post.seededMode) || resultLooksGrossOnly(post);
-
-    let localFallback: any = null;
-    if (needsLocalFallback) {
-      localFallback = await localComputeFullFromElements(supabase, id, companyId, run);
-      if (!localFallback.ok) {
-        return json(localFallback.status || 500, {
-          ok: false,
-          debugSource: "payroll_run_route_rls_v2",
-          action: "compute_full",
-          error: localFallback.error || "Local full compute fallback failed",
-          computeVia: rpc?.via,
-          totalsRefreshOk: Boolean(totalsRefresh?.ok),
-          localFallback,
-        });
-      }
-
-      const totalsRefreshAfterLocal: any = await refreshRunTotalsFromAttachments(supabase, id, companyId);
-      if (!totalsRefreshAfterLocal?.ok) {
-        return json(totalsRefreshAfterLocal?.status || 500, {
-          ok: false,
-          debugSource: "payroll_run_route_rls_v2",
-          action: "compute_full",
-          error: totalsRefreshAfterLocal?.error || "Totals refresh failed after local full compute fallback",
-          computeVia: rpc?.via,
-          localFallback,
-        });
-      }
-
-      post = await getRunAndEmployees(supabase, id, false);
-      if (!post.ok) {
-        return json(post.status || 500, {
-          ok: false,
-          debugSource: "payroll_run_route_rls_v2",
-          action: "compute_full",
-          error: post.error,
-          computeVia: rpc?.via,
-          localFallback,
-        });
-      }
+      return json(post.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        action: "compute_full",
+        error: post.error,
+        computeVia: rpc?.via,
+        localFallback,
+      });
     }
 
     if (Boolean(post.seededMode) || resultLooksGrossOnly(post)) {
