@@ -472,7 +472,7 @@ export default function P45Page() {
       }
 
       showToast("success", "P45 details saved.");
-      router.push(`/dashboard/employees/${id}/wizard/bank`);
+      router.push(`/dashboard/employees/${id}/wizard/tax`);
     } catch (e: any) {
       const msg = String(e?.message || e);
       setErr(msg);

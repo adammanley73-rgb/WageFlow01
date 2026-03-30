@@ -99,6 +99,7 @@ export default function TaxPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [p45Provided, setP45Provided] = useState<boolean | null>(null);
 
   const [toast, setToast] = useState<ToastState>({ open: false, message: "", tone: "info" });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -124,7 +125,9 @@ export default function TaxPage() {
     }, 4500);
   }
 
-  const backHref = `/dashboard/employees/${id}/wizard/declaration`;
+  const backHref = p45Provided === true
+    ? `/dashboard/employees/${id}/wizard/p45`
+    : `/dashboard/employees/${id}/wizard/declaration`;
 
   useEffect(() => {
     let alive = true;
@@ -134,7 +137,18 @@ export default function TaxPage() {
         setLoading(true);
         setErr(null);
 
-        const r = await fetch(`/api/employees/${id}/tax`, { cache: "no-store" });
+        const [r, starterRes] = await Promise.all([
+          fetch(`/api/employees/${id}/tax`, { cache: "no-store" }),
+          fetch(`/api/employees/${id}/starter`, { cache: "no-store" }),
+        ]);
+
+        if (alive && starterRes.ok) {
+          const sj = await starterRes.json().catch(() => null);
+          const sd = sj?.data ?? sj ?? null;
+          if (sd && typeof sd.p45_provided === "boolean") {
+            setP45Provided(sd.p45_provided);
+          }
+        }
 
         if (r.status === 204 || r.status === 404) return;
         if (!r.ok) throw new Error(`load ${r.status}`);
@@ -213,7 +227,7 @@ export default function TaxPage() {
       }
 
       showToast("Tax and NI details saved.", "success");
-      router.push(`/dashboard/employees/${id}/wizard/bank`);
+      router.push(`/dashboard/employees/${id}/wizard/pension`);
     } catch (e: unknown) {
       const msg = String((e as { message?: string })?.message || e);
       setErr(msg);

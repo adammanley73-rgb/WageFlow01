@@ -279,7 +279,7 @@ export default function DeclarationPage() {
       }
 
       showToast("Starter declaration saved.", "success");
-      router.push(`/dashboard/employees/${id}/wizard/bank`);
+      router.push(`/dashboard/employees/${id}/wizard/tax`);
     } catch (e: unknown) {
       const msg = String((e as { message?: unknown } | null)?.message ?? e);
       setErr(msg);

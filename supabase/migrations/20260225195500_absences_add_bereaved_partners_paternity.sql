@@ -1,4 +1,4 @@
-﻿-- C:\Projects\wageflow01\supabase\migrations\20260225195500_absences_add_bereaved_partners_paternity.sql
+-- C:\Projects\wageflow01\supabase\migrations\20260225195500_absences_add_bereaved_partners_paternity.sql
 
 begin;
 

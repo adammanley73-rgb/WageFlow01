@@ -764,22 +764,6 @@ export default function NewEmployeePage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm text-neutral-800">Pay frequency</label>
-                  <select
-                    value={form.pay_frequency}
-                    onChange={(e) => setField("pay_frequency", e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                    name="pay_frequency"
-                  >
-                    {payFrequencyOptions.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
                   <label className="block text-sm text-neutral-800">Email address</label>
                   <input
                     value={form.email}
@@ -952,7 +936,23 @@ export default function NewEmployeePage() {
                   <div className="rounded-lg border border-neutral-300 bg-white p-4">
                     <div className="text-sm font-semibold text-neutral-900">Pay</div>
 
-                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <div>
+                        <label className="block text-sm text-neutral-800">Pay frequency</label>
+                        <select
+                          value={form.pay_frequency}
+                          onChange={(e) => setField("pay_frequency", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pay_frequency"
+                        >
+                          {payFrequencyOptions.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       <div>
                         <label className="block text-sm text-neutral-800">Annual salary (£)</label>
                         <input
