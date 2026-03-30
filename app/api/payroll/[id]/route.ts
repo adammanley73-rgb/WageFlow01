@@ -250,6 +250,10 @@ function pickPensionBasisAmount(
   const pensionable = round2(Math.max(0, pensionablePay || 0));
   const qualifying = round2(Math.max(0, qualifyingPay || 0));
 
+  if (basis === "qualifying_earnings") {
+    return qualifying;
+  }
+
   if (basis === "basic_pay") {
     if (basic > 0) return basic;
     if (pensionable > 0) return pensionable;
@@ -262,9 +266,7 @@ function pickPensionBasisAmount(
     return qualifying;
   }
 
-  if (qualifying > 0) return qualifying;
-  if (pensionable > 0) return pensionable;
-  return basic;
+  return qualifying;
 }
 
 function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
@@ -2848,7 +2850,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
       flagPre?.attachedFlag,
       flagPost?.attachedFlag,
       Boolean(flagPre?.hasAttachedFlag)
-    );    let localFallback: any = await localComputeFullFromElements(supabase, id, companyId, run);
+    );
+
+    let localFallback: any = await localComputeFullFromElements(supabase, id, companyId, run);
     if (!localFallback.ok) {
       return json(localFallback.status || 500, {
         ok: false,
