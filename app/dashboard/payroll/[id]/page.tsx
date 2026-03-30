@@ -22,6 +22,9 @@ type Row = {
   employeeName: string;
   employeeNumber: string;
   email: string;
+  tax: number;
+  ni: number;
+  eePen: number;
   gross: number;
   deductions: number;
   net: number;
@@ -270,6 +273,40 @@ function derivePeriodFromPayDate(frequency: Frequency, payDateIso: string | null
   return { startIso: isoDateOnlyFromUtc(startUtc), endIso: isoDateOnlyFromUtc(endUtc) };
 }
 
+function formatFrequencyForHeadline(value: any): string {
+  const s = String(value || "").trim().toLowerCase();
+  if (!s) return "";
+  if (s === "weekly") return "Weekly";
+  if (s === "fortnightly") return "Fortnightly";
+  if (s === "four_weekly") return "Four-weekly";
+  if (s === "monthly") return "Monthly";
+  return String(value || "").trim();
+}
+
+function normalizeRunNameForDisplay(value: any): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_m, yyyy, mm, dd) => `${dd}-${mm}-${yyyy}`);
+}
+
+function buildHeadline(runName: any, frequency: any, payDate: any): string {
+  const formattedRunName = normalizeRunNameForDisplay(runName);
+  if (formattedRunName) return formattedRunName;
+
+  const freqText = formatFrequencyForHeadline(frequency);
+  const payDateText = payDate ? formatUkDate(String(payDate), MISSING) : MISSING;
+
+  if (freqText && payDateText !== MISSING) {
+    return `${freqText} payroll (pay date ${payDateText})`;
+  }
+
+  if (payDateText !== MISSING) {
+    return `Payroll run (pay date ${payDateText})`;
+  }
+
+  return "Run";
+}
+
 function cleanEmail(v: any) {
   const raw = pickFirst(v, null);
   if (raw === null || raw === undefined) return MISSING;
@@ -293,6 +330,11 @@ function mapEmployees(raw: any[]): Row[] {
     const gross = toNumberSafe(pickFirst(r.gross, r.total_gross, r.gross_pay, 0) as any);
     const deductions = toNumberSafe(pickFirst(r.deductions, r.total_deductions, r.deduction_total, 0) as any);
     const net = toNumberSafe(pickFirst(r.net, r.total_net, r.net_pay, gross - deductions) as any);
+    const tax = toNumberSafe(pickFirst(r.tax, r.total_tax, r.tax_pay, r.paye_tax, r.income_tax, 0) as any);
+    const ni = toNumberSafe(pickFirst(r.ni, r.ni_employee, r.employee_ni, r.niEmployee, r.employeeNi, 0) as any);
+    const eePen = toNumberSafe(
+      pickFirst(r.pension_employee, r.pensionEmployee, r.employee_pension, r.ee_pen, r.eePen, 0) as any
+    );
     const calcMode = String(pickFirst(r.calc_mode, r.calcMode, "uncomputed") || "uncomputed");
 
     return {
@@ -301,6 +343,9 @@ function mapEmployees(raw: any[]): Row[] {
       employeeName: String(pickFirst(r.employeeName, r.employee_name, r.full_name, MISSING) || MISSING),
       employeeNumber: String(pickFirst(r.employeeNumber, r.employee_number, r.payroll_number, MISSING) || MISSING),
       email: cleanEmail(pickFirst(r.email, r.employee_email, MISSING)),
+      tax: Number.isFinite(tax) ? Number(tax.toFixed(2)) : 0,
+      ni: Number.isFinite(ni) ? Number(ni.toFixed(2)) : 0,
+      eePen: Number.isFinite(eePen) ? Number(eePen.toFixed(2)) : 0,
       gross: Number.isFinite(gross) ? Number(gross.toFixed(2)) : 0,
       deductions: Number.isFinite(deductions) ? Number(deductions.toFixed(2)) : 0,
       net: Number.isFinite(net) ? Number(net.toFixed(2)) : 0,
@@ -1214,6 +1259,8 @@ export default function PayrollRunDetailPage() {
 
   const payDateText = payDate ? formatUkDate(String(payDate)) : MISSING;
 
+  const headline = buildHeadline(runNameFromApi, frequencyRaw, payDate);
+
   const apiGateReady = apiSeededKnown && apiExceptionsKnown;
 
   const attachmentsConfirmRequired = statusLower === "processing";
@@ -1358,7 +1405,6 @@ export default function PayrollRunDetailPage() {
     return Object.keys(selectedIds).filter((k) => selectedIds[k]).length;
   }, [selectedIds]);
 
-  const headline = runNameFromApi ? runNameFromApi : runNumber !== MISSING ? `Run ${runNumber}` : "Run";
   const kindChip = isSupplementary ? "SUPPLEMENTARY" : "PRIMARY";
 
   const showOpenSupplementaryButton =
@@ -2146,35 +2192,46 @@ export default function PayrollRunDetailPage() {
         >
           <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-extrabold text-slate-900">Employees in this run</h2>
-            <div className="text-sm text-slate-700">Edit amounts, save, export CSV, or open a payslip.</div>
+            <div className="text-sm text-slate-700">Review PAYE, NI, EE Pen and Net Pay, then open a payslip.</div>
           </div>
 
-          <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-[1080px] border-collapse">
+          <div className="w-full overflow-hidden">
+            <table className="w-full table-fixed border-collapse">
+              <colgroup>
+                <col style={{ width: "22%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "12%" }} />
+              </colgroup>
+
               <thead>
                 <tr className="bg-neutral-100">
-                  <th className="sticky left-0 z-10 bg-neutral-100 px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                  <th className="sticky left-0 z-10 bg-neutral-100 px-3 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
                     Employee
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                  <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
                     Number
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
-                    Email
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
-                    Calc
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                  <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
                     Gross
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
-                    Deductions
+                  <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                    PAYE
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
-                    Net
+                  <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                    NI
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                  <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                    EE Pen
+                  </th>
+                  <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">
+                    Net Pay
+                  </th>
+                  <th className="px-2 py-3 text-center text-sm font-extrabold text-slate-900 border-b border-neutral-300">
                     Payslip
                   </th>
                 </tr>
@@ -2200,67 +2257,22 @@ export default function PayrollRunDetailPage() {
                 {!loading &&
                   rows.map((r) => {
                     const rowError = validation?.[r.id];
-                    const badge = calcBadgeStyles(r.calcMode);
 
                     return (
                       <tr key={r.id} className="bg-white">
-                        <td className="sticky left-0 z-0 bg-white px-4 py-3 text-sm text-slate-900 border-b border-neutral-200">
-                          {r.employeeName || MISSING}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
-                          {r.employeeNumber || MISSING}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
-                          {r.email || MISSING}
+                        <td className="sticky left-0 z-0 bg-white px-3 py-3 text-sm text-slate-900 border-b border-neutral-200">
+                          <span className="block truncate">{r.employeeName || MISSING}</span>
                         </td>
 
-                        <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
-                          <span
-                            className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold"
-                            style={badge}
-                            title="Calculation state for this employee in this run"
-                          >
-                            {String(r.calcMode || "uncomputed")}
-                          </span>
+                        <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                          <span className="block truncate">{r.employeeNumber || MISSING}</span>
                         </td>
 
-                        <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
-                          <input
-                            disabled={!canEditRun}
-                            className={`${inter.className} h-10 w-28 rounded-xl border border-slate-300 px-3 text-right text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
-                            style={{
-                              color: WF_BLUE,
-                              opacity: !canEditRun ? 0.6 : 1,
-                              cursor: !canEditRun ? "not-allowed" : "text",
-                            }}
-                            type="number"
-                            step="0.01"
-                            value={Number.isFinite(r.gross) ? r.gross : 0}
-                            onChange={(e) => onChangeCell(r.id, "gross", e.target.value)}
-                          />
-                        </td>
-
-                        <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
-                          <input
-                            disabled={!canEditRun}
-                            className={`${inter.className} h-10 w-28 rounded-xl border border-slate-300 px-3 text-right text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
-                            style={{
-                              color: WF_BLUE,
-                              opacity: !canEditRun ? 0.6 : 1,
-                              cursor: !canEditRun ? "not-allowed" : "text",
-                            }}
-                            type="number"
-                            step="0.01"
-                            value={Number.isFinite(r.deductions) ? r.deductions : 0}
-                            onChange={(e) => onChangeCell(r.id, "deductions", e.target.value)}
-                          />
-                        </td>
-
-                        <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
-                          <div className="flex flex-col gap-1">
+                        <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                          <div className="mx-auto w-full max-w-[8.5rem]">
                             <input
                               disabled={!canEditRun}
-                              className={`${inter.className} h-10 w-28 rounded-xl border border-slate-300 px-3 text-right text-sm font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
+                              className={`${inter.className} h-10 w-full min-w-0 rounded-xl border border-slate-300 px-2 text-right text-[13px] font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
                               style={{
                                 color: WF_BLUE,
                                 opacity: !canEditRun ? 0.6 : 1,
@@ -2268,21 +2280,73 @@ export default function PayrollRunDetailPage() {
                               }}
                               type="number"
                               step="0.01"
-                              value={Number.isFinite(r.net) ? r.net : 0}
-                              onChange={(e) => onChangeCell(r.id, "net", e.target.value)}
+                              value={Number.isFinite(r.gross) ? r.gross : 0}
+                              onChange={(e) => onChangeCell(r.id, "gross", e.target.value)}
                             />
-                            {rowError ? <div className="text-xs font-semibold text-red-700">{rowError}</div> : null}
                           </div>
                         </td>
 
-                        <td className="px-4 py-3 text-sm text-slate-700 border-b border-neutral-200">
-                          <Link
-                            href={`/dashboard/payroll/${runId}/payslip/${r.employeeId}`}
-                            className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                            style={{ backgroundColor: WF_BLUE }}
+                        <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                          <div
+                            className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`}
+                            style={{ color: WF_BLUE }}
+                            title="PAYE for this employee in this run"
                           >
-                            View
-                          </Link>
+                            {gbp(r.tax)}
+                          </div>
+                        </td>
+
+                        <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                          <div
+                            className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`}
+                            style={{ color: WF_BLUE }}
+                            title="Employee NI for this employee in this run"
+                          >
+                            {gbp(r.ni)}
+                          </div>
+                        </td>
+
+                        <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                          <div
+                            className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`}
+                            style={{ color: WF_BLUE }}
+                            title="Employee pension deduction for this employee in this run"
+                          >
+                            {gbp(r.eePen)}
+                          </div>
+                        </td>
+
+                        <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                          <div className="mx-auto w-full max-w-[8.5rem]">
+                            <div className="flex flex-col gap-1">
+                              <input
+                                disabled={!canEditRun}
+                                className={`${inter.className} h-10 w-full min-w-0 rounded-xl border border-slate-300 px-2 text-right text-[13px] font-extrabold outline-none focus:ring-2 focus:ring-offset-1`}
+                                style={{
+                                  color: WF_BLUE,
+                                  opacity: !canEditRun ? 0.6 : 1,
+                                  cursor: !canEditRun ? "not-allowed" : "text",
+                                }}
+                                type="number"
+                                step="0.01"
+                                value={Number.isFinite(r.net) ? r.net : 0}
+                                onChange={(e) => onChangeCell(r.id, "net", e.target.value)}
+                              />
+                              {rowError ? <div className="text-xs font-semibold text-red-700">{rowError}</div> : null}
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200">
+                          <div className="mx-auto w-full max-w-[6.5rem]">
+                            <Link
+                              href={`/dashboard/payroll/${runId}/payslip/${r.employeeId}`}
+                              className="inline-flex h-10 w-full min-w-0 items-center justify-center rounded-xl px-2 text-sm font-semibold text-white transition hover:opacity-95"
+                              style={{ backgroundColor: WF_BLUE }}
+                            >
+                              Open
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -2292,8 +2356,7 @@ export default function PayrollRunDetailPage() {
           </div>
 
           <div className="px-5 py-4 text-sm text-slate-700">
-            Live totals reflect your edits. Net defaults to Gross minus Deductions. Approval is blocked until Processing,
-            attachments confirmed, seededMode is false and there are no blocking exceptions.
+            Live totals reflect your edits. Gross and Net Pay stay editable. PAYE, NI and EE Pen are shown from the payroll calculation for quick review before opening a payslip.
           </div>
         </div>
 
