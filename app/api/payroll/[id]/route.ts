@@ -250,9 +250,7 @@ function pickPensionBasisAmount(
   const pensionable = round2(Math.max(0, pensionablePay || 0));
   const qualifying = round2(Math.max(0, qualifyingPay || 0));
 
-  if (basis === "basic_pay") {
-    if (basic > 0) return basic;
-    if (pensionable > 0) return pensionable;
+  if (basis === "qualifying_earnings") {
     return qualifying;
   }
 
@@ -262,9 +260,9 @@ function pickPensionBasisAmount(
     return qualifying;
   }
 
-  if (qualifying > 0) return qualifying;
+  if (basic > 0) return basic;
   if (pensionable > 0) return pensionable;
-  return basic;
+  return qualifying;
 }
 
 function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
