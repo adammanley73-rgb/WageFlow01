@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Inter } from "next/font/google";
 import { createClient } from "@/lib/supabase/client";
+import { formatUkDate } from "@/lib/formatUkDate";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
@@ -267,6 +268,11 @@ function todayIsoUtc() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function buildRunName(scheduleName: string, payDateIso: string) {
+  const payDateUk = formatUkDate(payDateIso, payDateIso);
+  return `${scheduleName} payroll (pay date ${payDateUk})`;
+}
+
 export default function PayrollNewPage() {
   const router = useRouter();
 
@@ -519,7 +525,7 @@ export default function PayrollNewPage() {
         ? labelFreq(derivedFrequency)
         : "Payroll";
 
-      const runName = `${schedName} payroll (pay date ${payDate})`;
+      const runName = buildRunName(schedName, payDate);
 
       const res = await fetch("/api/payroll/runs", {
         method: "POST",

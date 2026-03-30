@@ -44,6 +44,19 @@ type EmployeeRow = {
   ni_category?: string | null;
   is_director?: boolean | null;
 
+  pension_status?: string | null;
+  pension_scheme_name?: string | null;
+  pension_reference?: string | null;
+  pension_contribution_method?: string | null;
+  pension_earnings_basis?: string | null;
+  pension_employee_rate?: any | null;
+  pension_employer_rate?: any | null;
+  pension_enrolment_date?: string | null;
+  pension_opt_in_date?: string | null;
+  pension_opt_out_date?: string | null;
+  pension_postponement_date?: string | null;
+  pension_worker_category?: string | null;
+
   [key: string]: any;
 };
 
@@ -79,6 +92,19 @@ type FormState = {
   tax_code_basis: string;
   ni_category: string;
   is_director: boolean;
+
+  pension_status: string;
+  pension_scheme_name: string;
+  pension_reference: string;
+  pension_contribution_method: string;
+  pension_earnings_basis: string;
+  pension_employee_rate: string;
+  pension_employer_rate: string;
+  pension_enrolment_date: string;
+  pension_opt_in_date: string;
+  pension_opt_out_date: string;
+  pension_postponement_date: string;
+  pension_worker_category: string;
 };
 
 const CARD = "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
@@ -167,6 +193,10 @@ function hoursRound(n: number) {
 
 function rateRound(n: number) {
   return roundTo(n, 6);
+}
+
+function percentageRound(n: number) {
+  return roundTo(n, 4);
 }
 
 function computeEquivalentHourlyRate(annualSalary: number, hoursPerWeek: number) {
@@ -300,6 +330,19 @@ export default function EditEmployeePage() {
     tax_code_basis: "cumulative",
     ni_category: "A",
     is_director: false,
+
+    pension_status: "not_assessed",
+    pension_scheme_name: "",
+    pension_reference: "",
+    pension_contribution_method: "",
+    pension_earnings_basis: "",
+    pension_employee_rate: "",
+    pension_employer_rate: "",
+    pension_enrolment_date: "",
+    pension_opt_in_date: "",
+    pension_opt_out_date: "",
+    pension_postponement_date: "",
+    pension_worker_category: "",
   });
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -518,6 +561,27 @@ export default function EditEmployeePage() {
           tax_code_basis: rawTaxCodeBasis === "week1_month1" ? "week1_month1" : "cumulative",
           ni_category: String((data as any).ni_category || "A").trim().toUpperCase() || "A",
           is_director: (data as any).is_director === true,
+
+          pension_status: String((data as any).pension_status || "not_assessed").trim() || "not_assessed",
+          pension_scheme_name: String((data as any).pension_scheme_name || "").trim(),
+          pension_reference: String((data as any).pension_reference || "").trim().toUpperCase(),
+          pension_contribution_method: String((data as any).pension_contribution_method || "").trim(),
+          pension_earnings_basis: String((data as any).pension_earnings_basis || "").trim(),
+          pension_employee_rate:
+            (data as any).pension_employee_rate !== null &&
+            (data as any).pension_employee_rate !== undefined
+              ? String((data as any).pension_employee_rate)
+              : "",
+          pension_employer_rate:
+            (data as any).pension_employer_rate !== null &&
+            (data as any).pension_employer_rate !== undefined
+              ? String((data as any).pension_employer_rate)
+              : "",
+          pension_enrolment_date: String((data as any).pension_enrolment_date || "").trim(),
+          pension_opt_in_date: String((data as any).pension_opt_in_date || "").trim(),
+          pension_opt_out_date: String((data as any).pension_opt_out_date || "").trim(),
+          pension_postponement_date: String((data as any).pension_postponement_date || "").trim(),
+          pension_worker_category: String((data as any).pension_worker_category || "").trim(),
         };
 
         const derivedOnLoadStr = deriveHourlyStringFromForm(nextForm.annual_salary, nextForm.hours_per_week);
@@ -637,6 +701,19 @@ export default function EditEmployeePage() {
       }
     }
 
+    const pensionEmployeeRate = toNumberOrNull(form.pension_employee_rate);
+    const pensionEmployerRate = toNumberOrNull(form.pension_employer_rate);
+
+    if (pensionEmployeeRate !== null && (pensionEmployeeRate < 0 || pensionEmployeeRate > 100)) {
+      setErr("Employee pension rate must be between 0 and 100.");
+      return;
+    }
+
+    if (pensionEmployerRate !== null && (pensionEmployerRate < 0 || pensionEmployerRate > 100)) {
+      setErr("Employer pension rate must be between 0 and 100.");
+      return;
+    }
+
     const addressFilled = [
       form.address_line1,
       form.address_line2,
@@ -683,6 +760,21 @@ export default function EditEmployeePage() {
       tax_code_basis: form.tax_code_basis === "week1_month1" ? "week1_month1" : "cumulative",
       ni_category: form.ni_category.trim().toUpperCase() || null,
       is_director: form.is_director,
+
+      pension_status: form.pension_status.trim() || "not_assessed",
+      pension_scheme_name: form.pension_scheme_name.trim() || null,
+      pension_reference: form.pension_reference.trim().toUpperCase() || null,
+      pension_contribution_method: form.pension_contribution_method.trim() || null,
+      pension_earnings_basis: form.pension_earnings_basis.trim() || null,
+      pension_employee_rate:
+        pensionEmployeeRate !== null ? percentageRound(pensionEmployeeRate) : null,
+      pension_employer_rate:
+        pensionEmployerRate !== null ? percentageRound(pensionEmployerRate) : null,
+      pension_enrolment_date: form.pension_enrolment_date || null,
+      pension_opt_in_date: form.pension_opt_in_date || null,
+      pension_opt_out_date: form.pension_opt_out_date || null,
+      pension_postponement_date: form.pension_postponement_date || null,
+      pension_worker_category: form.pension_worker_category.trim() || null,
 
       address,
     };
@@ -1144,6 +1236,176 @@ export default function EditEmployeePage() {
                           <option value="yes">Yes – annual NI method applies</option>
                         </select>
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <div className="rounded-lg border border-neutral-300 bg-white p-4">
+                    <div className="text-sm font-semibold text-neutral-900">Pension</div>
+                    <div className="mt-1 text-xs text-neutral-600">
+                      Capture the employee&apos;s live pension setup here first. Calculation wiring comes after this.
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="block text-sm text-neutral-800">Pension status</label>
+                        <select
+                          value={form.pension_status}
+                          onChange={(e) => setField("pension_status", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_status"
+                        >
+                          <option value="not_assessed">Not assessed</option>
+                          <option value="not_eligible">Not eligible</option>
+                          <option value="eligible">Eligible</option>
+                          <option value="enrolled">Enrolled</option>
+                          <option value="opted_in">Opted in</option>
+                          <option value="opted_out">Opted out</option>
+                          <option value="postponed">Postponed</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Worker category</label>
+                        <select
+                          value={form.pension_worker_category}
+                          onChange={(e) => setField("pension_worker_category", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_worker_category"
+                        >
+                          <option value="">Select worker category</option>
+                          <option value="eligible_jobholder">Eligible jobholder</option>
+                          <option value="non_eligible_jobholder">Non-eligible jobholder</option>
+                          <option value="entitled_worker">Entitled worker</option>
+                          <option value="postponed">Postponed</option>
+                          <option value="unknown">Unknown</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Scheme name</label>
+                        <input
+                          value={form.pension_scheme_name}
+                          onChange={(e) => setField("pension_scheme_name", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_scheme_name"
+                          placeholder="e.g. NEST"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Pension reference</label>
+                        <input
+                          value={form.pension_reference}
+                          onChange={(e) => setField("pension_reference", e.target.value.toUpperCase())}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_reference"
+                          placeholder="Scheme reference"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Contribution method</label>
+                        <select
+                          value={form.pension_contribution_method}
+                          onChange={(e) => setField("pension_contribution_method", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_contribution_method"
+                        >
+                          <option value="">Select contribution method</option>
+                          <option value="relief_at_source">Relief at source</option>
+                          <option value="net_pay">Net pay</option>
+                          <option value="salary_sacrifice">Salary sacrifice</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Earnings basis</label>
+                        <select
+                          value={form.pension_earnings_basis}
+                          onChange={(e) => setField("pension_earnings_basis", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_earnings_basis"
+                        >
+                          <option value="">Select earnings basis</option>
+                          <option value="qualifying_earnings">Qualifying earnings</option>
+                          <option value="pensionable_pay">Pensionable pay</option>
+                          <option value="basic_pay">Basic pay</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Employee rate (%)</label>
+                        <input
+                          value={form.pension_employee_rate}
+                          onChange={(e) => setField("pension_employee_rate", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_employee_rate"
+                          inputMode="decimal"
+                          placeholder="5"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Employer rate (%)</label>
+                        <input
+                          value={form.pension_employer_rate}
+                          onChange={(e) => setField("pension_employer_rate", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_employer_rate"
+                          inputMode="decimal"
+                          placeholder="3"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Enrolment date</label>
+                        <input
+                          type="date"
+                          value={form.pension_enrolment_date}
+                          onChange={(e) => setField("pension_enrolment_date", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_enrolment_date"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Opt-in date</label>
+                        <input
+                          type="date"
+                          value={form.pension_opt_in_date}
+                          onChange={(e) => setField("pension_opt_in_date", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_opt_in_date"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Opt-out date</label>
+                        <input
+                          type="date"
+                          value={form.pension_opt_out_date}
+                          onChange={(e) => setField("pension_opt_out_date", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_opt_out_date"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-neutral-800">Postponement date</label>
+                        <input
+                          type="date"
+                          value={form.pension_postponement_date}
+                          onChange={(e) => setField("pension_postponement_date", e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                          name="pension_postponement_date"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 text-xs text-neutral-600">
+                      Rates are percentages. Leave fields blank where pension is not yet assessed or not applicable.
                     </div>
                   </div>
                 </div>

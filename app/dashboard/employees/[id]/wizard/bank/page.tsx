@@ -69,13 +69,13 @@ function getFieldErrors(form: BankRow): FieldErrors {
     sort_code: !sortCode
       ? "Sort code is required."
       : !isValidSortCode(sortCode)
-      ? "Sort code must be in format xx-xx-xx."
-      : "",
+        ? "Sort code must be in format xx-xx-xx."
+        : "",
     account_number: !accountNumber
       ? "Account number is required."
       : !isValidAccountNumber(accountNumber)
-      ? "Account number must be exactly 8 digits."
-      : "",
+        ? "Account number must be exactly 8 digits."
+        : "",
   };
 }
 
@@ -122,8 +122,7 @@ export default function BankPage() {
     }, 4500);
   }
 
-  // ── Back now goes to tax step ──────────────────────────────────────────────
-  const backHref = `/dashboard/employees/${id}/wizard/tax`;
+  const backHref = `/dashboard/employees/${id}/wizard/pension`;
 
   useEffect(() => {
     let alive = true;
@@ -263,8 +262,8 @@ export default function BankPage() {
     toast.tone === "error"
       ? "bg-red-600 text-white"
       : toast.tone === "success"
-      ? "bg-emerald-600 text-white"
-      : "bg-neutral-900 text-white";
+        ? "bg-emerald-600 text-white"
+        : "bg-neutral-900 text-white";
 
   const inputClass = (hasError: boolean) =>
     `mt-1 w-full rounded-md border bg-white p-2 outline-none ${

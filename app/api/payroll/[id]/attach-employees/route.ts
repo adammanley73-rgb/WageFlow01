@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const WEEKS_PER_YEAR = 52.14285714;
+
 type RouteContext = {
   params: Promise<{
     id: string;
@@ -26,6 +28,11 @@ type PayrollRunRow = {
   periodStart?: string | null;
 
   created_at?: string | null;
+
+  run_kind?: string | null;
+  kind?: string | null;
+  parent_run_id?: string | null;
+  parentRunId?: string | null;
 
   [key: string]: unknown;
 };
@@ -67,6 +74,11 @@ type EmployeeRow = {
   pay_type?: unknown;
   payType?: unknown;
 
+  annual_salary?: unknown;
+  annualSalary?: unknown;
+  hourly_rate?: unknown;
+  hourlyRate?: unknown;
+
   hours_per_week?: unknown;
   hoursPerWeek?: unknown;
 
@@ -98,6 +110,11 @@ type SettingsAppliedRow = {
   postgrad_loan: boolean | null;
   status: string;
   created_at?: string | null;
+};
+
+type AttachedSeedRow = {
+  id: string;
+  employee_id: string;
 };
 
 function statusFromErr(err: unknown, fallback = 500): number {
@@ -256,6 +273,198 @@ function defaultNiCategory(emp: EmployeeRow): string {
   return "A";
 }
 
+function round2(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+function getNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getEmployeeNumber(emp: EmployeeRow, ...keys: string[]): number | null {
+  for (const key of keys) {
+    const n = getNumber((emp as any)?.[key]);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+function isSupplementaryRun(runRow: PayrollRunRow): boolean {
+  const runKindRaw = String(pickFirst(runRow.run_kind, runRow.kind, "") ?? "").trim().toLowerCase();
+  const parentRunId = String(pickFirst(runRow.parent_run_id, runRow.parentRunId, "") ?? "").trim();
+  return runKindRaw === "supplementary" || Boolean(parentRunId);
+}
+
+function computeInitialBasicAmount(emp: EmployeeRow, frequency: string): number {
+  const payBasis = String(
+    pickFirst(emp.pay_basis, emp.pay_basis_used, emp.pay_type, emp.payType, "") ?? ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (payBasis !== "salaried") return 0;
+
+  const annualSalary = getEmployeeNumber(emp, "annual_salary", "annualSalary");
+  const hourlyRate = getEmployeeNumber(emp, "hourly_rate", "hourlyRate");
+  const hoursPerWeek = getEmployeeNumber(emp, "hours_per_week", "hoursPerWeek");
+
+  let weeklyAmount = 0;
+
+  if (annualSalary !== null && annualSalary > 0) {
+    weeklyAmount = annualSalary / WEEKS_PER_YEAR;
+  } else if (hourlyRate !== null && hourlyRate > 0 && hoursPerWeek !== null && hoursPerWeek > 0) {
+    weeklyAmount = hourlyRate * hoursPerWeek;
+  } else {
+    return 0;
+  }
+
+  const freq = normalizeFrequency(frequency);
+
+  if (freq === "weekly") return round2(weeklyAmount);
+  if (freq === "fortnightly") return round2(weeklyAmount * 2);
+  if (freq === "four_weekly") return round2(weeklyAmount * 4);
+  if (freq === "monthly") {
+    if (annualSalary !== null && annualSalary > 0) return round2(annualSalary / 12);
+    return round2((weeklyAmount * WEEKS_PER_YEAR) / 12);
+  }
+
+  return 0;
+}
+
+async function loadBasicPayElementTypeId(supabase: any, companyId: string): Promise<string | null> {
+  const companyRes = await supabase
+    .from("pay_element_types")
+    .select("id")
+    .eq("code", "BASIC")
+    .eq("company_id", companyId)
+    .limit(1)
+    .maybeSingle();
+
+  if (!companyRes.error && companyRes.data?.id) {
+    return String(companyRes.data.id);
+  }
+
+  const globalRes = await supabase
+    .from("pay_element_types")
+    .select("id")
+    .eq("code", "BASIC")
+    .is("company_id", null)
+    .limit(1)
+    .maybeSingle();
+
+  if (!globalRes.error && globalRes.data?.id) {
+    return String(globalRes.data.id);
+  }
+
+  return null;
+}
+
+async function loadInsertedRunEmployeeRows(
+  supabase: any,
+  runId: string,
+  employeeIds: string[]
+): Promise<{ ok: true; rows: AttachedSeedRow[] } | { ok: false; error: unknown }> {
+  const { data, error } = await supabase
+    .from("payroll_run_employees")
+    .select("id, employee_id")
+    .eq("run_id", runId)
+    .in("employee_id", employeeIds);
+
+  if (error) return { ok: false, error };
+
+  const rows = (Array.isArray(data) ? data : [])
+    .map((r: any) => ({
+      id: String(r?.id ?? "").trim(),
+      employee_id: String(r?.employee_id ?? "").trim(),
+    }))
+    .filter((r) => r.id && r.employee_id);
+
+  return { ok: true, rows };
+}
+
+async function seedInitialBasicPayElements(args: {
+  supabase: any;
+  runRow: PayrollRunRow;
+  companyId: string;
+  runFrequency: string;
+  insertedRows: AttachedSeedRow[];
+  employeeById: Map<string, EmployeeRow>;
+}): Promise<
+  | { ok: true; seededCount: number; skippedCount: number }
+  | { ok: false; error: string; details?: string }
+> {
+  const { supabase, runRow, companyId, runFrequency, insertedRows, employeeById } = args;
+
+  if (isSupplementaryRun(runRow)) {
+    return { ok: true, seededCount: 0, skippedCount: insertedRows.length };
+  }
+
+  if (!Array.isArray(insertedRows) || insertedRows.length === 0) {
+    return { ok: true, seededCount: 0, skippedCount: 0 };
+  }
+
+  const basicTypeId = await loadBasicPayElementTypeId(supabase, companyId);
+  if (!basicTypeId) {
+    return {
+      ok: false,
+      error: "BASIC_TYPE_NOT_FOUND",
+      details: "No BASIC pay element type was found for this company or globally.",
+    };
+  }
+
+  const inserts: Record<string, unknown>[] = [];
+  let skippedCount = 0;
+
+  for (const pre of insertedRows) {
+    const emp = employeeById.get(pre.employee_id) ?? null;
+    if (!emp) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const employeeFrequency =
+      normalizeFrequency(pickFirst(emp.pay_frequency, emp.frequency, emp.payFrequency, emp.payFrequencyUsed)) ||
+      runFrequency;
+
+    const amount = computeInitialBasicAmount(emp, employeeFrequency);
+
+    if (!(amount > 0)) {
+      skippedCount += 1;
+      continue;
+    }
+
+    inserts.push({
+      payroll_run_employee_id: pre.id,
+      pay_element_type_id: basicTypeId,
+      amount: round2(amount),
+      taxable_for_paye_override: null,
+      nic_earnings_override: null,
+      pensionable_override: null,
+      ae_qualifying_override: null,
+      description_override: "Basic pay (created automatically on attach)",
+    });
+  }
+
+  if (inserts.length === 0) {
+    return { ok: true, seededCount: 0, skippedCount };
+  }
+
+  const { error } = await supabase.from("payroll_run_pay_elements").insert(inserts);
+
+  if (error) {
+    return {
+      ok: false,
+      error: "BASIC_SEED_FAILED",
+      details: (error as any)?.message ?? String(error),
+    };
+  }
+
+  return { ok: true, seededCount: inserts.length, skippedCount };
+}
+
 export async function POST(_req: Request, { params }: RouteContext) {
   const supabase = await createClient();
 
@@ -345,6 +554,11 @@ export async function POST(_req: Request, { params }: RouteContext) {
   }
 
   const allEmployees = (Array.isArray(employeeRowsRaw) ? employeeRowsRaw : []) as unknown as EmployeeRow[];
+  const employeeById = new Map<string, EmployeeRow>();
+  for (const emp of allEmployees) {
+    const id = isUuid(emp.id) ? String(emp.id).trim() : "";
+    if (id) employeeById.set(id, emp);
+  }
 
   type EligibleEmployee = { emp: EmployeeRow; employeeUuid: string; employeeKey: string };
 
@@ -354,7 +568,9 @@ export async function POST(_req: Request, { params }: RouteContext) {
       const isActive = !status || status === "active";
       if (!isActive) return false;
 
-      const empFreq = normalizeFrequency(pickFirst(emp.pay_frequency, emp.frequency, emp.payFrequency, emp.payFrequencyUsed));
+      const empFreq = normalizeFrequency(
+        pickFirst(emp.pay_frequency, emp.frequency, emp.payFrequency, emp.payFrequencyUsed)
+      );
       return empFreq === runFrequency;
     })
     .map((emp) => {
@@ -646,6 +862,46 @@ export async function POST(_req: Request, { params }: RouteContext) {
     );
   }
 
+  const insertedLookupRes = await loadInsertedRunEmployeeRows(
+    supabase,
+    runId,
+    toAttach.map((x) => String(x.employeeUuid))
+  );
+
+  if (!insertedLookupRes.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "ATTACH_LOOKUP_FAILED",
+        message: "Employees were attached, but the inserted rows could not be reloaded for BASIC pay seeding.",
+        details: (insertedLookupRes.error as any)?.message ?? String(insertedLookupRes.error),
+      },
+      { status: statusFromErr(insertedLookupRes.error) }
+    );
+  }
+
+  const basicSeed = await seedInitialBasicPayElements({
+    supabase,
+    runRow,
+    companyId,
+    runFrequency,
+    insertedRows: insertedLookupRes.rows,
+    employeeById,
+  });
+
+  if (!basicSeed.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: basicSeed.error,
+        message: "Employees were attached, but automatic BASIC pay element creation failed.",
+        details: basicSeed.details ?? null,
+        attachedCount: rowsToInsert.length,
+      },
+      { status: 500 }
+    );
+  }
+
   const upd = await supabase
     .from("payroll_runs")
     .update({ attached_all_due_employees: true })
@@ -661,6 +917,8 @@ export async function POST(_req: Request, { params }: RouteContext) {
         message: "Employees were attached, but updating the payroll run metadata failed.",
         details: (upd.error as any)?.message ?? String(upd.error),
         attachedCount: rowsToInsert.length,
+        basicSeededCount: basicSeed.seededCount,
+        basicSkippedCount: basicSeed.skippedCount,
       },
       { status: statusFromErr(upd.error) }
     );
@@ -674,6 +932,8 @@ export async function POST(_req: Request, { params }: RouteContext) {
         error: "FORBIDDEN",
         message: "Employees were attached, but you do not have permission to update the run metadata.",
         attachedCount: rowsToInsert.length,
+        basicSeededCount: basicSeed.seededCount,
+        basicSkippedCount: basicSeed.skippedCount,
       },
       { status: 403 }
     );
@@ -688,6 +948,8 @@ export async function POST(_req: Request, { params }: RouteContext) {
       totalEmployeesConsidered: eligibleEmployees.length,
       asOfDate,
       strippedColumns: insertRes.stripped,
+      basicSeededCount: basicSeed.seededCount,
+      basicSkippedCount: basicSeed.skippedCount,
     },
     { status: 200 }
   );
