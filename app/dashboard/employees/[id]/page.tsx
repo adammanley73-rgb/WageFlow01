@@ -57,6 +57,12 @@ function fmtMoney(n: any) {
   }).format(num);
 }
 
+function fmtPercent(n: any) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return MISSING;
+  return `${num.toFixed(2).replace(/\.00$/, "")}%`;
+}
+
 function calcAge(dobISO: any) {
   const s = String(dobISO || "").trim();
   if (!s) return null;
@@ -143,6 +149,19 @@ type EmployeeRow = {
   ni_category?: string | null;
   is_director?: boolean | null;
 
+  pension_status?: string | null;
+  pension_scheme_name?: string | null;
+  pension_reference?: string | null;
+  pension_contribution_method?: string | null;
+  pension_earnings_basis?: string | null;
+  pension_employee_rate?: any | null;
+  pension_employer_rate?: any | null;
+  pension_enrolment_date?: string | null;
+  pension_opt_in_date?: string | null;
+  pension_opt_out_date?: string | null;
+  pension_postponement_date?: string | null;
+  pension_worker_category?: string | null;
+
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -221,6 +240,52 @@ function formatTaxBasis(value: string | null | undefined) {
   const v = String(value || "").trim().toLowerCase();
   if (v === "week1_month1") return "Week 1 / Month 1";
   if (v === "cumulative") return "Cumulative";
+  return MISSING;
+}
+
+function formatPensionStatus(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+
+  if (v === "not_assessed") return "Not assessed";
+  if (v === "not_eligible") return "Not eligible";
+  if (v === "eligible") return "Eligible";
+  if (v === "enrolled") return "Enrolled";
+  if (v === "opted_in") return "Opted in";
+  if (v === "opted_out") return "Opted out";
+  if (v === "postponed") return "Postponed";
+
+  return MISSING;
+}
+
+function formatPensionMethod(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+
+  if (v === "relief_at_source") return "Relief at source";
+  if (v === "net_pay") return "Net pay";
+  if (v === "salary_sacrifice") return "Salary sacrifice";
+
+  return MISSING;
+}
+
+function formatPensionBasis(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+
+  if (v === "qualifying_earnings") return "Qualifying earnings";
+  if (v === "pensionable_pay") return "Pensionable pay";
+  if (v === "basic_pay") return "Basic pay";
+
+  return MISSING;
+}
+
+function formatWorkerCategory(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+
+  if (v === "eligible_jobholder") return "Eligible jobholder";
+  if (v === "non_eligible_jobholder") return "Non-eligible jobholder";
+  if (v === "entitled_worker") return "Entitled worker";
+  if (v === "postponed") return "Postponed";
+  if (v === "unknown") return "Unknown";
+
   return MISSING;
 }
 
@@ -379,6 +444,22 @@ export default async function EmployeeDetailsPage({
   const taxBasisValue =
     employee.tax_code_basis ?? employee.tax_basis ?? null;
 
+  const hasPensionData =
+    !!String(employee.pension_status || "").trim() ||
+    !!String(employee.pension_scheme_name || "").trim() ||
+    !!String(employee.pension_reference || "").trim() ||
+    !!String(employee.pension_contribution_method || "").trim() ||
+    !!String(employee.pension_earnings_basis || "").trim() ||
+    employee.pension_employee_rate !== null ||
+    employee.pension_employee_rate !== undefined ||
+    employee.pension_employer_rate !== null ||
+    employee.pension_employer_rate !== undefined ||
+    !!String(employee.pension_enrolment_date || "").trim() ||
+    !!String(employee.pension_opt_in_date || "").trim() ||
+    !!String(employee.pension_opt_out_date || "").trim() ||
+    !!String(employee.pension_postponement_date || "").trim() ||
+    !!String(employee.pension_worker_category || "").trim();
+
   return (
     <PageTemplate title="Employee" currentSection="employees">
       <div className="flex flex-col gap-3 flex-1 min-h-0">
@@ -512,6 +593,47 @@ export default async function EmployeeDetailsPage({
                 during payroll processing.
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
+            <div className="text-sm font-semibold text-neutral-900">Pension</div>
+            <div className="text-xs text-neutral-700">
+              Stored employee pension setup.
+            </div>
+          </div>
+
+          <div className="p-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {cardBox("Pension status", formatPensionStatus(employee.pension_status))}
+              {cardBox("Worker category", formatWorkerCategory(employee.pension_worker_category))}
+              {cardBox("Scheme name", safeStr(employee.pension_scheme_name))}
+              {cardBox("Pension reference", safeStr(employee.pension_reference))}
+              {cardBox(
+                "Contribution method",
+                formatPensionMethod(employee.pension_contribution_method)
+              )}
+              {cardBox(
+                "Earnings basis",
+                formatPensionBasis(employee.pension_earnings_basis)
+              )}
+              {cardBox("Employee rate", fmtPercent(employee.pension_employee_rate))}
+              {cardBox("Employer rate", fmtPercent(employee.pension_employer_rate))}
+              {cardBox("Enrolment date", fmtDate(employee.pension_enrolment_date))}
+              {cardBox("Opt-in date", fmtDate(employee.pension_opt_in_date))}
+              {cardBox("Opt-out date", fmtDate(employee.pension_opt_out_date))}
+              {cardBox(
+                "Postponement date",
+                fmtDate(employee.pension_postponement_date)
+              )}
+            </div>
+
+            {!hasPensionData ? (
+              <div className="mt-4 rounded-lg border border-neutral-300 bg-white p-4 text-sm text-neutral-700">
+                No pension details are currently stored on this employee record.
+              </div>
+            ) : null}
           </div>
         </div>
 
