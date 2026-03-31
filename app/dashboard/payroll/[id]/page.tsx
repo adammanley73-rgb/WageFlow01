@@ -9,6 +9,7 @@ import { Inter } from "next/font/google";
 
 import PageTemplate, { StatTile } from "@/components/ui/PageTemplate";
 import { formatUkDate } from "@/lib/formatUkDate";
+import PayItemsModal from "./PayItemsModal";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
@@ -211,9 +212,9 @@ function payeTaxMonthNumber(payDateIso: string) {
   if (!isIsoDateOnly(s)) return null;
 
   const d = parseIsoDateOnlyToUtc(s);
-  const shifted = addDaysUtc(d, -5); // PAYE tax month runs 6th -> 5th; shift aligns to calendar months
+  const shifted = addDaysUtc(d, -5);
   const m = shifted.getUTCMonth();
-  const mth = m >= 3 ? m - 3 + 1 : m + 9 + 1; // April=1 ... March=12
+  const mth = m >= 3 ? m - 3 + 1 : m + 9 + 1;
   return mth;
 }
 
@@ -458,6 +459,9 @@ export default function PayrollRunDetailPage() {
 
   const [confirmOpen, setConfirmOpen] = useState<boolean>(false);
   const [confirmCfg, setConfirmCfg] = useState<ConfirmConfig | null>(null);
+
+  const [payItemsOpen, setPayItemsOpen] = useState<boolean>(false);
+  const [payItemsEmployeeId, setPayItemsEmployeeId] = useState<string | null>(null);
 
   const calcBtnRef = useRef<HTMLButtonElement | null>(null);
   const attachBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -1057,6 +1061,17 @@ export default function PayrollRunDetailPage() {
     if (actionBusy === "mark_rti_submitted" || actionBusy === "mark_completed" || actionBusy === "cancel_run") return;
     setConfirmOpen(false);
     setConfirmCfg(null);
+  };
+
+  const openPayItemsModal = (employeeId: string) => {
+    if (!employeeId) return;
+    setPayItemsEmployeeId(employeeId);
+    setPayItemsOpen(true);
+  };
+
+  const closePayItemsModal = () => {
+    setPayItemsOpen(false);
+    setPayItemsEmployeeId(null);
   };
 
   const createSupplementaryRun = async () => {
@@ -2192,20 +2207,22 @@ export default function PayrollRunDetailPage() {
         >
           <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-extrabold text-slate-900">Employees in this run</h2>
-            <div className="text-sm text-slate-700">Review PAYE, NI, EE Pen and Net Pay, then open a payslip.</div>
+            <div className="text-sm text-slate-700">
+              Review PAYE, NI, EE Pen and Net Pay, or edit pay items before running calculation.
+            </div>
           </div>
 
           <div className="w-full overflow-hidden">
             <table className="w-full table-fixed border-collapse">
               <colgroup>
-                <col style={{ width: "22%" }} />
+                <col style={{ width: "24%" }} />
                 <col style={{ width: "10%" }} />
                 <col style={{ width: "11%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "10%" }} />
                 <col style={{ width: "11%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "12%" }} />
+                <col style={{ width: "14%" }} />
               </colgroup>
 
               <thead>
@@ -2257,11 +2274,46 @@ export default function PayrollRunDetailPage() {
                 {!loading &&
                   rows.map((r) => {
                     const rowError = validation?.[r.id];
+                    const badge = calcBadgeStyles(r.calcMode);
+                    const canOpenPayItems = canEditRun && !dirty && !saving && Boolean(r.employeeId);
 
                     return (
                       <tr key={r.id} className="bg-white">
                         <td className="sticky left-0 z-0 bg-white px-3 py-3 text-sm text-slate-900 border-b border-neutral-200">
-                          <span className="block truncate">{r.employeeName || MISSING}</span>
+                          <div className="flex flex-col gap-2">
+                            <span className="block truncate">{r.employeeName || MISSING}</span>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold"
+                                style={badge}
+                                title="Calculation state for this employee in this run"
+                              >
+                                {String(r.calcMode || "uncomputed")}
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => openPayItemsModal(r.employeeId)}
+                                disabled={!canOpenPayItems}
+                                className="inline-flex h-8 items-center justify-center rounded-xl px-3 text-xs font-semibold text-white transition hover:opacity-95"
+                                style={{
+                                  backgroundColor: WF_BLUE,
+                                  opacity: !canOpenPayItems ? 0.6 : 1,
+                                  cursor: !canOpenPayItems ? "not-allowed" : "pointer",
+                                }}
+                                title={
+                                  dirty
+                                    ? "Save or discard row edits before editing pay items."
+                                    : !canEditRun
+                                    ? "Pay items can only be edited while the run is Draft or Processing."
+                                    : "Edit extra pay items for this employee"
+                                }
+                              >
+                                Edit pay items
+                              </button>
+                            </div>
+                          </div>
                         </td>
 
                         <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200">
@@ -2356,7 +2408,8 @@ export default function PayrollRunDetailPage() {
           </div>
 
           <div className="px-5 py-4 text-sm text-slate-700">
-            Live totals reflect your edits. Gross and Net Pay stay editable. PAYE, NI and EE Pen are shown from the payroll calculation for quick review before opening a payslip.
+            Live totals reflect your edits. Gross and Net Pay stay editable. PAYE, NI and EE Pen are shown from the
+            payroll calculation for quick review before opening a payslip or editing extra pay items.
           </div>
         </div>
 
@@ -2419,6 +2472,16 @@ export default function PayrollRunDetailPage() {
             </div>
           </div>
         ) : null}
+
+        <PayItemsModal
+          runId={runId}
+          rows={rows}
+          initialEmployeeId={payItemsEmployeeId}
+          isOpen={payItemsOpen}
+          canEditRun={canEditRun}
+          onClose={closePayItemsModal}
+          onSaved={load}
+        />
 
         {attachOpen ? (
           <div
