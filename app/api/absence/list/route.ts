@@ -17,7 +17,7 @@ function json(status: number, body: any) {
 
 function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
-    s
+    String(s || "").trim()
   );
 }
 
@@ -34,11 +34,47 @@ async function getCompanyIdFromCookies(): Promise<string | null> {
   return isUuid(trimmed) ? trimmed : null;
 }
 
+function cleanText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function firstNonEmpty(...values: unknown[]): string {
+  for (const value of values) {
+    const text = cleanText(value);
+    if (text) return text;
+  }
+  return "";
+}
+
+function buildEmployeeName(e: any): string {
+  const direct = firstNonEmpty(
+    e?.name,
+    e?.full_name,
+    e?.display_name,
+    e?.preferred_name
+  );
+  if (direct) return direct;
+
+  const joined = [cleanText(e?.first_name), cleanText(e?.last_name)]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return joined;
+}
+
+function buildEmployeeNumber(e: any): string {
+  return firstNonEmpty(e?.employee_number, e?.payroll_number);
+}
+
 function formatEmployeeLabel(e: any) {
-  const name =
-    [e?.first_name, e?.last_name].filter(Boolean).join(" ").trim() || "Employee";
-  const num = e?.employee_number ? String(e.employee_number) : "";
-  return num ? `${name} (${num})` : name;
+  const name = buildEmployeeName(e);
+  const num = buildEmployeeNumber(e);
+
+  if (name && num) return `${name} (${num})`;
+  if (name) return name;
+  if (num) return `Employee ${num}`;
+  return "Employee";
 }
 
 async function requireAuthAndMembership(companyId: string) {
@@ -110,10 +146,10 @@ export async function GET(req: Request) {
     if (!gate.ok) return gate.res;
 
     const url = new URL(req.url);
-    const employeeId = (url.searchParams.get("employeeId") || "").trim();
-    const status = (url.searchParams.get("status") || "").trim();
-    const type = (url.searchParams.get("type") || "").trim();
-    const limitRaw = (url.searchParams.get("limit") || "").trim();
+    const employeeId = cleanText(url.searchParams.get("employeeId"));
+    const status = cleanText(url.searchParams.get("status"));
+    const type = cleanText(url.searchParams.get("type"));
+    const limitRaw = cleanText(url.searchParams.get("limit"));
 
     const limit = (() => {
       const n = Number(limitRaw);
@@ -145,33 +181,45 @@ export async function GET(req: Request) {
     }
 
     const rows = Array.isArray(absences) ? absences : [];
-    const employeeIds = Array.from(
-      new Set(
-        rows.map((r: any) => String(r?.employee_id || "").trim()).filter(Boolean)
-      )
+    const absenceEmployeeIds = Array.from(
+      new Set(rows.map((r: any) => cleanText(r?.employee_id)).filter(Boolean))
     );
 
-    const employeeMap: Record<string, any> = {};
+    const employeeMapById: Record<string, any> = {};
+    const employeeMapByEmployeeFileId: Record<string, any> = {};
 
-    if (employeeIds.length > 0) {
+    if (absenceEmployeeIds.length > 0) {
       const { data: emps, error: empErr } = await gate.supabase
         .from("employees")
-        .select("id, first_name, last_name, employee_number")
-        .eq("company_id", companyId)
-        .in("id", employeeIds);
+        .select(
+          "id, employee_id, first_name, last_name, full_name, name, display_name, preferred_name, employee_number, payroll_number"
+        )
+        .eq("company_id", companyId);
 
       if (!empErr && Array.isArray(emps)) {
-        for (const e of emps) employeeMap[String((e as any).id)] = e;
+        for (const e of emps) {
+          const dbId = cleanText((e as any)?.id);
+          const employeeFileId = cleanText((e as any)?.employee_id);
+
+          if (dbId) employeeMapById[dbId] = e;
+          if (employeeFileId) employeeMapByEmployeeFileId[employeeFileId] = e;
+        }
       }
     }
 
     const items = rows.map((r: any) => {
-      const e = employeeMap[String(r.employee_id)] || null;
+      const rawEmployeeId = cleanText(r?.employee_id);
+      const employee =
+        employeeMapById[rawEmployeeId] ||
+        employeeMapByEmployeeFileId[rawEmployeeId] ||
+        null;
+
+      const safeLabel = employee ? formatEmployeeLabel(employee) : "Employee";
 
       return {
         id: r.id,
-        employeeId: r.employee_id,
-        employeeLabel: e ? formatEmployeeLabel(e) : "Employee",
+        employeeId: rawEmployeeId || null,
+        employeeLabel: safeLabel,
         type: r.type || null,
         status: r.status || null,
         firstDay: r.first_day || null,

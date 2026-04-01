@@ -29,12 +29,10 @@ type EmployeeRow = {
   first_name?: string | null;
   last_name?: string | null;
   employee_number?: string | null;
-  payroll_number?: string | null;
-  full_name?: string | null;
-  name?: string | null;
-  display_name?: string | null;
-  preferred_name?: string | null;
 };
+
+type SearchParamsRecord = Record<string, string | string[] | undefined>;
+type Props = { searchParams?: Promise<SearchParamsRecord> };
 
 function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
@@ -51,11 +49,12 @@ async function getActiveCompanyId(): Promise<string> {
   return String(v || "").trim();
 }
 
-function typeLabel(v: any) {
+function typeLabel(v: unknown) {
   const s = String(v ?? "").trim().toLowerCase();
   if (!s) return "Unknown";
   switch (s) {
     case "annual":
+    case "annual_leave":
       return "Annual leave";
     case "sickness":
       return "Sickness";
@@ -72,7 +71,6 @@ function typeLabel(v: any) {
     case "bereaved_partners_paternity":
       return "Bereaved partners paternity";
     case "unpaid_leave":
-      return "Unpaid leave";
     case "unpaid_other":
       return "Unpaid leave";
     default:
@@ -81,42 +79,27 @@ function typeLabel(v: any) {
 }
 
 function employeeLabel(emp: EmployeeRow | undefined | null, fallbackId: string) {
-  if (!emp) return fallbackId;
+  if (!emp) {
+    const fallback = String(fallbackId || "").trim();
+    if (!fallback || isUuid(fallback)) return "Unknown employee";
+    return fallback;
+  }
 
-  const name =
-    (typeof (emp as any).name === "string" && (emp as any).name.trim()) ||
-    (typeof (emp as any).full_name === "string" && (emp as any).full_name.trim()) ||
-    (typeof (emp as any).display_name === "string" &&
-      (emp as any).display_name.trim()) ||
-    (typeof (emp as any).preferred_name === "string" &&
-      (emp as any).preferred_name.trim()) ||
-    [
-      typeof (emp as any).first_name === "string"
-        ? (emp as any).first_name.trim()
-        : "",
-      typeof (emp as any).last_name === "string"
-        ? (emp as any).last_name.trim()
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
+  const first = typeof emp.first_name === "string" ? emp.first_name.trim() : "";
+  const last = typeof emp.last_name === "string" ? emp.last_name.trim() : "";
+  const employeeNumber =
+    typeof emp.employee_number === "string" ? emp.employee_number.trim() : "";
 
-  const empNo =
-    (typeof (emp as any).employee_number === "string" &&
-      (emp as any).employee_number.trim()) ||
-    (typeof (emp as any).payroll_number === "string" &&
-      (emp as any).payroll_number.trim()) ||
-    "";
+  const name = [first, last].filter(Boolean).join(" ").trim();
 
-  if (name && empNo) return name + " (" + empNo + ")";
+  if (name && employeeNumber) return `${name} (${employeeNumber})`;
   if (name) return name;
-  if (empNo) return "Employee " + empNo;
-  return fallbackId;
-}
+  if (employeeNumber) return `Employee ${employeeNumber}`;
 
-type SearchParamsRecord = Record<string, string | string[] | undefined>;
-type Props = { searchParams?: Promise<SearchParamsRecord> };
+  const fallback = String(fallbackId || "").trim();
+  if (!fallback || isUuid(fallback)) return "Unknown employee";
+  return fallback;
+}
 
 function isStaffRole(role: string) {
   return ["owner", "admin", "manager", "processor"].includes(
@@ -125,13 +108,10 @@ function isStaffRole(role: string) {
 }
 
 export default async function AbsencePage({ searchParams }: Props) {
-  const sp: SearchParamsRecord | undefined = searchParams
-    ? await searchParams
-    : undefined;
+  const sp: SearchParamsRecord | undefined = searchParams ? await searchParams : undefined;
 
   const deletedParam = typeof sp?.deleted === "string" ? sp.deleted : "";
-  const deleteErrorParam =
-    typeof sp?.deleteError === "string" ? sp.deleteError : "";
+  const deleteErrorParam = typeof sp?.deleteError === "string" ? sp.deleteError : "";
 
   const activeCompanyId = await getActiveCompanyId();
 
@@ -141,12 +121,8 @@ export default async function AbsencePage({ searchParams }: Props) {
         <div className="flex flex-col gap-3 flex-1 min-h-0">
           <ActiveCompanyBanner />
           <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
-            <div className="text-sm font-semibold text-neutral-900">
-              No active company selected
-            </div>
-            <div className="mt-1 text-sm text-neutral-700">
-              Select a company on the Dashboard, then come back here.
-            </div>
+            <div className="text-sm font-semibold text-neutral-900">No active company selected</div>
+            <div className="mt-1 text-sm text-neutral-700">Select a company on the Dashboard, then come back here.</div>
           </div>
         </div>
       </PageTemplate>
@@ -159,12 +135,8 @@ export default async function AbsencePage({ searchParams }: Props) {
         <div className="flex flex-col gap-3 flex-1 min-h-0">
           <ActiveCompanyBanner />
           <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
-            <div className="text-sm font-semibold text-neutral-900">
-              Invalid active company
-            </div>
-            <div className="mt-1 text-sm text-neutral-700">
-              Re-select your company on the Dashboard.
-            </div>
+            <div className="text-sm font-semibold text-neutral-900">Invalid active company</div>
+            <div className="mt-1 text-sm text-neutral-700">Re-select your company on the Dashboard.</div>
           </div>
         </div>
       </PageTemplate>
@@ -181,12 +153,8 @@ export default async function AbsencePage({ searchParams }: Props) {
         <div className="flex flex-col gap-3 flex-1 min-h-0">
           <ActiveCompanyBanner />
           <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
-            <div className="text-sm font-semibold text-neutral-900">
-              Sign in required
-            </div>
-            <div className="mt-1 text-sm text-neutral-700">
-              Please sign in again.
-            </div>
+            <div className="text-sm font-semibold text-neutral-900">Sign in required</div>
+            <div className="mt-1 text-sm text-neutral-700">Please sign in again.</div>
           </div>
         </div>
       </PageTemplate>
@@ -206,12 +174,8 @@ export default async function AbsencePage({ searchParams }: Props) {
         <div className="flex flex-col gap-3 flex-1 min-h-0">
           <ActiveCompanyBanner />
           <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
-            <div className="text-sm font-semibold text-neutral-900">
-              Company access denied
-            </div>
-            <div className="mt-1 text-sm text-neutral-700">
-              You do not have access to the active company.
-            </div>
+            <div className="text-sm font-semibold text-neutral-900">Company access denied</div>
+            <div className="mt-1 text-sm text-neutral-700">You do not have access to the active company.</div>
           </div>
         </div>
       </PageTemplate>
@@ -226,10 +190,7 @@ export default async function AbsencePage({ searchParams }: Props) {
 
     const activeCompanyIdInner = await getActiveCompanyId();
     if (!activeCompanyIdInner || !isUuid(activeCompanyIdInner)) {
-      redirect(
-        "/dashboard/absence?deleteError=" +
-          encodeURIComponent("No active company selected")
-      );
+      redirect("/dashboard/absence?deleteError=" + encodeURIComponent("No active company selected"));
     }
 
     const supabaseInner = await getServerSupabase();
@@ -237,10 +198,7 @@ export default async function AbsencePage({ searchParams }: Props) {
     const userInner = userDataInner?.user ?? null;
 
     if (!userInner) {
-      redirect(
-        "/dashboard/absence?deleteError=" +
-          encodeURIComponent("Sign in required")
-      );
+      redirect("/dashboard/absence?deleteError=" + encodeURIComponent("Sign in required"));
     }
 
     const { data: membershipInner } = await supabaseInner
@@ -253,8 +211,7 @@ export default async function AbsencePage({ searchParams }: Props) {
     const roleInner = String((membershipInner as any)?.role || "member");
     if (!isStaffRole(roleInner)) {
       redirect(
-        "/dashboard/absence?deleteError=" +
-          encodeURIComponent("You do not have permission to delete absences")
+        "/dashboard/absence?deleteError=" + encodeURIComponent("You do not have permission to delete absences")
       );
     }
 
@@ -262,9 +219,7 @@ export default async function AbsencePage({ searchParams }: Props) {
     const absenceId = typeof absenceIdRaw === "string" ? absenceIdRaw.trim() : "";
 
     if (!absenceId || !isUuid(absenceId)) {
-      redirect(
-        "/dashboard/absence?deleteError=" + encodeURIComponent("Missing absence id")
-      );
+      redirect("/dashboard/absence?deleteError=" + encodeURIComponent("Missing absence id"));
     }
 
     const { data: checkRow, error: checkErr } = await supabaseInner
@@ -276,8 +231,7 @@ export default async function AbsencePage({ searchParams }: Props) {
 
     if (checkErr || !checkRow) {
       redirect(
-        "/dashboard/absence?deleteError=" +
-          encodeURIComponent("Absence not found for this company")
+        "/dashboard/absence?deleteError=" + encodeURIComponent("Absence not found for this company")
       );
     }
 
@@ -303,10 +257,7 @@ export default async function AbsencePage({ searchParams }: Props) {
       .select("id");
 
     if (error) {
-      redirect(
-        "/dashboard/absence?deleteError=" +
-          encodeURIComponent(error.message ?? "Delete failed")
-      );
+      redirect("/dashboard/absence?deleteError=" + encodeURIComponent(error.message ?? "Delete failed"));
     }
 
     const deletedCount = Array.isArray(data) ? data.length : 0;
@@ -348,7 +299,7 @@ export default async function AbsencePage({ searchParams }: Props) {
   const employeeIds = Array.from(
     new Set(
       absenceRows
-        .map((r) => (typeof r.employee_id === "string" ? r.employee_id : ""))
+        .map((r) => (typeof r.employee_id === "string" ? r.employee_id.trim() : ""))
         .filter(Boolean)
     )
   );
@@ -357,27 +308,32 @@ export default async function AbsencePage({ searchParams }: Props) {
 
   if (employeeIds.length > 0) {
     try {
-      const { data: empData, error: empErr } = await supabase
+      const { data: employeeData, error: employeeError } = await supabase
         .from("employees")
-        .select("id, first_name, last_name, employee_number, payroll_number, full_name, name")
+        .select("id, first_name, last_name, employee_number")
         .eq("company_id", activeCompanyId)
         .in("id", employeeIds);
 
-      if (!empErr && Array.isArray(empData)) {
-        for (const emp of empData as any[]) {
-          if (emp && typeof emp.id === "string") {
-            employeesById.set(emp.id, emp as EmployeeRow);
+      if (employeeError) {
+        loadError = loadError
+          ? `${loadError} | Failed to load employee names: ${employeeError.message}`
+          : `Failed to load employee names: ${employeeError.message}`;
+      } else if (Array.isArray(employeeData)) {
+        for (const emp of employeeData as EmployeeRow[]) {
+          if (emp && typeof emp.id === "string" && emp.id.trim()) {
+            employeesById.set(emp.id.trim(), emp);
           }
         }
       }
-    } catch {
-      // ignore
+    } catch (e: any) {
+      const msg = e?.message ?? "Failed to load employee names";
+      loadError = loadError ? `${loadError} | ${msg}` : msg;
     }
   }
 
   const absences = absenceRows.map((r) => {
-    const employeeId = typeof r.employee_id === "string" ? r.employee_id : "";
-    const emp = employeeId ? employeesById.get(employeeId) : null;
+    const employeeId = typeof r.employee_id === "string" ? r.employee_id.trim() : "";
+    const emp = employeeId ? employeesById.get(employeeId) ?? null : null;
 
     const start = formatUkDate(r.first_day);
     const end = formatUkDate(r.last_day_actual ?? r.last_day_expected);
@@ -402,15 +358,11 @@ export default async function AbsencePage({ searchParams }: Props) {
 
   const employeesForFilter = employeeIds
     .map((id) => {
-      const emp = employeesById.get(id);
+      const emp = employeesById.get(id) ?? null;
       const label = employeeLabel(emp, id);
       const empNo =
-        (typeof (emp as any)?.employee_number === "string" &&
-          (emp as any).employee_number.trim()) ||
-        (typeof (emp as any)?.payroll_number === "string" &&
-          (emp as any).payroll_number.trim()) ||
-        "";
-      return { id, label, employeeNumber: empNo || null };
+        (typeof emp?.employee_number === "string" && emp.employee_number.trim()) || null;
+      return { id, label, employeeNumber: empNo };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
 
@@ -421,21 +373,13 @@ export default async function AbsencePage({ searchParams }: Props) {
 
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-4 py-2 bg-neutral-50 border-b border-neutral-300">
-            {deletedParam === "1" ? (
-              <div className="text-xs text-green-700">Deleted.</div>
-            ) : null}
+            {deletedParam === "1" ? <div className="text-xs text-green-700">Deleted.</div> : null}
             {deleteErrorParam ? (
-              <div className="text-xs text-red-700">
-                Delete error: {deleteErrorParam}
-              </div>
+              <div className="text-xs text-red-700">Delete error: {deleteErrorParam}</div>
             ) : null}
-            {loadError ? (
-              <div className="text-xs text-red-700">Load error: {loadError}</div>
-            ) : null}
+            {loadError ? <div className="text-xs text-red-700">Load error: {loadError}</div> : null}
             {!canDelete ? (
-              <div className="text-xs text-neutral-700">
-                Delete is disabled for your role.
-              </div>
+              <div className="text-xs text-neutral-700">Delete is disabled for your role.</div>
             ) : null}
           </div>
 

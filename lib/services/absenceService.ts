@@ -15,7 +15,28 @@ export type SicknessAbsenceRow = {
   created_at?: string | null;
 };
 
-// Result of working out qualifying vs payable SSP days
+type SspPackMeta = {
+  packDateUsed: string;
+  taxYear: string;
+  label: string;
+  packId: string;
+  weeklyFlat: number;
+  qualifyingDaysPerWeek: number;
+  waitingDays: number;
+  payableFromDay: number;
+  requiresLel: boolean;
+  lowEarnerPercentCapEnabled: boolean;
+  lowEarnerPercent: number | null;
+};
+
+type AweInfo = {
+  aweWeekly: number;
+  totalGrossInWindow: number;
+  runCount: number;
+  windowStart: string;
+  windowEnd: string;
+};
+
 export type SspDayPlanForAbsence = {
   absenceId: string;
   employeeId: string;
@@ -24,10 +45,12 @@ export type SspDayPlanForAbsence = {
   sicknessStart: string;
   sicknessEnd: string;
   qualifyingDays: string[]; // ISO date strings (Mon-Fri within run & spell)
-  payableDays: string[]; // after waiting days in the linked chain
+  payableDays: string[]; // transition-aware payable SSP days
+  dailyRate: number | null;
+  sspAmount: number;
+  warnings?: string[];
 };
 
-// Grouped SSP view per employee for a run
 export type SspPlanByEmployee = {
   employeeId: string;
   absences: SspDayPlanForAbsence[];
@@ -35,7 +58,6 @@ export type SspPlanByEmployee = {
   totalPayableDays: number;
 };
 
-// Final SSP amount per employee for a run
 export type SspAmountForEmployee = {
   employeeId: string;
   totalQualifyingDays: number;
@@ -45,19 +67,8 @@ export type SspAmountForEmployee = {
   absences: SspDayPlanForAbsence[];
 
   dailyRateSource: "override" | "compliance_pack";
-  packMeta?: {
-    packDateUsed: string;
-    taxYear: string;
-    label: string;
-    packId: string;
-    weeklyFlat: number;
-    qualifyingDaysPerWeek: number;
-    waitingDays: number;
-    requiresLel: boolean;
-    lowEarnerPercentCapEnabled: boolean;
-    lowEarnerPercent: number | null;
-  };
-
+  packMeta?: SspPackMeta;
+  awe?: AweInfo | null;
   warnings?: string[];
 };
 
@@ -71,12 +82,60 @@ type CompliancePack = {
   config: any;
 };
 
+type ExtractedSspSettings = {
+  weeklyFlat: number;
+  waitingDays: number;
+  payableFromDay: number;
+  requiresLel: boolean;
+  lowEarnerPercentCapEnabled: boolean;
+  lowEarnerPercent: number | null;
+};
+
+const SSP_REFORM_DATE = "2026-04-06";
+const SSP_TRANSITION_PROTECTED_FLAT_MIN_AWE = 125.0;
+const SSP_TRANSITION_PROTECTED_FLAT_MAX_AWE = 154.05;
+
 function isIsoDate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
 }
 
 function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
+  return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function parseIsoDateOnlyToUtc(iso: string): Date {
+  const s = String(iso || "").trim();
+  if (!isIsoDate(s)) throw new Error("Bad date: " + s);
+  const [y, m, d] = s.split("-").map((p) => parseInt(p, 10));
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+}
+
+function toIsoDateOnlyUtc(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function addDaysUtc(d: Date, days: number): Date {
+  const out = new Date(d.getTime());
+  out.setUTCDate(out.getUTCDate() + days);
+  return out;
+}
+
+function addDaysIso(iso: string, days: number): string {
+  return toIsoDateOnlyUtc(addDaysUtc(parseIsoDateOnlyToUtc(iso), days));
+}
+
+function diffInDaysUtc(a: Date, b: Date): number {
+  return Math.floor((b.getTime() - a.getTime()) / 86400000);
+}
+
+function isWeekdayUtc(date: Date): boolean {
+  const day = date.getUTCDay(); // 0 = Sun, 1 = Mon, ... 6 = Sat
+  return day >= 1 && day <= 5;
+}
+
+function safeNumber(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -96,9 +155,7 @@ export async function fetchSicknessAbsencesForRun(
   if (!admin) throw new Error("Admin client not available");
   const { client } = admin;
 
-  const runStartDate = new Date(startDate);
-  const lookbackStartDate = addDays(runStartDate, -365); // 1 year look-back
-  const lookbackStart = toIsoDate(lookbackStartDate);
+  const lookbackStart = addDaysIso(startDate, -365);
 
   const { data, error } = await client
     .from("absences")
@@ -128,14 +185,6 @@ export async function fetchSicknessAbsencesForRun(
   return (data || []) as SicknessAbsenceRow[];
 }
 
-/**
- * Helper: is this date a qualifying day (Mon-Fri) under the current simplification?
- */
-function isWeekday(date: Date): boolean {
-  const day = date.getDay(); // 0 = Sun, 1 = Mon, ... 6 = Sat
-  return day >= 1 && day <= 5;
-}
-
 async function getCompliancePackForDate(packDate: string): Promise<CompliancePack> {
   if (!isIsoDate(packDate)) throw new Error("Invalid packDate. Expected YYYY-MM-DD.");
 
@@ -155,7 +204,7 @@ async function getCompliancePackForDate(packDate: string): Promise<CompliancePac
   return pack as CompliancePack;
 }
 
-function extractSspSettingsFromPack(pack: CompliancePack) {
+function extractSspSettingsFromPack(pack: CompliancePack): ExtractedSspSettings {
   const cfg = pack?.config ?? {};
   const ssp = cfg?.ssp ?? {};
   const rates = cfg?.rates ?? {};
@@ -165,7 +214,18 @@ function extractSspSettingsFromPack(pack: CompliancePack) {
     throw new Error(`Compliance pack ${pack.tax_year} missing/invalid rates.ssp_weekly_flat`);
   }
 
-  const waitingDays = Number(ssp?.waiting_days);
+  const waitingDaysRaw = Number(ssp?.waiting_days);
+  const waitingDays =
+    Number.isFinite(waitingDaysRaw) && waitingDaysRaw >= 0 && waitingDaysRaw <= 7 ? waitingDaysRaw : 3;
+
+  const payableFromDayRaw = Number(ssp?.payable_from_day);
+  const payableFromDay =
+    Number.isFinite(payableFromDayRaw) && payableFromDayRaw >= 1 && payableFromDayRaw <= 8
+      ? payableFromDayRaw
+      : waitingDays === 0
+        ? 1
+        : waitingDays + 1;
+
   const requiresLel = Boolean(ssp?.requires_lel);
   const lowEarnerPercentCapEnabled = Boolean(ssp?.low_earner_percent_cap_enabled);
 
@@ -175,21 +235,170 @@ function extractSspSettingsFromPack(pack: CompliancePack) {
       ? null
       : Number(lowEarnerPercentRaw);
 
-  const waitingDaysSafe =
-    Number.isFinite(waitingDays) && waitingDays >= 0 && waitingDays <= 7 ? waitingDays : 3;
-
   return {
     weeklyFlat,
-    waitingDays: waitingDaysSafe,
+    waitingDays,
+    payableFromDay,
     requiresLel,
     lowEarnerPercentCapEnabled,
     lowEarnerPercent,
   };
 }
 
+function buildPackMeta(packDateUsed: string, pack: CompliancePack, cfg: ExtractedSspSettings): SspPackMeta {
+  return {
+    packDateUsed,
+    taxYear: pack.tax_year,
+    label: pack.label,
+    packId: pack.id,
+    weeklyFlat: cfg.weeklyFlat,
+    qualifyingDaysPerWeek: 5,
+    waitingDays: cfg.waitingDays,
+    payableFromDay: cfg.payableFromDay,
+    requiresLel: cfg.requiresLel,
+    lowEarnerPercentCapEnabled: cfg.lowEarnerPercentCapEnabled,
+    lowEarnerPercent: cfg.lowEarnerPercent,
+  };
+}
+
+async function computeAweWeeklyForSspCap(
+  companyId: string,
+  employeeId: string,
+  referenceEndIso: string
+): Promise<AweInfo> {
+  if (!isIsoDate(referenceEndIso)) {
+    throw new Error("AWE referenceEndIso must be YYYY-MM-DD");
+  }
+
+  const admin = await getAdmin();
+  if (!admin) throw new Error("Admin client not available");
+  const { client } = admin;
+
+  const windowEnd = referenceEndIso;
+  const windowStart = addDaysIso(windowEnd, -55);
+
+  const { data: runs, error: runsErr } = await client
+    .from("payroll_runs")
+    .select("id, period_end")
+    .eq("company_id", companyId)
+    .gte("period_end", windowStart)
+    .lte("period_end", windowEnd)
+    .order("period_end", { ascending: false })
+    .limit(24);
+
+  if (runsErr) {
+    throw new Error(`AWE: error loading payroll_runs: ${runsErr.message}`);
+  }
+
+  const runIds = (Array.isArray(runs) ? runs : [])
+    .map((r: any) => r?.id)
+    .filter((id: any) => typeof id === "string" && id.length > 0);
+
+  if (!runIds.length) {
+    return { aweWeekly: 0, totalGrossInWindow: 0, runCount: 0, windowStart, windowEnd };
+  }
+
+  const { data: pres, error: presErr } = await client
+    .from("payroll_run_employees")
+    .select("run_id, gross_pay")
+    .eq("employee_id", employeeId)
+    .in("run_id", runIds);
+
+  if (presErr) {
+    throw new Error(`AWE: error loading payroll_run_employees: ${presErr.message}`);
+  }
+
+  const rows = Array.isArray(pres) ? pres : [];
+  const totalGross = rows.reduce((sum: number, r: any) => sum + (Number(r?.gross_pay) || 0), 0);
+  const aweWeekly = totalGross > 0 ? totalGross / 8 : 0;
+
+  return {
+    aweWeekly: round2(aweWeekly),
+    totalGrossInWindow: round2(totalGross),
+    runCount: runIds.length,
+    windowStart,
+    windowEnd,
+  };
+}
+
+function hasPayablePreReform(plan: SspDayPlanForAbsence) {
+  return plan.payableDays.some((day) => day < SSP_REFORM_DATE);
+}
+
+function buildSingleAbsencePlanWithTransition(
+  absence: SicknessAbsenceRow,
+  runStart: string,
+  runEnd: string,
+  waitingDaysUsedInChainBeforeAbsence: number,
+  waitingDaysTarget: number
+): {
+  plan: SspDayPlanForAbsence;
+  waitingDaysUsedInChainAfterAbsence: number;
+} {
+  const runStartDate = parseIsoDateOnlyToUtc(runStart);
+  const runEndDate = parseIsoDateOnlyToUtc(runEnd);
+  const sicknessStartDate = parseIsoDateOnlyToUtc(absence.first_day);
+  const sicknessEndDate = parseIsoDateOnlyToUtc(absence.last_day_actual || absence.last_day_expected);
+
+  const qualifyingAllDays: string[] = [];
+  for (let dd = new Date(sicknessStartDate.getTime()); dd <= sicknessEndDate; dd = addDaysUtc(dd, 1)) {
+    if (isWeekdayUtc(dd)) qualifyingAllDays.push(toIsoDateOnlyUtc(dd));
+  }
+
+  const qualifiesForRestartTransition =
+    (absence.first_day === "2026-04-04" || absence.first_day === "2026-04-05") &&
+    String(absence.last_day_actual || absence.last_day_expected) >= SSP_REFORM_DATE &&
+    qualifyingAllDays.length >= 4;
+
+  let waitingDaysUsed = waitingDaysUsedInChainBeforeAbsence;
+  const qualifyingDaysInRun: string[] = [];
+  const payableDaysInRun: string[] = [];
+
+  for (const dayIso of qualifyingAllDays) {
+    const day = parseIsoDateOnlyToUtc(dayIso);
+    const isWithinRun = day >= runStartDate && day <= runEndDate;
+    const isPreReform = dayIso < SSP_REFORM_DATE;
+
+    let isPayable = false;
+
+    if (qualifiesForRestartTransition) {
+      isPayable = true;
+    } else if (isPreReform) {
+      if (waitingDaysUsed >= waitingDaysTarget) {
+        isPayable = true;
+      } else {
+        waitingDaysUsed += 1;
+      }
+    } else {
+      isPayable = true;
+    }
+
+    if (isWithinRun) {
+      qualifyingDaysInRun.push(dayIso);
+      if (isPayable) payableDaysInRun.push(dayIso);
+    }
+  }
+
+  return {
+    plan: {
+      absenceId: absence.id,
+      employeeId: absence.employee_id,
+      runStart,
+      runEnd,
+      sicknessStart: absence.first_day,
+      sicknessEnd: absence.last_day_actual || absence.last_day_expected,
+      qualifyingDays: qualifyingDaysInRun,
+      payableDays: payableDaysInRun,
+      dailyRate: null,
+      sspAmount: 0,
+    },
+    waitingDaysUsedInChainAfterAbsence: waitingDaysUsed,
+  };
+}
+
 /**
- * Legacy helper: compute SSP day plan for a single sickness absence within a given payroll run.
- * Waiting days are configurable for pack-driven rules.
+ * Legacy helper retained for compatibility.
+ * For transition-aware linked-spell behaviour, use getSspPlansForRun.
  */
 export function computeSspDayPlanForAbsence(
   absence: SicknessAbsenceRow,
@@ -197,47 +406,7 @@ export function computeSspDayPlanForAbsence(
   runEnd: string,
   waitingDaysTarget: number = 3
 ): SspDayPlanForAbsence {
-  const runStartDate = new Date(runStart);
-  const runEndDate = new Date(runEnd);
-
-  const sicknessStart = new Date(absence.first_day);
-  const sicknessEnd = new Date(absence.last_day_actual || absence.last_day_expected);
-
-  const effectiveStart = maxDate(runStartDate, sicknessStart);
-  const effectiveEnd = minDate(runEndDate, sicknessEnd);
-
-  const qualifyingDays: string[] = [];
-
-  if (effectiveEnd < effectiveStart) {
-    return {
-      absenceId: absence.id,
-      employeeId: absence.employee_id,
-      runStart,
-      runEnd,
-      sicknessStart: absence.first_day,
-      sicknessEnd: absence.last_day_actual || absence.last_day_expected,
-      qualifyingDays: [],
-      payableDays: [],
-    };
-  }
-
-  for (let dd = new Date(effectiveStart.getTime()); dd <= effectiveEnd; dd = addDays(dd, 1)) {
-    if (isWeekday(dd)) qualifyingDays.push(toIsoDate(dd));
-  }
-
-  const target = Math.max(0, Math.min(7, Number(waitingDaysTarget)));
-  const payableDays = qualifyingDays.length > target ? qualifyingDays.slice(target) : [];
-
-  return {
-    absenceId: absence.id,
-    employeeId: absence.employee_id,
-    runStart,
-    runEnd,
-    sicknessStart: absence.first_day,
-    sicknessEnd: absence.last_day_actual || absence.last_day_expected,
-    qualifyingDays,
-    payableDays,
-  };
+  return buildSingleAbsencePlanWithTransition(absence, runStart, runEnd, 0, waitingDaysTarget).plan;
 }
 
 function computeSspPlanForEmployeeWithHistory(
@@ -247,15 +416,12 @@ function computeSspPlanForEmployeeWithHistory(
   runEnd: string,
   waitingDaysTarget: number
 ): SspPlanByEmployee {
-  const runStartDate = new Date(runStart);
-  const runEndDate = new Date(runEnd);
-
   const sorted = [...absences].sort((a, b) => {
-    const aStart = new Date(a.first_day).getTime();
-    const bStart = new Date(b.first_day).getTime();
+    const aStart = parseIsoDateOnlyToUtc(a.first_day).getTime();
+    const bStart = parseIsoDateOnlyToUtc(b.first_day).getTime();
     if (aStart === bStart) {
-      const aEnd = new Date(a.last_day_actual || a.last_day_expected).getTime();
-      const bEnd = new Date(b.last_day_actual || b.last_day_expected).getTime();
+      const aEnd = parseIsoDateOnlyToUtc(a.last_day_actual || a.last_day_expected).getTime();
+      const bEnd = parseIsoDateOnlyToUtc(b.last_day_actual || b.last_day_expected).getTime();
       return aEnd - bEnd;
     }
     return aStart - bStart;
@@ -271,52 +437,30 @@ function computeSspPlanForEmployeeWithHistory(
   const target = Math.max(0, Math.min(7, Number(waitingDaysTarget)));
 
   for (const absence of sorted) {
-    const sicknessStartDate = new Date(absence.first_day);
-    const sicknessEndDate = new Date(absence.last_day_actual || absence.last_day_expected);
+    const sicknessStartDate = parseIsoDateOnlyToUtc(absence.first_day);
+    const sicknessEndDate = parseIsoDateOnlyToUtc(absence.last_day_actual || absence.last_day_expected);
 
     if (chainEndDate) {
-      const gapDays = diffInDays(chainEndDate, sicknessStartDate);
+      const gapDays = diffInDaysUtc(chainEndDate, sicknessStartDate);
       if (gapDays > 56) {
         waitingDaysUsedInChain = 0;
       }
     }
 
-    const qualifyingInRun: string[] = [];
-    const payableInRun: string[] = [];
+    const built = buildSingleAbsencePlanWithTransition(
+      absence,
+      runStart,
+      runEnd,
+      waitingDaysUsedInChain,
+      target
+    );
 
-    for (let dd = new Date(sicknessStartDate.getTime()); dd <= sicknessEndDate; dd = addDays(dd, 1)) {
-      if (!isWeekday(dd)) continue;
+    waitingDaysUsedInChain = built.waitingDaysUsedInChainAfterAbsence;
 
-      const isWithinRun = dd >= runStartDate && dd <= runEndDate;
-
-      let isPayable = false;
-      if (waitingDaysUsedInChain >= target) {
-        isPayable = true;
-      } else {
-        waitingDaysUsedInChain += 1;
-      }
-
-      if (isWithinRun) {
-        const iso = toIsoDate(dd);
-        qualifyingInRun.push(iso);
-        if (isPayable) payableInRun.push(iso);
-      }
-    }
-
-    if (qualifyingInRun.length > 0) {
-      plansForRun.push({
-        absenceId: absence.id,
-        employeeId: absence.employee_id,
-        runStart,
-        runEnd,
-        sicknessStart: absence.first_day,
-        sicknessEnd: absence.last_day_actual || absence.last_day_expected,
-        qualifyingDays: qualifyingInRun,
-        payableDays: payableInRun,
-      });
-
-      totalQualifyingDays += qualifyingInRun.length;
-      totalPayableDays += payableInRun.length;
+    if (built.plan.qualifyingDays.length > 0) {
+      plansForRun.push(built.plan);
+      totalQualifyingDays += built.plan.qualifyingDays.length;
+      totalPayableDays += built.plan.payableDays.length;
     }
 
     if (!chainEndDate || sicknessEndDate > chainEndDate) {
@@ -334,7 +478,7 @@ function computeSspPlanForEmployeeWithHistory(
 
 /**
  * Compute SSP plans per employee for a run.
- * This is now pack-driven by endDate.
+ * This is now pack-driven by endDate and transition-aware for April 2026 reform rules.
  */
 export async function getSspPlansForRun(
   companyId: string,
@@ -370,12 +514,7 @@ export async function getSspPlansForRun(
 
 /**
  * Compute SSP amounts per employee for a run.
- * This is now pack-driven by endDate.
- *
- * Notes.
- * - Qualifying days are Mon-Fri here, so qualifyingDaysPerWeek is fixed to 5.
- * - Low-earner 80% cap needs earnings data per employee. This service does not have it yet.
- *   We return a warning when the pack enables it, so you can finish the final wiring next.
+ * This is pack-driven and transition-aware for April 2026 SSP reform.
  */
 export async function getSspAmountsForRun(
   companyId: string,
@@ -389,96 +528,157 @@ export async function getSspAmountsForRun(
 
   const qualifyingDaysPerWeek = 5;
 
-  const pack = await getCompliancePackForDate(endDate);
-  const sspCfg = extractSspSettingsFromPack(pack);
+  const endPack = await getCompliancePackForDate(endDate);
+  const endCfg = extractSspSettingsFromPack(endPack);
+  const packMeta = buildPackMeta(endDate, endPack, endCfg);
 
   const plans = await getSspPlansForRun(companyId, startDate, endDate);
 
-  let dailyRate: number;
-  let dailyRateSource: "override" | "compliance_pack";
-  let packMeta: any = null;
+  const packCache = new Map<string, { pack: CompliancePack; cfg: ExtractedSspSettings }>();
+  packCache.set(endDate, { pack: endPack, cfg: endCfg });
 
-  if (typeof dailyRateOverride === "number" && dailyRateOverride > 0) {
-    dailyRate = round2(dailyRateOverride);
-    dailyRateSource = "override";
-  } else {
-    dailyRate = round2(sspCfg.weeklyFlat / qualifyingDaysPerWeek);
-    dailyRateSource = "compliance_pack";
-    packMeta = {
-      packDateUsed: endDate,
-      taxYear: pack.tax_year,
-      label: pack.label,
-      packId: pack.id,
-      weeklyFlat: sspCfg.weeklyFlat,
-      qualifyingDaysPerWeek,
-      waitingDays: sspCfg.waitingDays,
-      requiresLel: sspCfg.requiresLel,
-      lowEarnerPercentCapEnabled: sspCfg.lowEarnerPercentCapEnabled,
-      lowEarnerPercent: sspCfg.lowEarnerPercent,
-    };
+  async function getPackForDay(dayIso: string) {
+    const cached = packCache.get(dayIso);
+    if (cached) return cached;
+
+    const pack = await getCompliancePackForDate(dayIso);
+    const cfg = extractSspSettingsFromPack(pack);
+    const value = { pack, cfg };
+    packCache.set(dayIso, value);
+    return value;
   }
 
-  return plans.map((plan) => {
-    const sspAmount = round2(plan.totalPayableDays * dailyRate);
+  const results: SspAmountForEmployee[] = [];
 
+  for (const plan of plans) {
     const warnings: string[] = [];
-    if (packMeta?.lowEarnerPercentCapEnabled) {
-      warnings.push(
-        "Compliance pack enables low-earner SSP cap (e.g. 80% rule). This run-level preview uses flat-rate daily SSP only. Next step is to wire earnings-based cap into SSP amounts."
-      );
+    let awe: AweInfo | null = null;
+
+    const earliestSicknessStart = [...plan.absences]
+      .map((a) => a.sicknessStart)
+      .filter((d) => isIsoDate(d))
+      .sort((a, b) => a.localeCompare(b))[0] || null;
+
+    const needsAwe =
+      !dailyRateOverride &&
+      plan.absences.some((a) => a.payableDays.some((day) => day >= SSP_REFORM_DATE)) &&
+      endCfg.lowEarnerPercentCapEnabled &&
+      safeNumber(endCfg.lowEarnerPercent) !== null &&
+      Number(endCfg.lowEarnerPercent) > 0 &&
+      Number(endCfg.lowEarnerPercent) < 1;
+
+    if (needsAwe && earliestSicknessStart) {
+      const referenceEnd = addDaysIso(earliestSicknessStart, -1);
+      try {
+        awe = await computeAweWeeklyForSspCap(companyId, plan.employeeId, referenceEnd);
+      } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        warnings.push(`SSP AWE calculation failed. Flat rate SSP used. (${msg})`);
+        awe = null;
+      }
     }
 
-    return {
+    const absencesWithAmounts: SspDayPlanForAbsence[] = [];
+    let totalAmount = 0;
+
+    for (const absence of plan.absences) {
+      let absenceWarnings: string[] = [];
+      let absenceAmount = 0;
+
+      if (typeof dailyRateOverride === "number" && dailyRateOverride > 0) {
+        absenceAmount = round2(absence.payableDays.length * round2(dailyRateOverride));
+        absencesWithAmounts.push({
+          ...absence,
+          dailyRate: round2(dailyRateOverride),
+          sspAmount: absenceAmount,
+        });
+        totalAmount = round2(totalAmount + absenceAmount);
+        continue;
+      }
+
+      const protectedFlatRateForOngoingPreReformAbsence =
+        absence.sicknessStart < SSP_REFORM_DATE &&
+        hasPayablePreReform(absence) &&
+        awe !== null &&
+        awe.aweWeekly >= SSP_TRANSITION_PROTECTED_FLAT_MIN_AWE &&
+        awe.aweWeekly <= SSP_TRANSITION_PROTECTED_FLAT_MAX_AWE;
+
+      let rateDaysUsed: number[] = [];
+      for (const payableDay of absence.payableDays) {
+        const { cfg } = await getPackForDay(payableDay);
+
+        let weeklyRateUsed = round2(cfg.weeklyFlat);
+        const lowPct = safeNumber(cfg.lowEarnerPercent);
+        const dayIsPostReform = payableDay >= SSP_REFORM_DATE;
+
+        if (
+          dayIsPostReform &&
+          cfg.lowEarnerPercentCapEnabled &&
+          lowPct !== null &&
+          lowPct > 0 &&
+          lowPct < 1
+        ) {
+          if (protectedFlatRateForOngoingPreReformAbsence) {
+            weeklyRateUsed = round2(cfg.weeklyFlat);
+          } else if (awe && awe.aweWeekly > 0) {
+            weeklyRateUsed = round2(Math.min(cfg.weeklyFlat, awe.aweWeekly * lowPct));
+          } else {
+            absenceWarnings.push(
+              "SSP low-earner cap is enabled but AWE could not be derived from pay history in the 8-week window. Flat rate SSP used."
+            );
+          }
+        }
+
+        const dailyRateForDay = round2(weeklyRateUsed / qualifyingDaysPerWeek);
+        rateDaysUsed.push(dailyRateForDay);
+        absenceAmount = round2(absenceAmount + dailyRateForDay);
+      }
+
+      const distinctRates = Array.from(new Set(rateDaysUsed.map((x) => x.toFixed(4))));
+      if (distinctRates.length > 1) {
+        absenceWarnings.push("SSP daily rate changed within this run due to April 2026 transition rules.");
+      }
+
+      const averageDailyRate =
+        absence.payableDays.length > 0 ? round2(absenceAmount / absence.payableDays.length) : 0;
+
+      const mergedWarnings = [...absenceWarnings];
+      absencesWithAmounts.push({
+        ...absence,
+        dailyRate: averageDailyRate || null,
+        sspAmount: round2(absenceAmount),
+        ...(mergedWarnings.length ? { warnings: mergedWarnings } : {}),
+      });
+
+      if (protectedFlatRateForOngoingPreReformAbsence) {
+        warnings.push(
+          "Employee was already receiving SSP before 6 April 2026 and remains on the same sickness absence, so the protected flat-rate transition rule was applied instead of reducing to 80% of AWE."
+        );
+      }
+
+      for (const w of absenceWarnings) {
+        if (!warnings.includes(w)) warnings.push(w);
+      }
+
+      totalAmount = round2(totalAmount + absenceAmount);
+    }
+
+    const totalPayableDays = absencesWithAmounts.reduce((sum, a) => sum + a.payableDays.length, 0);
+    const averageDailyRate = totalPayableDays > 0 ? round2(totalAmount / totalPayableDays) : 0;
+
+    results.push({
       employeeId: plan.employeeId,
       totalQualifyingDays: plan.totalQualifyingDays,
       totalPayableDays: plan.totalPayableDays,
-      dailyRate,
-      sspAmount,
-      absences: plan.absences,
-      dailyRateSource,
-      ...(packMeta ? { packMeta } : {}),
-      ...(warnings.length ? { warnings } : {}),
-    };
-  });
-}
+      dailyRate: averageDailyRate,
+      sspAmount: round2(totalAmount),
+      absences: absencesWithAmounts,
+      dailyRateSource: typeof dailyRateOverride === "number" && dailyRateOverride > 0 ? "override" : "compliance_pack",
+      packMeta,
+      awe,
+      ...(warnings.length ? { warnings: Array.from(new Set(warnings)) } : {}),
+    });
+  }
 
-/**
- * Utility: return the later of two dates (by value).
- */
-function maxDate(a: Date, b: Date): Date {
-  return a.getTime() >= b.getTime() ? a : b;
-}
-
-/**
- * Utility: return the earlier of two dates (by value).
- */
-function minDate(a: Date, b: Date): Date {
-  return a.getTime() <= b.getTime() ? a : b;
-}
-
-/**
- * Utility: add N days to a date, returning a new Date.
- */
-function addDays(date: Date, days: number): Date {
-  const dd = new Date(date.getTime());
-  dd.setDate(dd.getDate() + days);
-  return dd;
-}
-
-/**
- * Utility: format a Date as YYYY-MM-DD.
- */
-function toIsoDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-/**
- * Utility: difference in whole days from a to b.
- */
-function diffInDays(a: Date, b: Date): number {
-  const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.floor((b.getTime() - a.getTime()) / msPerDay);
+  return results;
 }

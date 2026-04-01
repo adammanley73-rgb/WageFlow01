@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import PageTemplate from "@/components/layout/PageTemplate";
+import { formatUkDate } from "@/lib/formatUkDate";
 
 const CARD = "rounded-2xl bg-white/90 ring-1 ring-neutral-300 shadow-sm p-6";
 
@@ -15,7 +16,7 @@ type SearchEmployee = {
 
 type AbsenceItem = {
   id: string;
-  employeeId: string;
+  employeeId: string | null;
   employeeLabel: string;
   type: string | null;
   status: string | null;
@@ -48,6 +49,31 @@ function shortText(s: string | null | undefined, max = 70) {
   if (!t) return "";
   if (t.length <= max) return t;
   return t.slice(0, max - 1) + "…";
+}
+
+function cleanText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function isUuid(value: unknown): boolean {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
+    cleanText(value)
+  );
+}
+
+function safeEmployeeLabel(item: AbsenceItem): string {
+  const label = cleanText(item.employeeLabel);
+  if (label && !isUuid(label)) return label;
+
+  const rawId = cleanText(item.employeeId);
+  if (rawId && !isUuid(rawId)) return rawId;
+
+  return "Employee";
+}
+
+function formatDateCell(value: string | null | undefined): string {
+  const text = cleanText(value);
+  return text ? formatUkDate(text) : "";
 }
 
 export default function AbsenceListPage() {
@@ -118,9 +144,9 @@ export default function AbsenceListPage() {
       const qs = new URLSearchParams();
       qs.set("limit", "200");
 
-      const eId = String(filters?.employeeId || "").trim();
-      const st = String(filters?.status || "").trim();
-      const ty = String(filters?.type || "").trim();
+      const eId = cleanText(filters?.employeeId);
+      const st = cleanText(filters?.status);
+      const ty = cleanText(filters?.type);
 
       if (eId) qs.set("employeeId", eId);
       if (st) qs.set("status", st);
@@ -150,7 +176,7 @@ export default function AbsenceListPage() {
   }, []);
 
   useEffect(() => {
-    const q = String(employeeName || "").trim();
+    const q = cleanText(employeeName);
     setSearchError(null);
 
     if (q.length < 2) {
@@ -377,12 +403,12 @@ export default function AbsenceListPage() {
                       const typeLabel = a.type ? typeLabelMap[a.type] || a.type : "";
                       return (
                         <tr key={a.id} className="border-t border-neutral-200">
-                          <td className="px-4 py-3 text-neutral-900">{a.employeeLabel || "Employee"}</td>
+                          <td className="px-4 py-3 text-neutral-900">{safeEmployeeLabel(a)}</td>
                           <td className="px-4 py-3 text-neutral-900">{typeLabel}</td>
                           <td className="px-4 py-3 text-neutral-900">{a.status || ""}</td>
-                          <td className="px-4 py-3 text-neutral-900">{a.firstDay || ""}</td>
-                          <td className="px-4 py-3 text-neutral-900">{a.lastDayExpected || ""}</td>
-                          <td className="px-4 py-3 text-neutral-900">{a.lastDayActual || ""}</td>
+                          <td className="px-4 py-3 text-neutral-900">{formatDateCell(a.firstDay)}</td>
+                          <td className="px-4 py-3 text-neutral-900">{formatDateCell(a.lastDayExpected)}</td>
+                          <td className="px-4 py-3 text-neutral-900">{formatDateCell(a.lastDayActual)}</td>
                           <td className="px-4 py-3 text-neutral-700">{shortText(a.notes, 60)}</td>
                           <td className="px-4 py-3">
                             <div className="flex justify-end gap-2">
