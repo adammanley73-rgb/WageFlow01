@@ -106,6 +106,122 @@ function isSspLike(e: { code?: unknown; name?: unknown; description?: unknown })
   return code === "SSP" || code === "SSP1" || name.includes("statutory sick") || desc.includes("statutory sick");
 }
 
+function normaliseCode(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function normaliseLower(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isPayeElement(e: { code?: unknown; name?: unknown; description?: unknown }) {
+  const code = normaliseCode(e?.code);
+  const name = normaliseLower(e?.name);
+  const desc = normaliseLower(e?.description);
+  return (
+    code === "PAYE" ||
+    code === "TAX_PAYE" ||
+    name.includes("paye") ||
+    name.includes("income tax") ||
+    desc.includes("paye") ||
+    desc.includes("income tax")
+  );
+}
+
+function isEmployeeNiElement(e: { code?: unknown; name?: unknown; description?: unknown }) {
+  const code = normaliseCode(e?.code);
+  const name = normaliseLower(e?.name);
+  const desc = normaliseLower(e?.description);
+  return (
+    code === "EE_NI" ||
+    code === "NIC_EMP" ||
+    code === "EMPLOYEE_NI" ||
+    name.includes("employee ni") ||
+    name.includes("national insurance (employee)") ||
+    (name.includes("national insurance") && !name.includes("employer")) ||
+    desc.includes("employee ni")
+  );
+}
+
+function isEmployerNiElement(e: { code?: unknown; name?: unknown; description?: unknown }) {
+  const code = normaliseCode(e?.code);
+  const name = normaliseLower(e?.name);
+  const desc = normaliseLower(e?.description);
+  return (
+    code === "ER_NI" ||
+    code === "NIC_ER" ||
+    code === "EMPLOYER_NI" ||
+    name.includes("employer ni") ||
+    name.includes("employer national insurance") ||
+    desc.includes("employer ni")
+  );
+}
+
+function isSalarySacrificePensionElement(e: {
+  code?: unknown;
+  name?: unknown;
+  description?: unknown;
+  isSalarySacrificeType?: unknown;
+}) {
+  const code = normaliseCode(e?.code);
+  const name = normaliseLower(e?.name);
+  const desc = normaliseLower(e?.description);
+  return (
+    code === "EE_PEN_SAL_SAC" ||
+    Boolean(e?.isSalarySacrificeType) ||
+    name.includes("salary sacrifice") ||
+    desc.includes("salary sacrifice")
+  );
+}
+
+function isEmployeePensionElement(e: {
+  code?: unknown;
+  name?: unknown;
+  description?: unknown;
+  isSalarySacrificeType?: unknown;
+}) {
+  const code = normaliseCode(e?.code);
+  const name = normaliseLower(e?.name);
+  const desc = normaliseLower(e?.description);
+  if (isSalarySacrificePensionElement(e)) return false;
+  return (
+    code === "EE_PEN" ||
+    code === "EE_PEN_RAS" ||
+    name.includes("employee pension") ||
+    desc.includes("employee pension")
+  );
+}
+
+function isEmployerPensionElement(e: { code?: unknown; name?: unknown; description?: unknown }) {
+  const code = normaliseCode(e?.code);
+  const name = normaliseLower(e?.name);
+  const desc = normaliseLower(e?.description);
+  return code === "ER_PEN" || name.includes("employer pension") || desc.includes("employer pension");
+}
+
+function isEmployerOnlyElement(e: { code?: unknown; name?: unknown; description?: unknown }) {
+  return isEmployerNiElement(e) || isEmployerPensionElement(e);
+}
+
+function sumElementAmounts(items: NormalisedPayElement[]): number {
+  return round2(items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0));
+}
+
+function toSalarySacrificeEarning(item: NormalisedPayElement): NormalisedPayElement {
+  const rawAmount = round2(Math.abs(Number(item.amount) || 0));
+  return {
+    ...item,
+    side: "earning",
+    name: "Salary sacrifice pension",
+    amount: rawAmount > 0 ? -rawAmount : 0,
+    description:
+      item.description && item.description.trim()
+        ? item.description
+        : "Salary sacrifice pension adjustment shown before deductions.",
+  };
+}
+
+
 function pickEarliestSicknessStart(sspForEmployee: unknown): string | null {
   const anySsp = sspForEmployee as { absences?: unknown } | null;
   const abs = Array.isArray(anySsp?.absences) ? (anySsp?.absences as unknown[]) : [];
@@ -604,67 +720,110 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
 
   const grossStored = Number(preRow["gross_pay"] ?? 0);
   const netStored = Number(preRow["net_pay"] ?? 0);
+  const storedTax = round2(Number(preRow["tax"] ?? 0));
+  const storedEmployeeNi = round2(Number(preRow["ni_employee"] ?? 0));
 
-  let tax = Number(preRow["tax"] ?? 0);
-  const ni = Number(preRow["ni_employee"] ?? 0);
-
-  const earnings = elements.filter((e) => e.side === "earning");
+  const earningsBase = elements.filter((e) => e.side === "earning");
   const deductionsElements = elements.filter((e) => e.side === "deduction");
 
-  const earningsTotal = earnings.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const deductionElementsTotal = deductionsElements.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const payeElements = deductionsElements.filter((e) => isPayeElement(e));
+  const employeeNiElements = deductionsElements.filter((e) => isEmployeeNiElement(e));
+  const employerNiElements = deductionsElements.filter((e) => isEmployerNiElement(e));
+  const salarySacrificeElements = deductionsElements.filter((e) => isSalarySacrificePensionElement(e));
+  const employeePensionElements = deductionsElements.filter((e) => isEmployeePensionElement(e));
+  const employerPensionElements = deductionsElements.filter((e) => isEmployerPensionElement(e));
+  const employerOnlyElements = deductionsElements.filter((e) => isEmployerOnlyElement(e));
+  const employeeOtherDeductionElements = deductionsElements.filter(
+    (e) =>
+      !isPayeElement(e) &&
+      !isEmployeeNiElement(e) &&
+      !isEmployerOnlyElement(e) &&
+      !isSalarySacrificePensionElement(e) &&
+      !isEmployeePensionElement(e)
+  );
 
-  let gross = grossStored;
-  let net = netStored;
-  let deductions = grossStored - netStored;
+  const salarySacrificeEarnings = salarySacrificeElements.map((item) => toSalarySacrificeEarning(item));
+  const earnings = [...earningsBase, ...salarySacrificeEarnings];
 
-  const useElementTotals = (grossStored === 0 && earnings.length > 0) || sspAdjusted;
+  const earningsTotal = sumElementAmounts(earnings);
+  const payeFromElements = sumElementAmounts(payeElements);
+  const employeeNiFromElements = sumElementAmounts(employeeNiElements);
+  const employerNiFromElements = sumElementAmounts(employerNiElements);
+  const salarySacrificeTotal = round2(
+    salarySacrificeElements.reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0)
+  );
+  const employeePensionTotal = sumElementAmounts(employeePensionElements);
+  const employerPensionTotal = sumElementAmounts(employerPensionElements);
+  const employeeOtherDeductionTotal = sumElementAmounts(employeeOtherDeductionElements);
+  const employerOnlyTotal = sumElementAmounts(employerOnlyElements);
 
-  if (useElementTotals) {
-    gross = earningsTotal;
-    deductions = deductionElementsTotal;
-    net = gross - deductions;
-  } else {
-    const canAutoCalc =
-      tax === 0 && Number.isFinite(grossStored) && grossStored > 0 && String(frequency ?? "") === "monthly" && !!finalTaxCode;
+  const useElementGross =
+    (grossStored === 0 && earnings.length > 0) ||
+    sspAdjusted ||
+    (earnings.length > 0 && Math.abs(round2(grossStored) - earningsTotal) > 0.01);
 
-    if (canAutoCalc) {
-      try {
-        const ytdTaxableBefore = Number(employeeRow["ytd_gross"] ?? 0);
-        const ytdTaxPaidBefore = Number(employeeRow["ytd_tax"] ?? 0);
+  let gross = useElementGross ? earningsTotal : round2(grossStored - salarySacrificeTotal);
+  if (!Number.isFinite(gross)) gross = 0;
+  gross = round2(Math.max(0, gross));
 
-        const taxYear = (() => {
-          const src = String(periodStart ?? "");
-          const yr = parseInt(src.slice(0, 4), 10);
-          return Number.isFinite(yr) ? yr : undefined;
-        })();
+  let tax = payeFromElements > 0 ? payeFromElements : storedTax;
+  let ni = employeeNiFromElements > 0 ? employeeNiFromElements : storedEmployeeNi;
 
-        const payResult = calculatePay({
-          grossForPeriod: grossStored,
-          taxCode: finalTaxCode,
-          period: 1,
-          ytdTaxableBeforeThisPeriod: ytdTaxableBefore,
-          ytdTaxPaidBeforeThisPeriod: ytdTaxPaidBefore,
-          taxYear,
-        });
+  const canAutoCalc =
+    payeFromElements <= 0 &&
+    tax <= 0 &&
+    Number.isFinite(gross) &&
+    gross > 0 &&
+    String(frequency ?? "") === "monthly" &&
+    !!finalTaxCode;
 
-        const taxThisPeriod = Number((payResult as any)?.tax ?? 0);
+  if (canAutoCalc) {
+    try {
+      const ytdTaxableBefore = Number(employeeRow["ytd_gross"] ?? 0);
+      const ytdTaxPaidBefore = Number(employeeRow["ytd_tax"] ?? 0);
 
-        if (Number.isFinite(taxThisPeriod)) {
-          tax = taxThisPeriod;
-          deductions = tax + deductionElementsTotal;
-          net = grossStored - deductions;
-        }
-      } catch (err) {
-        const msg = err && typeof err === "object" && "message" in err ? (err as any).message : err;
-        console.error("payslip route: PAYE auto calc failed", { runId, employeeId, error: String(msg) });
+      const taxYear = (() => {
+        const src = String(periodStart ?? "");
+        const yr = parseInt(src.slice(0, 4), 10);
+        return Number.isFinite(yr) ? yr : undefined;
+      })();
 
-        gross = grossStored;
-        net = netStored;
-        deductions = grossStored - netStored;
+      const payResult = calculatePay({
+        grossForPeriod: gross,
+        taxCode: finalTaxCode,
+        period: 1,
+        ytdTaxableBeforeThisPeriod: ytdTaxableBefore,
+        ytdTaxPaidBeforeThisPeriod: ytdTaxPaidBefore,
+        taxYear,
+      });
+
+      const taxThisPeriod = Number((payResult as any)?.tax ?? 0);
+      if (Number.isFinite(taxThisPeriod)) {
+        tax = round2(taxThisPeriod);
       }
+    } catch (err) {
+      const msg = err && typeof err === "object" && "message" in err ? (err as any).message : err;
+      console.error("payslip route: PAYE auto calc failed", { runId, employeeId, error: String(msg) });
+      tax = payeFromElements > 0 ? payeFromElements : storedTax;
     }
   }
+
+  const deductions = round2(tax + ni + employeePensionTotal + employeeOtherDeductionTotal);
+  const net = round2(Math.max(0, gross - deductions));
+
+  const employeeBreakdown = {
+    tax: round2(tax),
+    employeeNi: round2(ni),
+    salarySacrifice: round2(salarySacrificeTotal),
+    employeePension: round2(employeePensionTotal),
+    employeeOtherDeductions: round2(employeeOtherDeductionTotal),
+  };
+
+  const employerBreakdown = {
+    employerNi: round2(employerNiFromElements),
+    employerPension: round2(employerPensionTotal),
+    employerOnlyTotal: round2(employerOnlyTotal),
+  };
 
   const payAfterLeaving = typeof preRow["pay_after_leaving"] === "boolean" ? (preRow["pay_after_leaving"] as boolean) : false;
 
@@ -733,6 +892,8 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
     initialTaxCode,
     starterTaxCode,
     finalTaxCode,
+    employeeBreakdown,
+    employerBreakdown,
   };
 
   return {
