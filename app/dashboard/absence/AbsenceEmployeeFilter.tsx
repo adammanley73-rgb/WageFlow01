@@ -88,47 +88,58 @@ export default function AbsenceEmployeeFilter({
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <div className="w-full md:max-w-lg">
+        <div className="flex flex-col gap-2">
+          <div className="w-full md:max-w-[56rem]">
             <label className="block text-xs font-semibold text-neutral-700 mb-1">
               Employee
             </label>
 
-            <div className="relative">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setSelectedEmployeeId("");
-                  setShowDropdown(true);
-                }}
-                onFocus={() => setShowDropdown(true)}
-                onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
-                className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
-                placeholder="Start typing an employee name or number"
-              />
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setSelectedEmployeeId("");
+                    setShowDropdown(true);
+                  }}
+                  onFocus={() => setShowDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+                  className="w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                  placeholder="Start typing an employee name or number"
+                />
 
-              {showDropdown && matchingEmployees.length > 0 ? (
-                <div className="absolute z-20 mt-1 w-full rounded-xl border border-neutral-300 bg-white shadow-lg max-h-56 overflow-y-auto">
-                  {matchingEmployees.map((emp) => (
-                    <button
-                      key={emp.id}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handlePick(emp)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-100"
-                    >
-                      <div className="font-medium">{emp.label}</div>
-                      {emp.employeeNumber ? (
-                        <div className="text-[11px] text-neutral-600">
-                          Employee no: {emp.employeeNumber}
-                        </div>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+                {showDropdown && matchingEmployees.length > 0 ? (
+                  <div className="absolute z-20 mt-1 w-full rounded-xl border border-neutral-300 bg-white shadow-lg max-h-56 overflow-y-auto">
+                    {matchingEmployees.map((emp) => (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handlePick(emp)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-100"
+                      >
+                        <div className="font-medium">{emp.label}</div>
+                        {emp.employeeNumber ? (
+                          <div className="text-[11px] text-neutral-600">
+                            Employee no: {emp.employeeNumber}
+                          </div>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                onClick={clearFilter}
+                className="shrink-0 rounded-full border border-neutral-300 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!query && !selectedEmployeeId}
+              >
+                Clear
+              </button>
             </div>
 
             {selectedEmployee ? (
@@ -142,19 +153,10 @@ export default function AbsenceEmployeeFilter({
             )}
           </div>
 
-          <div className="flex items-center gap-2 justify-end">
+          <div className="flex items-center justify-end">
             <div className="text-xs text-neutral-700">
               Showing {filteredAbsences.length} record{filteredAbsences.length === 1 ? "" : "s"}
             </div>
-
-            <button
-              type="button"
-              onClick={clearFilter}
-              className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
-              disabled={!query && !selectedEmployeeId}
-            >
-              Clear
-            </button>
           </div>
         </div>
       </div>
