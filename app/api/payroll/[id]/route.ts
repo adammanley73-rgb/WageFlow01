@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { WorkflowService } from "@/lib/services/workflow.service";
 import { calculatePay } from "@/lib/payroll/calculatePay";
+import { syncAbsencePayToRun } from "@/lib/payroll/syncAbsencePayToRun";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -502,6 +503,14 @@ function normaliseLocalPayElement(row: any, type: any): LocalNormalisedPayElemen
     effectiveAeQualifying,
     effectiveSalarySacrifice,
   };
+}
+
+function isSspCode(value: any): boolean {
+  return String(value ?? "").trim().toUpperCase() === "SSP";
+}
+
+function isSicknessBasicReductionCode(value: any): boolean {
+  return String(value ?? "").trim().toUpperCase() === "SICK_BASIC_REDUCTION";
 }
 
 function getNonCumulativeTaxMarker(payFrequency: any): "M1" | "W1" {
@@ -1720,6 +1729,42 @@ async function updateRunEmployeeRow(
   };
 }
 
+
+async function bestEffortAbsenceSyncForRun(supabase: any, runId: string, companyId: string, runRow: any) {
+  try {
+    const attachTry = await loadAttachments(supabase, runId, companyId);
+    if (!attachTry.ok) {
+      return {
+        ok: false as const,
+        reason: "attachments_load_failed",
+        attempts: attachTry.attempts || [],
+      };
+    }
+
+    const payrollRunEmployees = Array.isArray(attachTry.rows) ? attachTry.rows : [];
+
+    await syncAbsencePayToRun({
+      supabase,
+      runId,
+      runRow,
+      payrollRunEmployees,
+    });
+
+    return {
+      ok: true as const,
+      payrollRunEmployeesCount: payrollRunEmployees.length,
+    };
+  } catch (err: any) {
+    return {
+      ok: false as const,
+      reason: "unexpected_error",
+      error: {
+        message: err?.message ?? String(err),
+      },
+    };
+  }
+}
+
 async function tryComputeFullViaRpc(supabase: any, runId: string) {
   const attempts: any[] = [];
 
@@ -1959,23 +2004,30 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     let pensionablePay = 0;
     let aeQualifyingSourcePay = 0;
     let employeeElementDeductions = 0;
+    let nonSspEarningsGross = 0;
 
     for (const row of rows) {
       const code = String(row.code || "").trim().toUpperCase();
       const amount = round2(toNumberSafe(row.amount));
+      const isSsp = isSspCode(code);
+      const isSicknessReduction = isSicknessBasicReductionCode(code);
 
       if (row.side === "earning") {
         gross += amount;
 
-        if (code === "BASIC") {
+        if (code === "BASIC" || isSicknessReduction) {
           basicPay += amount;
         }
 
-        if (row.effectivePensionable) {
+        if (!isSsp) {
+          nonSspEarningsGross += amount;
+        }
+
+        if (row.effectivePensionable && !isSsp) {
           pensionablePay += amount;
         }
 
-        if (row.effectiveAeQualifying) {
+        if (row.effectiveAeQualifying && !isSsp) {
           aeQualifyingSourcePay += amount;
         }
 
@@ -1987,10 +2039,12 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
       employeeElementDeductions += amount;
     }
 
+    const nonSspGross = round2(Math.max(0, nonSspEarningsGross));
+
     gross = round2(gross);
-    basicPay = round2(basicPay);
-    pensionablePay = round2(pensionablePay > 0 ? pensionablePay : gross);
-    aeQualifyingSourcePay = round2(aeQualifyingSourcePay > 0 ? aeQualifyingSourcePay : gross);
+    basicPay = round2(Math.max(0, basicPay));
+    pensionablePay = round2(pensionablePay > 0 ? pensionablePay : nonSspGross);
+    aeQualifyingSourcePay = round2(aeQualifyingSourcePay > 0 ? aeQualifyingSourcePay : nonSspGross);
     employeeElementDeductions = round2(employeeElementDeductions);
 
     const pensionSettings = readEmployeePensionSettings(emp);
@@ -2829,6 +2883,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     const flagPre = await fetchRunStatusAndFlag(supabase, id, companyId);
 
+    const absenceSync = await bestEffortAbsenceSyncForRun(supabase, id, companyId, run);
+
     const rpc: any = await tryComputeFullViaRpc(supabase, id);
     if (!rpc?.ok) {
       return json(rpc?.status || 501, {
@@ -2861,6 +2917,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         error: localFallback.error || "Local full compute fallback failed",
         computeVia: rpc?.via,
         totalsRefreshOk: Boolean(totalsRefresh?.ok),
+        absenceSync,
         localFallback,
       });
     }
@@ -2873,6 +2930,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         action: "compute_full",
         error: totalsRefreshAfterLocal?.error || "Totals refresh failed after local full compute fallback",
         computeVia: rpc?.via,
+        absenceSync,
         localFallback,
       });
     }
@@ -2898,6 +2956,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
           "Full compute attempted, but the run still looks gross-only/uncomputed. Ensure your DB compute function or local fallback writes tax, NI, net, and calc_mode='full' back to payroll_run_employees.",
         computeVia: rpc?.via,
         totalsRefreshOk: Boolean(totalsRefresh?.ok),
+        absenceSync,
         seededMode: Boolean(post.seededMode),
         localFallback,
         run: post.run,
@@ -2913,6 +2972,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       action: "compute_full",
       computeVia: rpc?.via,
       totalsRefreshOk: Boolean(totalsRefresh?.ok),
+      absenceSync,
       localFallback,
       attachmentsMeta: post.attachmentsMeta,
       sideEffects: flagPre?.hasAttachedFlag

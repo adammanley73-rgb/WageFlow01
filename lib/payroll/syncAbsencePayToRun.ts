@@ -92,6 +92,22 @@ function isWeekdayUtc(d: Date): boolean {
   return day >= 1 && day <= 5;
 }
 
+function countWeekdaysInIsoRange(startIso: string, endIso: string): number {
+  if (!isIsoDateOnly(startIso) || !isIsoDateOnly(endIso)) return 0;
+
+  const start = parseIsoDateOnlyToUtc(startIso);
+  const end = parseIsoDateOnlyToUtc(endIso);
+
+  if (end < start) return 0;
+
+  let count = 0;
+  for (let dd = new Date(start.getTime()); dd <= end; dd = addDaysUtc(dd, 1)) {
+    if (isWeekdayUtc(dd)) count += 1;
+  }
+
+  return count;
+}
+
 async function loadCompliancePackForDate(supabase: any, packDateIso: string) {
   if (!isIsoDateOnly(packDateIso)) throw new Error("Invalid pack date. Expected YYYY-MM-DD.");
 
@@ -323,8 +339,14 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
     // 2) SSP — FIXED: write REAL SSP amounts into payroll_run_pay_elements
     // -------------------------------------------------------------------
 
-    // Load SSP type: force use of SSP, not SSP_BASIC
+    // Load sickness-related pay element types.
+    // Canonical live codes are:
+    // - SSP for statutory sick pay
+    // - SICK_BASIC_REDUCTION for the negative contractual pay adjustment
     let sspType: PayElementTypeRow | null = null;
+    let basicType: PayElementTypeRow | null = null;
+    let sickBasicReductionType: PayElementTypeRow | null = null;
+
     {
       const { data: sspRow, error: sspError } = await supabase
         .from("pay_element_types")
@@ -340,23 +362,55 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
       }
     }
 
-    if (sspType) {
+    {
+      const { data: basicRow, error: basicError } = await supabase
+        .from("pay_element_types")
+        .select("id, code")
+        .eq("code", "BASIC")
+        .limit(1)
+        .maybeSingle();
+
+      if (basicError) {
+        handlePgError("Failed to load BASIC type", basicError);
+      } else {
+        basicType = (basicRow as PayElementTypeRow) ?? null;
+      }
+    }
+
+    {
+      const { data: reductionRow, error: reductionError } = await supabase
+        .from("pay_element_types")
+        .select("id, code")
+        .eq("code", "SICK_BASIC_REDUCTION")
+        .limit(1)
+        .maybeSingle();
+
+      if (reductionError) {
+        handlePgError("Failed to load SICK_BASIC_REDUCTION type", reductionError);
+      } else {
+        sickBasicReductionType = (reductionRow as PayElementTypeRow) ?? null;
+      }
+    }
+
+    if (sspType || sickBasicReductionType) {
       // Resolve SSP policy + weekly rate from Compliance Pack (by period end date)
       let weeklyFlat = 0;
       let waitingDays = 3;
       let dailyRate = 0;
 
-      try {
-        const pack = await loadCompliancePackForDate(supabase, periodEnd);
-        const sspCfg = extractSspSettingsFromPack(pack);
+      if (sspType) {
+        try {
+          const pack = await loadCompliancePackForDate(supabase, periodEnd);
+          const sspCfg = extractSspSettingsFromPack(pack);
 
-        weeklyFlat = Number(sspCfg.weeklyFlat);
-        waitingDays = Number(sspCfg.waitingDays);
-        dailyRate = round2(weeklyFlat / 5);
-      } catch (e: any) {
-        logError("SSP sync skipped: failed to resolve SSP settings from compliance pack", e?.message ?? e);
-        weeklyFlat = 0;
-        dailyRate = 0;
+          weeklyFlat = Number(sspCfg.weeklyFlat);
+          waitingDays = Number(sspCfg.waitingDays);
+          dailyRate = round2(weeklyFlat / 5);
+        } catch (e: any) {
+          logError("SSP sync skipped: failed to resolve SSP settings from compliance pack", e?.message ?? e);
+          weeklyFlat = 0;
+          dailyRate = 0;
+        }
       }
 
       // Load sickness absences with lookback so waiting days can carry across linked spells
@@ -392,8 +446,52 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
         absencesByEmployee[empId].push(a);
       }
 
-      // Compute payable days per absence (with linked spell waiting days)
-      const computedAbsenceItems: Array<{
+      const computedSicknessItems: Array<{
+        absenceId: string;
+        employeeId: string;
+        payrollRunEmployeeId: string;
+        sicknessStart: string;
+        sicknessEnd: string;
+        qualifyingDaysInRun: number;
+        payableDaysInRun: number;
+      }> = [];
+
+      for (const empId of Object.keys(absencesByEmployee)) {
+        const preList = preByEmployeeId[empId];
+        if (!preList || preList.length === 0) continue;
+
+        const preRow = preList[0];
+        const preId = String(preRow?.id || "").trim();
+        if (!preId) continue;
+
+        const { byAbsenceId } = computeSspPayableDaysByAbsence({
+          absences: absencesByEmployee[empId],
+          runStartIso: periodStart,
+          runEndIso: periodEnd,
+          waitingDaysTarget: waitingDays,
+        });
+
+        for (const key of Object.keys(byAbsenceId)) {
+          const x = byAbsenceId[key];
+
+          const qualifying = Number(x?.qualifyingDaysInRun || 0);
+          const payable = Number(x?.payableDaysInRun || 0);
+
+          if (qualifying <= 0) continue;
+
+          computedSicknessItems.push({
+            absenceId: String(x.absenceId),
+            employeeId: String(x.employeeId),
+            payrollRunEmployeeId: preId,
+            sicknessStart: String(x.sicknessStart),
+            sicknessEnd: String(x.sicknessEnd),
+            qualifyingDaysInRun: qualifying,
+            payableDaysInRun: payable,
+          });
+        }
+      }
+
+      const computedSspItems: Array<{
         absenceId: string;
         employeeId: string;
         payrollRunEmployeeId: string;
@@ -405,143 +503,313 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
         description: string;
       }> = [];
 
-      if (dailyRate > 0) {
-        for (const empId of Object.keys(absencesByEmployee)) {
-          const preList = preByEmployeeId[empId];
-          if (!preList || preList.length === 0) continue;
+      if (sspType && dailyRate > 0) {
+        for (const item of computedSicknessItems) {
+          const payable = Number(item?.payableDaysInRun || 0);
+          const qualifying = Number(item?.qualifyingDaysInRun || 0);
 
-          const preRow = preList[0];
-          const preId = String(preRow?.id || "").trim();
-          if (!preId) continue;
+          // Only write SSP elements when there is actually something payable
+          if (payable <= 0) continue;
 
-          const { byAbsenceId } = computeSspPayableDaysByAbsence({
-            absences: absencesByEmployee[empId],
-            runStartIso: periodStart,
-            runEndIso: periodEnd,
-            waitingDaysTarget: waitingDays,
+          const amount = round2(payable * dailyRate);
+
+          const desc =
+            "Statutory Sick Pay (calculated automatically) - " +
+            `${payable} payable day${payable === 1 ? "" : "s"} ` +
+            `@ £${dailyRate.toFixed(2)}/day ` +
+            `(sickness ${item.sicknessStart} to ${item.sicknessEnd}; ` +
+            `${qualifying} qualifying day${qualifying === 1 ? "" : "s"} in run)`;
+
+          computedSspItems.push({
+            absenceId: item.absenceId,
+            employeeId: item.employeeId,
+            payrollRunEmployeeId: item.payrollRunEmployeeId,
+            sicknessStart: item.sicknessStart,
+            sicknessEnd: item.sicknessEnd,
+            qualifyingDaysInRun: qualifying,
+            payableDaysInRun: payable,
+            amount,
+            description: desc,
           });
+        }
+      }
 
-          for (const key of Object.keys(byAbsenceId)) {
-            const x = byAbsenceId[key];
+      const runWeekdays = countWeekdaysInIsoRange(periodStart, periodEnd);
 
-            const payable = Number(x?.payableDaysInRun || 0);
-            const qualifying = Number(x?.qualifyingDaysInRun || 0);
+      const basicAmountsByPreId: Record<string, number> = {};
+      if (basicType && runWeekdays > 0) {
+        const { data: basicRows, error: basicRowsError } = await supabase
+          .from("payroll_run_pay_elements")
+          .select("payroll_run_employee_id, amount")
+          .eq("pay_element_type_id", basicType.id)
+          .in("payroll_run_employee_id", preIds);
 
-            // Only write SSP elements when there's actually something payable
-            if (payable <= 0) continue;
+        if (basicRowsError) {
+          handlePgError("Error loading BASIC elements for sickness reduction sync", basicRowsError as any);
+        } else {
+          for (const row of Array.isArray(basicRows) ? basicRows : []) {
+            const preId = String((row as any)?.payroll_run_employee_id || "").trim();
+            if (!preId) continue;
 
-            const amount = round2(payable * dailyRate);
-
-            const desc =
-              "Statutory Sick Pay (calculated automatically) - " +
-              `${payable} payable day${payable === 1 ? "" : "s"} ` +
-              `@ £${dailyRate.toFixed(2)}/day ` +
-              `(sickness ${String(x?.sicknessStart)} to ${String(x?.sicknessEnd)}; ` +
-              `${qualifying} qualifying day${qualifying === 1 ? "" : "s"} in run)`;
-
-            computedAbsenceItems.push({
-              absenceId: String(x.absenceId),
-              employeeId: String(x.employeeId),
-              payrollRunEmployeeId: preId,
-              sicknessStart: String(x.sicknessStart),
-              sicknessEnd: String(x.sicknessEnd),
-              qualifyingDaysInRun: qualifying,
-              payableDaysInRun: payable,
-              amount,
-              description: desc,
-            });
+            const amount = safeNumber((row as any)?.amount) ?? 0;
+            basicAmountsByPreId[preId] = round2((basicAmountsByPreId[preId] || 0) + amount);
           }
         }
       }
 
-      // Load existing SSP pay elements for this run
-      const { data: existingSspRows, error: existingSspError } = await supabase
-        .from("payroll_run_pay_elements")
-        .select("id, payroll_run_employee_id, pay_element_type_id, amount, description_override, absence_id")
-        .eq("pay_element_type_id", sspType.id)
-        .in("payroll_run_employee_id", preIds);
+      const computedReductionItems: Array<{
+        absenceId: string;
+        employeeId: string;
+        payrollRunEmployeeId: string;
+        sicknessStart: string;
+        sicknessEnd: string;
+        qualifyingDaysInRun: number;
+        amount: number;
+        description: string;
+      }> = [];
 
-      if (existingSspError) {
-        handlePgError("Error loading existing SSP elements", existingSspError);
-      }
+      if (sickBasicReductionType && basicType && runWeekdays > 0) {
+        for (const item of computedSicknessItems) {
+          const qualifying = Number(item?.qualifyingDaysInRun || 0);
+          if (qualifying <= 0) continue;
 
-      const existingSsp: ExistingElement[] = Array.isArray(existingSspRows) ? (existingSspRows as any) : [];
+          const basicAmount = round2(Math.max(0, basicAmountsByPreId[item.payrollRunEmployeeId] || 0));
+          if (basicAmount <= 0) continue;
 
-      const existingByPreId: Record<string, ExistingElement[]> = {};
-      for (const row of existingSsp) {
-        const preId = String(row?.payroll_run_employee_id || "").trim();
-        if (!preId) continue;
-        if (!existingByPreId[preId]) existingByPreId[preId] = [];
-        existingByPreId[preId].push(row);
-      }
+          const dailyBasicRate = round2(basicAmount / runWeekdays);
+          const grossReduction = round2(dailyBasicRate * qualifying);
+          const cappedReduction = round2(Math.min(grossReduction, basicAmount));
+          const amount = round2(cappedReduction * -1);
 
-      const usedExistingIds = new Set<string>();
-      const inserts: any[] = [];
-      const updates: Array<{ id: string; patch: any }> = [];
+          if (amount >= 0) continue;
 
-      // Upsert each computed absence item into payroll_run_pay_elements
-      for (const item of computedAbsenceItems) {
-        const preId = item.payrollRunEmployeeId;
-        const list = existingByPreId[preId] ?? [];
+          const desc =
+            "Sickness absence adjustment (calculated automatically) - " +
+            `${qualifying} working day${qualifying === 1 ? "" : "s"} ` +
+            `@ £${dailyBasicRate.toFixed(2)}/day ` +
+            `(sickness ${item.sicknessStart} to ${item.sicknessEnd})`;
 
-        const linked = list.find((e) => String(e?.absence_id || "").trim() === item.absenceId);
-        const orphan = list.find((e) => !e?.absence_id && !usedExistingIds.has(String(e?.id || "").trim()));
-
-        if (linked && linked.id) {
-          usedExistingIds.add(String(linked.id).trim());
-          updates.push({
-            id: String(linked.id).trim(),
-            patch: {
-              absence_id: item.absenceId,
-              description_override: item.description,
-              amount: item.amount,
-            },
-          });
-        } else if (orphan && orphan.id) {
-          usedExistingIds.add(String(orphan.id).trim());
-          updates.push({
-            id: String(orphan.id).trim(),
-            patch: {
-              absence_id: item.absenceId,
-              description_override: item.description,
-              amount: item.amount,
-            },
-          });
-        } else {
-          inserts.push({
-            payroll_run_employee_id: preId,
-            pay_element_type_id: sspType.id,
-            amount: item.amount,
-            taxable_for_paye_override: null,
-            nic_earnings_override: null,
-            pensionable_override: null,
-            ae_qualifying_override: null,
-            description_override: item.description,
-            absence_id: item.absenceId,
+          computedReductionItems.push({
+            absenceId: item.absenceId,
+            employeeId: item.employeeId,
+            payrollRunEmployeeId: item.payrollRunEmployeeId,
+            sicknessStart: item.sicknessStart,
+            sicknessEnd: item.sicknessEnd,
+            qualifyingDaysInRun: qualifying,
+            amount,
+            description: desc,
           });
         }
       }
 
-      // Delete any existing SSP elements that are no longer valid for this run
-      const staleIds: string[] = existingSsp
-        .map((e) => String(e?.id || "").trim())
-        .filter(Boolean)
-        .filter((id) => !usedExistingIds.has(id));
+      if (sspType) {
+        // Load existing SSP pay elements for this run
+        const { data: existingSspRows, error: existingSspError } = await supabase
+          .from("payroll_run_pay_elements")
+          .select("id, payroll_run_employee_id, pay_element_type_id, amount, description_override, absence_id")
+          .eq("pay_element_type_id", sspType.id)
+          .in("payroll_run_employee_id", preIds);
 
-      // But also keep SSP elements that are linked and were intentionally not recomputed due to missing pack/dailyRate
-      // If dailyRate is 0, we do not touch anything (avoid wiping amounts).
-      if (dailyRate > 0) {
+        if (existingSspError) {
+          handlePgError("Error loading existing SSP elements", existingSspError);
+        }
+
+        const existingSsp: ExistingElement[] = Array.isArray(existingSspRows) ? (existingSspRows as any) : [];
+
+        const existingByPreId: Record<string, ExistingElement[]> = {};
+        for (const row of existingSsp) {
+          const preId = String(row?.payroll_run_employee_id || "").trim();
+          if (!preId) continue;
+          if (!existingByPreId[preId]) existingByPreId[preId] = [];
+          existingByPreId[preId].push(row);
+        }
+
+        const usedExistingIds = new Set<string>();
+        const inserts: any[] = [];
+        const updates: Array<{ id: string; patch: any }> = [];
+
+        // Upsert each computed SSP absence item into payroll_run_pay_elements
+        for (const item of computedSspItems) {
+          const preId = item.payrollRunEmployeeId;
+          const list = existingByPreId[preId] ?? [];
+
+          const linked = list.find((e) => String(e?.absence_id || "").trim() === item.absenceId);
+          const orphan = list.find((e) => !e?.absence_id && !usedExistingIds.has(String(e?.id || "").trim()));
+
+          if (linked && linked.id) {
+            usedExistingIds.add(String(linked.id).trim());
+            updates.push({
+              id: String(linked.id).trim(),
+              patch: {
+                absence_id: item.absenceId,
+                description_override: item.description,
+                amount: item.amount,
+              },
+            });
+          } else if (orphan && orphan.id) {
+            usedExistingIds.add(String(orphan.id).trim());
+            updates.push({
+              id: String(orphan.id).trim(),
+              patch: {
+                absence_id: item.absenceId,
+                description_override: item.description,
+                amount: item.amount,
+              },
+            });
+          } else {
+            inserts.push({
+              payroll_run_employee_id: preId,
+              pay_element_type_id: sspType.id,
+              amount: item.amount,
+              taxable_for_paye_override: null,
+              nic_earnings_override: null,
+              pensionable_override: null,
+              ae_qualifying_override: null,
+              description_override: item.description,
+              absence_id: item.absenceId,
+            });
+          }
+        }
+
+        // Delete any existing SSP elements that are no longer valid for this run
+        const staleIds: string[] = existingSsp
+          .map((e) => String(e?.id || "").trim())
+          .filter(Boolean)
+          .filter((rowId) => !usedExistingIds.has(rowId));
+
+        // If dailyRate is 0, do not touch existing SSP rows (avoid wiping amounts).
+        if (dailyRate > 0) {
+          if (staleIds.length > 0) {
+            const { error: delErr } = await supabase.from("payroll_run_pay_elements").delete().in("id", staleIds);
+            if (delErr) {
+              handlePgError("Error deleting stale SSP elements", delErr as any);
+            }
+          }
+
+          if (inserts.length > 0) {
+            const { error: insErr } = await supabase.from("payroll_run_pay_elements").insert(inserts);
+            if (insErr) {
+              handlePgError("Error inserting SSP elements", insErr as any);
+            }
+          }
+
+          if (updates.length > 0) {
+            for (const u of updates) {
+              const { error: upErr } = await supabase.from("payroll_run_pay_elements").update(u.patch).eq("id", u.id);
+              if (upErr) {
+                handlePgError("Error updating SSP element", upErr as any);
+              }
+            }
+          }
+
+          logWarn("SSP sync complete (stored SSP elements written)", {
+            runId,
+            companyId,
+            periodStart,
+            periodEnd,
+            weeklyFlat,
+            dailyRate,
+            waitingDays,
+            computedAbsencesPayable: computedSspItems.length,
+            inserted: inserts.length,
+            updated: updates.length,
+            deleted: staleIds.length,
+          });
+        } else {
+          logWarn("SSP sync skipped writing amounts (dailyRate=0). Existing SSP elements left untouched.", {
+            runId,
+            companyId,
+            periodStart,
+            periodEnd,
+          });
+        }
+      }
+
+      if (sickBasicReductionType && basicType && runWeekdays > 0) {
+        const { data: existingReductionRows, error: existingReductionError } = await supabase
+          .from("payroll_run_pay_elements")
+          .select("id, payroll_run_employee_id, pay_element_type_id, amount, description_override, absence_id")
+          .eq("pay_element_type_id", sickBasicReductionType.id)
+          .in("payroll_run_employee_id", preIds);
+
+        if (existingReductionError) {
+          handlePgError("Error loading existing SICK_BASIC_REDUCTION elements", existingReductionError);
+        }
+
+        const existingReduction: ExistingElement[] = Array.isArray(existingReductionRows)
+          ? (existingReductionRows as any)
+          : [];
+
+        const existingByPreId: Record<string, ExistingElement[]> = {};
+        for (const row of existingReduction) {
+          const preId = String(row?.payroll_run_employee_id || "").trim();
+          if (!preId) continue;
+          if (!existingByPreId[preId]) existingByPreId[preId] = [];
+          existingByPreId[preId].push(row);
+        }
+
+        const usedExistingIds = new Set<string>();
+        const inserts: any[] = [];
+        const updates: Array<{ id: string; patch: any }> = [];
+
+        for (const item of computedReductionItems) {
+          const preId = item.payrollRunEmployeeId;
+          const list = existingByPreId[preId] ?? [];
+
+          const linked = list.find((e) => String(e?.absence_id || "").trim() === item.absenceId);
+          const orphan = list.find((e) => !e?.absence_id && !usedExistingIds.has(String(e?.id || "").trim()));
+
+          if (linked && linked.id) {
+            usedExistingIds.add(String(linked.id).trim());
+            updates.push({
+              id: String(linked.id).trim(),
+              patch: {
+                absence_id: item.absenceId,
+                description_override: item.description,
+                amount: item.amount,
+              },
+            });
+          } else if (orphan && orphan.id) {
+            usedExistingIds.add(String(orphan.id).trim());
+            updates.push({
+              id: String(orphan.id).trim(),
+              patch: {
+                absence_id: item.absenceId,
+                description_override: item.description,
+                amount: item.amount,
+              },
+            });
+          } else {
+            inserts.push({
+              payroll_run_employee_id: preId,
+              pay_element_type_id: sickBasicReductionType.id,
+              amount: item.amount,
+              taxable_for_paye_override: null,
+              nic_earnings_override: null,
+              pensionable_override: null,
+              ae_qualifying_override: null,
+              description_override: item.description,
+              absence_id: item.absenceId,
+            });
+          }
+        }
+
+        const staleIds: string[] = existingReduction
+          .map((e) => String(e?.id || "").trim())
+          .filter(Boolean)
+          .filter((rowId) => !usedExistingIds.has(rowId));
+
         if (staleIds.length > 0) {
           const { error: delErr } = await supabase.from("payroll_run_pay_elements").delete().in("id", staleIds);
           if (delErr) {
-            handlePgError("Error deleting stale SSP elements", delErr as any);
+            handlePgError("Error deleting stale SICK_BASIC_REDUCTION elements", delErr as any);
           }
         }
 
         if (inserts.length > 0) {
           const { error: insErr } = await supabase.from("payroll_run_pay_elements").insert(inserts);
           if (insErr) {
-            handlePgError("Error inserting SSP elements", insErr as any);
+            handlePgError("Error inserting SICK_BASIC_REDUCTION elements", insErr as any);
           }
         }
 
@@ -549,26 +817,29 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
           for (const u of updates) {
             const { error: upErr } = await supabase.from("payroll_run_pay_elements").update(u.patch).eq("id", u.id);
             if (upErr) {
-              handlePgError("Error updating SSP element", upErr as any);
+              handlePgError("Error updating SICK_BASIC_REDUCTION element", upErr as any);
             }
           }
         }
 
-        logWarn("SSP sync complete (stored SSP elements written)", {
+        logWarn("Sickness reduction sync complete (stored SICK_BASIC_REDUCTION elements written)", {
           runId,
           companyId,
           periodStart,
           periodEnd,
-          weeklyFlat,
-          dailyRate,
-          waitingDays,
-          computedAbsencesPayable: computedAbsenceItems.length,
+          runWeekdays,
+          computedAbsenceAdjustments: computedReductionItems.length,
           inserted: inserts.length,
           updated: updates.length,
           deleted: staleIds.length,
         });
-      } else {
-        logWarn("SSP sync skipped writing amounts (dailyRate=0). Existing SSP elements left untouched.", {
+      } else if (sickBasicReductionType && !basicType) {
+        logWarn("Sickness reduction sync skipped: BASIC pay element type was not found.", {
+          runId,
+          companyId,
+        });
+      } else if (sickBasicReductionType && runWeekdays <= 0) {
+        logWarn("Sickness reduction sync skipped: run has no working weekdays in the pay period.", {
           runId,
           companyId,
           periodStart,
