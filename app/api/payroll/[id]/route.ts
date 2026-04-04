@@ -47,6 +47,61 @@ function isIsoDateOnly(s: any): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s ?? "").trim());
 }
 
+// Returns the ISO date (YYYY-MM-DD) of the Friday that follows isoDate.
+// For a Mon–Sun weekly run period_end is always a Sunday, so the result is
+// always the Friday five days later (e.g. Sun 06-Apr → Fri 11-Apr).
+// If isoDate itself is a Friday, returns the NEXT Friday (7 days later), so
+// there is no ambiguity between "same day" and "following" interpretations.
+function getNextFriday(isoDate: string): string {
+  const d = new Date(isoDate + "T00:00:00Z");
+  const day = d.getUTCDay(); // 0=Sun … 5=Fri … 6=Sat
+  const daysUntilFriday = day === 5 ? 7 : (5 - day + 7) % 7;
+  d.setUTCDate(d.getUTCDate() + daysUntilFriday);
+  return d.toISOString().slice(0, 10);
+}
+
+// Returns the effective pay date for a run.
+// Priority:
+//   1. Stored pay_date (covers manual overrides and supplementary runs).
+//   2. For weekly runs: the Friday following period_end (Mon–Sun → next Fri).
+//   3. null (caller decides what to do).
+function deriveRunPayDate(run: any): string | null {
+  const frequency = String(
+    pickFirst(run?.frequency, run?.pay_frequency, run?.payFrequency, "") || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const isWeekly =
+    frequency === "weekly" ||
+    frequency === "week" ||
+    frequency === "1_week";
+
+  if (isWeekly) {
+    // A user-explicit override (written by set_pay_date) always wins.
+    const overridden = parseBoolStrict(
+      pickFirst(run?.pay_date_overridden, run?.payDateOverridden, null)
+    );
+    if (overridden === true) {
+      const stored = String(pickFirst(run?.pay_date, run?.payDate, "") || "").trim();
+      if (isIsoDateOnly(stored)) return stored;
+    }
+
+    // Always derive from period_end for weekly runs.
+    // The DB often stores the Friday WITHIN the week; we need the one AFTER.
+    const periodEnd = String(
+      pickFirst(run?.period_end, run?.pay_period_end, run?.end_date, "") || ""
+    ).trim();
+    if (isIsoDateOnly(periodEnd)) return getNextFriday(periodEnd);
+  }
+
+  // Non-weekly: honour the stored value as-is.
+  const stored = String(pickFirst(run?.pay_date, run?.payDate, "") || "").trim();
+  if (isIsoDateOnly(stored)) return stored;
+
+  return null;
+}
+
 function normalizeAction(v: any): string {
   return String(v ?? "").trim().toLowerCase();
 }
@@ -552,13 +607,48 @@ function formatTaxCodeForCalc(taxCode: any, basis: any, payFrequency?: any): str
   return base;
 }
 
-function computeApproxMonthlyNi(gross: number, niCategory: any) {
+type NiThresholds = {
+  PT: number;
+  UEL: number;
+  ST: number;
+  employeeMain: number;
+  employeeUpper: number;
+  employerRate: number;
+};
+
+function getNiThresholds(taxYear?: number): NiThresholds {
+  // taxYear is the calendar year in which the tax year starts.
+  // e.g. 2025 = 2025/26, 2024 = 2024/25.
+  // All figures are monthly.
+  if (!taxYear || taxYear >= 2025) {
+    // 2025/26: employer rate raised to 15%, ST dropped to £5,000/yr (£417/month),
+    // employee rate 8%/2% (unchanged from 2024/25).
+    return { PT: 1048, UEL: 4189, ST: 417, employeeMain: 0.08, employeeUpper: 0.02, employerRate: 0.15 };
+  }
+  if (taxYear === 2024) {
+    // 2024/25: employer rate 13.8%, ST £9,100/yr (£758/month), employee 8%/2%
+    // (reduced from 10% in Jan 2024; 8% from Apr 2024).
+    return { PT: 1048, UEL: 4189, ST: 758, employeeMain: 0.08, employeeUpper: 0.02, employerRate: 0.138 };
+  }
+  if (taxYear === 2023) {
+    // 2023/24: employer rate 13.8%, ST £9,100/yr (£758/month).
+    // Employee rate was 12% until Jan 2024 then 10%; approximate with 10%.
+    return { PT: 1048, UEL: 4189, ST: 758, employeeMain: 0.10, employeeUpper: 0.02, employerRate: 0.138 };
+  }
+  if (taxYear === 2022) {
+    // 2022/23: employer rate 13.8%, ST £9,100/yr (£758/month), employee 13.25%/3.25%
+    // (temporary 1.25pp health and social care levy in force Apr–Nov 2022).
+    return { PT: 1048, UEL: 4189, ST: 758, employeeMain: 0.1325, employeeUpper: 0.0325, employerRate: 0.1485 };
+  }
+  // Fallback to latest known rates.
+  return { PT: 1048, UEL: 4189, ST: 417, employeeMain: 0.08, employeeUpper: 0.02, employerRate: 0.15 };
+}
+
+function computeApproxMonthlyNi(gross: number, niCategory: any, taxYear?: number) {
   const pay = Math.max(0, Number(gross || 0));
   const cat = String(niCategory ?? "A").trim().toUpperCase();
 
-  const PT = 1048;
-  const UEL = 4189;
-  const ST = 417;
+  const { PT, UEL, ST, employeeMain, employeeUpper, employerRate } = getNiThresholds(taxYear);
 
   let employee = 0;
   let employer = 0;
@@ -567,10 +657,10 @@ function computeApproxMonthlyNi(gross: number, niCategory: any) {
     if (cat !== "C") {
       const employeeMainBand = Math.max(Math.min(pay, UEL) - PT, 0);
       const employeeUpperBand = Math.max(pay - UEL, 0);
-      employee = employeeMainBand * 0.08 + employeeUpperBand * 0.02;
+      employee = employeeMainBand * employeeMain + employeeUpperBand * employeeUpper;
     }
 
-    employer = Math.max(pay - ST, 0) * 0.15;
+    employer = Math.max(pay - ST, 0) * employerRate;
   }
 
   return {
@@ -618,8 +708,8 @@ function computeMonthlyPayeAndNiFromGross(args: {
     paye = 0;
   }
 
-  const employeeNi = computeApproxMonthlyNi(grossForEmployeeNi, args.niCategory).employee;
-  const employerNi = computeApproxMonthlyNi(grossForEmployerNi, args.niCategory).employer;
+  const employeeNi = computeApproxMonthlyNi(grossForEmployeeNi, args.niCategory, args.taxYear).employee;
+  const employerNi = computeApproxMonthlyNi(grossForEmployerNi, args.niCategory, args.taxYear).employer;
 
   return {
     paye: round2(paye),
@@ -713,6 +803,13 @@ function resultLooksGrossOnly(result: any): boolean {
   const employees = Array.isArray(result?.employees) ? result.employees : [];
 
   if (employees.length === 0) return true;
+
+  // A row that was written by a full compute is never gross-only, even when
+  // PAYE and NI are legitimately zero (e.g. weekly low-earner below thresholds).
+  const anyFullCalcMode = employees.some(
+    (row: any) => String(row?.calc_mode ?? "").toLowerCase() === "full"
+  );
+  if (anyFullCalcMode) return false;
 
   const totalTax = toNumberSafe(totals?.tax);
   const totalNi = toNumberSafe(totals?.ni);
@@ -991,7 +1088,10 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
 
   if (gross > 0 && runFrequency === "monthly" && niCategoryUsed && (employeeNi <= 0 || employerNi <= 0)) {
     try {
-      const ni = computeApproxMonthlyNi(grossForNiFallback, niCategoryUsed);
+      const periodStartSrc = String(pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || "");
+      const taxYearForNi = parseInt(periodStartSrc.slice(0, 4), 10);
+      const niTaxYear = Number.isFinite(taxYearForNi) ? taxYearForNi : undefined;
+      const ni = computeApproxMonthlyNi(grossForNiFallback, niCategoryUsed, niTaxYear);
       const cat = String(niCategoryUsed || "").trim().toUpperCase();
 
       if ((employeeNi <= 0 && ni.employee > 0) || cat === "C") {
@@ -1174,6 +1274,19 @@ function summariseEmployeeRows(employees: any[]) {
 function deriveSeededMode(run: any, attachments: any[]): boolean {
   if (!Array.isArray(attachments) || attachments.length === 0) return true;
 
+  const hasCalcMode = attachments.some((r: any) => r && typeof r === "object" && "calc_mode" in r);
+  if (hasCalcMode) {
+    const anyNotFull = attachments.some(
+      (r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) !== "full"
+    );
+    // All rows explicitly written as "full" → computation is complete.
+    // Do NOT fall through to the zero-tax heuristic; a legitimately zero-tax
+    // weekly low-earner run would be falsely flagged as seeded otherwise.
+    if (!anyNotFull) return false;
+    return true;
+  }
+
+  // No calc_mode column present yet — fall back to heuristic.
   const runTax = toNumberSafe(pickFirst(run?.total_tax, 0));
   const runNi = toNumberSafe(pickFirst(run?.total_ni, 0));
 
@@ -1186,12 +1299,6 @@ function deriveSeededMode(run: any, attachments: any[]): boolean {
     const sameNet = Math.abs(Number((net - gross).toFixed(2))) <= 0.01;
     return sameNet && tax === 0 && niEmp === 0 && niEr === 0;
   });
-
-  const hasCalcMode = attachments.some((r: any) => r && typeof r === "object" && "calc_mode" in r);
-  if (hasCalcMode) {
-    const anyNotFull = attachments.some((r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) !== "full");
-    if (anyNotFull) return true;
-  }
 
   return runTax === 0 && runNi === 0 && allGrossOnly;
 }
@@ -1259,7 +1366,7 @@ function deriveRtiLogPeriod(run: any): string {
 
   const start = String(pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || "").trim();
   const end = String(pickFirst(run?.period_end, run?.pay_period_end, run?.end_date, "") || "").trim();
-  const payDate = String(pickFirst(run?.pay_date, run?.payDate, "") || "").trim();
+  const payDate = deriveRunPayDate(run) ?? "";
 
   const freqLabel = frequency ? `${frequency.charAt(0).toUpperCase()}${frequency.slice(1)} ` : "";
 
@@ -1503,9 +1610,15 @@ async function getRunAndEmployees(supabase: any, runId: string, includeDebug: bo
   const seededMode = deriveSeededMode(run, attachments);
   const exceptions = computeExceptions(attachments, empById);
 
+  const effectivePayDate = deriveRunPayDate(run);
+
   return {
     ok: true as const,
-    run: { ...(run as any), company_id: companyId },
+    run: {
+      ...(run as any),
+      company_id: companyId,
+      ...(effectivePayDate !== null ? { pay_date: effectivePayDate } : {}),
+    },
     employees,
     totals,
     seededMode,
@@ -1677,10 +1790,12 @@ async function setGrossOnlyCalcForRun(supabase: any, runId: string, companyId: s
     const otherDeductions = toNumberSafe(pickFirst(r?.other_deductions, 0));
     const pensionEmployee = toNumberSafe(pickFirst(r?.pension_employee, 0));
     const aoe = toNumberSafe(pickFirst(r?.attachment_of_earnings, 0));
+    const studentLoan = toNumberSafe(pickFirst(r?.student_loan, 0));
+    const postgradLoan = toNumberSafe(pickFirst(r?.pg_loan, r?.postgrad_loan, 0));
 
     let net = 0;
     if (gross > 0) {
-      net = gross - otherDeductions - pensionEmployee - aoe;
+      net = gross - otherDeductions - pensionEmployee - aoe - studentLoan - postgradLoan;
       if (!Number.isFinite(net) || net < 0) net = 0;
     }
 
@@ -1712,6 +1827,7 @@ async function setGrossOnlyCalcForRun(supabase: any, runId: string, companyId: s
 async function updateRunEmployeeRow(
   supabase: any,
   runId: string,
+  companyId: string,
   rowId: string,
   gross: number,
   deductions: number,
@@ -1719,7 +1835,12 @@ async function updateRunEmployeeRow(
 ) {
   const patch = { gross_pay: gross, net_pay: net, other_deductions: deductions, manual_override: true };
 
-  const { error } = await supabase.from("payroll_run_employees").update(patch).eq("id", rowId).eq("run_id", runId);
+  const { error } = await supabase
+    .from("payroll_run_employees")
+    .update(patch)
+    .eq("id", rowId)
+    .eq("run_id", runId)
+    .eq("company_id", companyId);
 
   if (!error) return { ok: true as const };
 
@@ -1916,7 +2037,8 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
   const { data: elementRowsRaw, error: elementErr } = await supabase
     .from("payroll_run_pay_elements")
     .select("*")
-    .in("payroll_run_employee_id", preIds);
+    .in("payroll_run_employee_id", preIds)
+    .eq("company_id", companyId);
 
   if (elementErr) {
     return { ok: false as const, status: 500, error: `Failed to load pay elements: ${elementErr.message}` };
@@ -2885,30 +3007,109 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     const absenceSync = await bestEffortAbsenceSyncForRun(supabase, id, companyId, run);
 
+    // Attempt the DB-side RPC first. If no matching function exists (ok: false,
+    // status: 501) we fall through to the local TypeScript compute below.
+    // Any other RPC error (wrong schema, runtime exception, etc.) is still
+    // surfaced immediately — those need the developer to fix, not a silent
+    // client-side recompute.
     const rpc: any = await tryComputeFullViaRpc(supabase, id);
-    if (!rpc?.ok) {
-      return json(rpc?.status || 501, {
+
+    let localFallback: any = null;
+
+    if (rpc?.ok) {
+      // RPC succeeded — refresh totals from what the DB function wrote.
+      const totalsRefresh: any = await refreshRunTotalsFromAttachments(supabase, id, companyId);
+
+      const flagPost = await fetchRunStatusAndFlag(supabase, id, companyId);
+      const flagFix = await restoreAttachedAllDueEmployeesIfNeeded(
+        supabase,
+        id,
+        companyId,
+        flagPre?.attachedFlag,
+        flagPost?.attachedFlag,
+        Boolean(flagPre?.hasAttachedFlag)
+      );
+
+      if (!totalsRefresh?.ok) {
+        return json(totalsRefresh?.status || 500, {
+          ok: false,
+          debugSource: "payroll_run_route_rls_v2",
+          action: "compute_full",
+          error: totalsRefresh?.error || "Totals refresh failed after RPC compute",
+          computeVia: rpc?.via,
+          absenceSync,
+        });
+      }
+
+      const post = await getRunAndEmployees(supabase, id, false);
+      if (!post.ok) {
+        return json(post.status || 500, {
+          ok: false,
+          debugSource: "payroll_run_route_rls_v2",
+          action: "compute_full",
+          error: post.error,
+          computeVia: rpc?.via,
+        });
+      }
+
+      if (Boolean(post.seededMode) || resultLooksGrossOnly(post)) {
+        return json(409, {
+          ok: false,
+          debugSource: "payroll_run_route_rls_v2",
+          action: "compute_full",
+          error:
+            "Full compute attempted via RPC, but the run still looks gross-only/uncomputed. Ensure your DB compute function writes tax, NI, net, and calc_mode='full' back to payroll_run_employees.",
+          computeVia: rpc?.via,
+          totalsRefreshOk: Boolean(totalsRefresh?.ok),
+          absenceSync,
+          seededMode: Boolean(post.seededMode),
+          run: post.run,
+          employees: post.employees,
+          totals: post.totals,
+          exceptions: post.exceptions,
+        });
+      }
+
+      return json(200, {
+        ok: true,
+        debugSource: "payroll_run_route_rls_v2",
+        action: "compute_full",
+        computeVia: rpc?.via,
+        totalsRefreshOk: Boolean(totalsRefresh?.ok),
+        absenceSync,
+        localFallback: null,
+        attachmentsMeta: post.attachmentsMeta,
+        sideEffects: flagPre?.hasAttachedFlag
+          ? {
+              attached_all_due_employees: {
+                before: flagPre?.attachedFlag,
+                after: flagPost?.attachedFlag,
+                restored: Boolean(flagFix?.restored),
+              },
+            }
+          : undefined,
+        run: post.run,
+        employees: post.employees,
+        totals: post.totals,
+        seededMode: post.seededMode,
+        exceptions: post.exceptions,
+      });
+    }
+
+    // RPC not found (501) → fall back to local TypeScript compute.
+    // Any other RPC failure status → surface it; don't silently recompute.
+    if ((rpc?.status ?? 501) !== 501) {
+      return json(rpc?.status || 500, {
         ok: false,
         debugSource: "payroll_run_route_rls_v2",
         action: "compute_full",
         error: rpc?.error || "Full compute RPC failed",
         attempts: rpc?.attempts || [],
+        absenceSync,
       });
     }
 
-    const totalsRefresh: any = await refreshRunTotalsFromAttachments(supabase, id, companyId);
-
-    const flagPost = await fetchRunStatusAndFlag(supabase, id, companyId);
-    const flagFix = await restoreAttachedAllDueEmployeesIfNeeded(
-      supabase,
-      id,
-      companyId,
-      flagPre?.attachedFlag,
-      flagPost?.attachedFlag,
-      Boolean(flagPre?.hasAttachedFlag)
-    );
-
-    let localFallback: any = await localComputeFullFromElements(supabase, id, companyId, run);
+    localFallback = await localComputeFullFromElements(supabase, id, companyId, run);
     if (!localFallback.ok) {
       return json(localFallback.status || 500, {
         ok: false,
@@ -2916,7 +3117,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         action: "compute_full",
         error: localFallback.error || "Local full compute fallback failed",
         computeVia: rpc?.via,
-        totalsRefreshOk: Boolean(totalsRefresh?.ok),
+        totalsRefreshOk: false,
         absenceSync,
         localFallback,
       });
@@ -2934,6 +3135,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
         localFallback,
       });
     }
+
+    const flagPost = await fetchRunStatusAndFlag(supabase, id, companyId);
+    const flagFix = await restoreAttachedAllDueEmployeesIfNeeded(
+      supabase,
+      id,
+      companyId,
+      flagPre?.attachedFlag,
+      flagPost?.attachedFlag,
+      Boolean(flagPre?.hasAttachedFlag)
+    );
 
     let post = await getRunAndEmployees(supabase, id, false);
     if (!post.ok) {
@@ -2955,7 +3166,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         error:
           "Full compute attempted, but the run still looks gross-only/uncomputed. Ensure your DB compute function or local fallback writes tax, NI, net, and calc_mode='full' back to payroll_run_employees.",
         computeVia: rpc?.via,
-        totalsRefreshOk: Boolean(totalsRefresh?.ok),
+        totalsRefreshOk: Boolean(totalsRefreshAfterLocal?.ok),
         absenceSync,
         seededMode: Boolean(post.seededMode),
         localFallback,
@@ -2971,7 +3182,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       debugSource: "payroll_run_route_rls_v2",
       action: "compute_full",
       computeVia: rpc?.via,
-      totalsRefreshOk: Boolean(totalsRefresh?.ok),
+      totalsRefreshOk: Boolean(totalsRefreshAfterLocal?.ok),
       absenceSync,
       localFallback,
       attachmentsMeta: post.attachmentsMeta,
@@ -3145,7 +3356,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     const deductions = Number(toNumberSafe(it?.deductions).toFixed(2));
     const net = Number(toNumberSafe(it?.net).toFixed(2));
 
-    const r = await updateRunEmployeeRow(supabase, id, rowId, gross, deductions, net);
+    const r = await updateRunEmployeeRow(supabase, id, companyId, rowId, gross, deductions, net);
     results.push({ id: rowId, ok: r.ok, ...(r.ok ? {} : { error: (r as any).error }) });
   }
 
