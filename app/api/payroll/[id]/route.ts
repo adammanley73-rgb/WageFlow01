@@ -1,10 +1,11 @@
-﻿// C:\Projects\wageflow01\app\api\payroll\[id]\route.ts
+// C:\Projects\wageflow01\app\api\payroll\[id]\route.ts
 
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { WorkflowService } from "@/lib/services/workflow.service";
 import { calculatePay } from "@/lib/payroll/calculatePay";
 import { syncAbsencePayToRun } from "@/lib/payroll/syncAbsencePayToRun";
+import { getPayrollRunDetail } from "@/lib/payroll/getPayrollRunDetail";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -2350,7 +2351,7 @@ export async function GET(req: Request, { params }: Ctx) {
 
   const supabase = gate.supabase;
 
-  const result = await getRunAndEmployees(supabase, id, includeDebug);
+  const result = await getPayrollRunDetail(supabase, id, includeDebug);
   if (!result.ok) {
     return json(result.status || 500, {
       ok: false,
