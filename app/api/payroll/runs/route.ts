@@ -65,6 +65,11 @@ type PayScheduleRow = {
   company_id: string;
   frequency: string | null;
   cycle_anchor_pay_date?: string | null;
+  pay_timing?: string | null;
+  pay_day_of_week?: number | null;
+  pay_day_of_month?: number | null;
+  pay_date_adjustment?: string | null;
+  pay_date_offset_days?: number | null;
   is_template?: boolean | null;
   is_active?: boolean | null;
 };
@@ -135,6 +140,12 @@ function mondayOfWeekUtc(d: Date) {
   return out;
 }
 
+function normalizePayTiming(v: string | null | undefined) {
+  const raw = String(v || "arrears").trim().toLowerCase();
+  if (raw === "advance") return "advance";
+  return "arrears";
+}
+
 function periodDaysForFrequency(frequency: string) {
   const f = String(frequency || "").trim();
   if (f === "weekly") return 7;
@@ -150,6 +161,7 @@ function computeManualPayPeriodFallback(args: {
   const schedule = args.schedule;
   const payUtc = parseIsoDateOnlyToUtc(args.payDateIso);
   const frequency = String(schedule.frequency || "").trim();
+  const payTiming = normalizePayTiming(schedule.pay_timing);
 
   if (frequency === "monthly") {
     const y = payUtc.getUTCFullYear();
@@ -163,6 +175,16 @@ function computeManualPayPeriodFallback(args: {
   }
 
   if (frequency === "weekly") {
+    if (payTiming === "arrears") {
+      const payWeekStart = mondayOfWeekUtc(payUtc);
+      const end = addDaysUtc(payWeekStart, -1);
+      const start = addDaysUtc(end, -6);
+      return {
+        startIso: dateOnlyIsoUtc(start),
+        endIso: dateOnlyIsoUtc(end),
+      };
+    }
+
     const start = mondayOfWeekUtc(payUtc);
     const end = addDaysUtc(start, 6);
     return {
@@ -239,7 +261,7 @@ function getUkTaxYearBounds(taxYearStartParam?: string | null) {
   };
 }
 
-function makeRunNumberFromPayDate(
+function makeRunNumberForDate(
   frequency: string,
   payDateIso: string | null,
   taxYearStartIso: string
@@ -381,8 +403,7 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "Supplementary runs are only allowed after the parent run is completed.",
+          error: "Supplementary runs are only allowed after the parent run is completed.",
           code: "PARENT_NOT_COMPLETED",
           parent: { id: parentRunId },
           debugSource: "create_supplementary_run_rpc",
@@ -899,7 +920,7 @@ export async function GET(req: Request) {
       const f = String(row.frequency || "").trim();
       const payDateIso = row.pay_date ?? null;
 
-      const computedRunNumber = makeRunNumberFromPayDate(
+      const computedRunNumber = makeRunNumberForDate(
         f,
         payDateIso,
         taxYearStartIso
@@ -1340,7 +1361,7 @@ export async function POST(req: Request) {
     const scheduleRes = (await client
       .from("pay_schedules")
       .select(
-        "id, company_id, frequency, cycle_anchor_pay_date, is_template, is_active"
+        "id, company_id, frequency, cycle_anchor_pay_date, pay_timing, pay_day_of_week, pay_day_of_month, pay_date_adjustment, pay_date_offset_days, is_template, is_active"
       )
       .eq("id", pay_schedule_id_input)
       .eq("company_id", companyIdStr)
@@ -1404,9 +1425,11 @@ export async function POST(req: Request) {
     }
 
     const { taxYearStartIso } = getUkTaxYearBounds(null);
-    const computedRunNumber = makeRunNumberFromPayDate(
+    const runNumberReferenceDateIso =
+      derivedFrequency === "monthly" ? pay_date_input : period.endIso;
+    const computedRunNumber = makeRunNumberForDate(
       derivedFrequency,
-      pay_date_input,
+      runNumberReferenceDateIso,
       taxYearStartIso
     );
     const safeRunName =

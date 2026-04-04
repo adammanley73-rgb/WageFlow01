@@ -161,11 +161,18 @@ function mondayOfWeekUtc(d: Date) {
   return out;
 }
 
+function normalizePayTiming(v: string | null | undefined) {
+  const raw = String(v || "arrears").trim().toLowerCase();
+  if (raw === "advance") return "advance";
+  return "arrears";
+}
+
 function computePeriodForSelectedPayDate(
   schedule: PayScheduleRow,
   payDateIso: string
 ): { startIso: string; endIso: string; warning?: string } {
   const payUtc = parseIsoDateOnlyToUtc(payDateIso);
+  const payTiming = normalizePayTiming(schedule.pay_timing);
 
   if (schedule.frequency === "monthly") {
     const y = payUtc.getUTCFullYear();
@@ -179,6 +186,16 @@ function computePeriodForSelectedPayDate(
   }
 
   if (schedule.frequency === "weekly") {
+    if (payTiming === "arrears") {
+      const payWeekStart = mondayOfWeekUtc(payUtc);
+      const end = addDaysUtc(payWeekStart, -1);
+      const start = addDaysUtc(end, -6);
+      return {
+        startIso: dateOnlyIsoUtc(start),
+        endIso: dateOnlyIsoUtc(end),
+      };
+    }
+
     const start = mondayOfWeekUtc(payUtc);
     const end = addDaysUtc(start, 6);
     return {
@@ -589,8 +606,10 @@ export default function PayrollNewPage() {
       <div className="flex flex-col gap-2">
         <h2 className="text-xl font-semibold text-neutral-900">Payroll Run Wizard</h2>
         <p className="text-sm text-neutral-700">
-          Select any pay date you want. WageFlow will keep that pay date and calculate the pay
-          period around it from the selected schedule frequency.
+          Select the pay date you want. WageFlow will keep that pay date and calculate the pay
+          period from the selected schedule rules. Weekly arrears schedules use the previous
+          Monday to Sunday period, so a Friday pay date creates the run for the week that ended
+          on the previous Sunday.
         </p>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -661,6 +680,14 @@ export default function PayrollNewPage() {
         {warn ? (
           <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             {warn}
+          </div>
+        ) : null}
+
+        {selectedSchedule?.frequency === "weekly" &&
+        normalizePayTiming(selectedSchedule?.pay_timing) === "arrears" ? (
+          <div className="mt-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            Weekly arrears runs use the previous Monday to Sunday period for the selected pay
+            date.
           </div>
         ) : null}
 
