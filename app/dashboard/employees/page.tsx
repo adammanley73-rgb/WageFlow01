@@ -159,7 +159,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
 
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-neutral-900">Employees</div>
                 <div className="text-xs text-neutral-700">
@@ -169,7 +169,14 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                 </div>
               </div>
 
-              <div className="flex items-center">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href="/dashboard/employees/import"
+                  className="inline-flex items-center justify-center rounded-full border border-[#0f3c85] bg-[#0f3c85] px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3c85] focus-visible:ring-offset-2"
+                >
+                  Import CSV
+                </Link>
+
                 <Link
                   href={toggleShowLeaversHref}
                   className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
