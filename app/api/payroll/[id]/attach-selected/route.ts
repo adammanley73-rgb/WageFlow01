@@ -1,10 +1,10 @@
-﻿// C:\Projects\wageflow01\app\api\payroll\[id]\attach-selected\route.ts
-
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+const WEEKS_PER_YEAR = 52.14285714;
 
 type RouteContext = {
   params: Promise<{
@@ -39,13 +39,47 @@ type PayrollRunRow = {
 type EmployeeRow = {
   id?: unknown;
   employee_id?: unknown;
-
+  employee_number?: unknown;
   status?: unknown;
+  tax_code?: unknown;
+  taxCode?: unknown;
+  tax_code_basis?: unknown;
+  tax_basis?: unknown;
+  taxBasis?: unknown;
+  ni_category?: unknown;
+  niCategory?: unknown;
+  student_loan?: unknown;
+  loan_plan?: unknown;
+  studentLoan?: unknown;
+  student_loan_plan?: unknown;
+  postgraduate_loan?: unknown;
+  has_pgl?: unknown;
+  postgrad_loan?: unknown;
+  dob_verified?: unknown;
+  date_of_birth?: unknown;
+  dateOfBirth?: unknown;
+  [key: string]: unknown;
+};
 
-  pay_frequency?: unknown;
-  frequency?: unknown;
-  payFrequency?: unknown;
-  payFrequencyUsed?: unknown;
+type ContractEmployeeRow = {
+  contract_id?: unknown;
+  contract_number?: unknown;
+  contract_status?: unknown;
+  contract_start_date?: unknown;
+  contract_leave_date?: unknown;
+
+  contract_pay_frequency?: unknown;
+  contract_pay_basis?: unknown;
+  contract_annual_salary?: unknown;
+  contract_hourly_rate?: unknown;
+  contract_hours_per_week?: unknown;
+  contract_pay_after_leaving?: unknown;
+  contract_job_title?: unknown;
+
+  employee_uuid?: unknown;
+  employee_id?: unknown;
+  employee_number?: unknown;
+  employee_status?: unknown;
 
   tax_code?: unknown;
   taxCode?: unknown;
@@ -65,14 +99,6 @@ type EmployeeRow = {
   has_pgl?: unknown;
   postgrad_loan?: unknown;
 
-  pay_basis?: unknown;
-  pay_basis_used?: unknown;
-  pay_type?: unknown;
-  payType?: unknown;
-
-  hours_per_week?: unknown;
-  hoursPerWeek?: unknown;
-
   dob_verified?: unknown;
   date_of_birth?: unknown;
   dateOfBirth?: unknown;
@@ -80,9 +106,14 @@ type EmployeeRow = {
   [key: string]: unknown;
 };
 
-type ExistingAttachedRow = { employee_id: string | null };
+type ExistingAttachedRow = {
+  contract_id: string | null;
+};
 
-type RejectedRow = { employee_id: string; reasons: string[] };
+type RejectedRow = {
+  selected_id: string;
+  reasons: string[];
+};
 
 type SettingsPendingOrApprovedRow = {
   id: string;
@@ -108,9 +139,17 @@ type SettingsAppliedRow = {
 };
 
 type AttachSelectedBody = {
+  contract_ids?: unknown;
+  contractIds?: unknown;
   employee_ids?: unknown;
   employeeIds?: unknown;
   employee_ids_to_attach?: unknown;
+};
+
+type AttachedSeedRow = {
+  id: string;
+  employee_id: string;
+  contract_id: string;
 };
 
 function statusFromErr(err: unknown, fallback = 500): number {
@@ -257,19 +296,200 @@ function computeAgeYears(dob: unknown): number | null {
   return age;
 }
 
-function defaultNiCategory(emp: EmployeeRow): string {
-  const dobVerified = Boolean(emp.dob_verified ?? false);
+function defaultNiCategory(row: ContractEmployeeRow): string {
+  const dobVerified = Boolean(row.dob_verified ?? false);
   if (!dobVerified) return "A";
 
-  const age = computeAgeYears(emp.date_of_birth ?? emp.dateOfBirth ?? null);
+  const age = computeAgeYears(row.date_of_birth ?? row.dateOfBirth ?? null);
   if (age == null) return "A";
 
   if (age >= 66) return "C";
+
   return "A";
 }
 
 function uniqStrings(xs: string[]): string[] {
   return Array.from(new Set(xs));
+}
+
+function round2(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+function getNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isSupplementaryRun(runRow: PayrollRunRow): boolean {
+  const runKindRaw = String(pickFirst(runRow.run_kind, runRow.kind, "") ?? "").trim().toLowerCase();
+  const parentRunId = String(pickFirst(runRow.parent_run_id, runRow.parentRunId, "") ?? "").trim();
+  return runKindRaw === "supplementary" || Boolean(parentRunId);
+}
+
+function computeInitialBasicAmount(row: ContractEmployeeRow, frequency: string): number {
+  const payBasis = String(pickFirst(row.contract_pay_basis, "") ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (payBasis !== "salary" && payBasis !== "salaried") return 0;
+
+  const annualSalary = getNumber(row.contract_annual_salary);
+  const hourlyRate = getNumber(row.contract_hourly_rate);
+  const hoursPerWeek = getNumber(row.contract_hours_per_week);
+
+  let weeklyAmount = 0;
+
+  if (annualSalary !== null && annualSalary > 0) {
+    weeklyAmount = annualSalary / WEEKS_PER_YEAR;
+  } else if (hourlyRate !== null && hourlyRate > 0 && hoursPerWeek !== null && hoursPerWeek > 0) {
+    weeklyAmount = hourlyRate * hoursPerWeek;
+  } else {
+    return 0;
+  }
+
+  const freq = normalizeFrequency(frequency);
+
+  if (freq === "weekly") return round2(weeklyAmount);
+  if (freq === "fortnightly") return round2(weeklyAmount * 2);
+  if (freq === "four_weekly") return round2(weeklyAmount * 4);
+  if (freq === "monthly") {
+    if (annualSalary !== null && annualSalary > 0) return round2(annualSalary / 12);
+    return round2((weeklyAmount * WEEKS_PER_YEAR) / 12);
+  }
+
+  return 0;
+}
+
+async function loadBasicPayElementTypeId(supabase: any, companyId: string): Promise<string | null> {
+  const companyRes = await supabase
+    .from("pay_element_types")
+    .select("id")
+    .eq("code", "BASIC")
+    .eq("company_id", companyId)
+    .limit(1)
+    .maybeSingle();
+
+  if (!companyRes.error && companyRes.data?.id) {
+    return String(companyRes.data.id);
+  }
+
+  const globalRes = await supabase
+    .from("pay_element_types")
+    .select("id")
+    .eq("code", "BASIC")
+    .is("company_id", null)
+    .limit(1)
+    .maybeSingle();
+
+  if (!globalRes.error && globalRes.data?.id) {
+    return String(globalRes.data.id);
+  }
+
+  return null;
+}
+
+async function loadInsertedRunEmployeeRows(
+  supabase: any,
+  runId: string,
+  contractIds: string[]
+): Promise<{ ok: true; rows: AttachedSeedRow[] } | { ok: false; error: unknown }> {
+  const { data, error } = await supabase
+    .from("payroll_run_employees")
+    .select("id, employee_id, contract_id")
+    .eq("run_id", runId)
+    .in("contract_id", contractIds);
+
+  if (error) return { ok: false, error };
+
+  const rows = (Array.isArray(data) ? data : [])
+    .map((r: any) => ({
+      id: String(r?.id ?? "").trim(),
+      employee_id: String(r?.employee_id ?? "").trim(),
+      contract_id: String(r?.contract_id ?? "").trim(),
+    }))
+    .filter((r) => r.id && r.employee_id && r.contract_id);
+
+  return { ok: true, rows };
+}
+
+async function seedInitialBasicPayElements(args: {
+  supabase: any;
+  runRow: PayrollRunRow;
+  companyId: string;
+  runFrequency: string;
+  insertedRows: AttachedSeedRow[];
+  contractById: Map<string, ContractEmployeeRow>;
+}): Promise<
+  | { ok: true; seededCount: number; skippedCount: number }
+  | { ok: false; error: string; details?: string }
+> {
+  const { supabase, runRow, companyId, runFrequency, insertedRows, contractById } = args;
+
+  if (isSupplementaryRun(runRow)) {
+    return { ok: true, seededCount: 0, skippedCount: insertedRows.length };
+  }
+
+  if (!Array.isArray(insertedRows) || insertedRows.length === 0) {
+    return { ok: true, seededCount: 0, skippedCount: 0 };
+  }
+
+  const basicTypeId = await loadBasicPayElementTypeId(supabase, companyId);
+  if (!basicTypeId) {
+    return {
+      ok: false,
+      error: "BASIC_TYPE_NOT_FOUND",
+      details: "No BASIC pay element type was found for this company or globally.",
+    };
+  }
+
+  const inserts: Record<string, unknown>[] = [];
+  let skippedCount = 0;
+
+  for (const pre of insertedRows) {
+    const row = contractById.get(pre.contract_id) ?? null;
+    if (!row) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const contractFrequency = normalizeFrequency(row.contract_pay_frequency) || runFrequency;
+    const amount = computeInitialBasicAmount(row, contractFrequency);
+
+    if (!(amount > 0)) {
+      skippedCount += 1;
+      continue;
+    }
+
+    inserts.push({
+      payroll_run_employee_id: pre.id,
+      pay_element_type_id: basicTypeId,
+      amount: round2(amount),
+      taxable_for_paye_override: null,
+      nic_earnings_override: null,
+      pensionable_override: null,
+      ae_qualifying_override: null,
+      description_override: "Basic pay (created automatically on attach)",
+    });
+  }
+
+  if (inserts.length === 0) {
+    return { ok: true, seededCount: 0, skippedCount };
+  }
+
+  const { error } = await supabase.from("payroll_run_pay_elements").insert(inserts);
+
+  if (error) {
+    return {
+      ok: false,
+      error: "BASIC_SEED_FAILED",
+      details: (error as any)?.message ?? String(error),
+    };
+  }
+
+  return { ok: true, seededCount: inserts.length, skippedCount };
 }
 
 async function loadEmployeesByIds(
@@ -282,13 +502,101 @@ async function loadEmployeesByIds(
   for (let i = 0; i < ids.length; i += 200) {
     const chunk = ids.slice(i, i + 200);
 
-    const { data, error } = await supabase.from("employees").select("*").eq("company_id", companyId).in("id", chunk);
+    const { data, error } = await supabase
+      .from("employees")
+      .select("*")
+      .eq("company_id", companyId)
+      .in("id", chunk);
 
     if (error) return { data: null, error };
 
     const rows = (Array.isArray(data) ? data : []) as unknown as EmployeeRow[];
     if (rows.length) results.push(...rows);
   }
+
+  return { data: results, error: null };
+}
+
+async function loadContractsByIds(
+  supabase: any,
+  companyId: string,
+  ids: string[]
+): Promise<{ data: ContractEmployeeRow[] | null; error: unknown | null }> {
+  const contracts: any[] = [];
+
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200);
+
+    const { data, error } = await supabase
+      .from("employee_contracts")
+      .select("*")
+      .eq("company_id", companyId)
+      .in("id", chunk);
+
+    if (error) return { data: null, error };
+
+    if (Array.isArray(data) && data.length) contracts.push(...data);
+  }
+
+  const employeeIds = Array.from(
+    new Set(
+      contracts
+        .map((row: any) => String(row?.employee_id ?? "").trim())
+        .filter((id) => isUuid(id))
+    )
+  );
+
+  const employeesRes = await loadEmployeesByIds(supabase, companyId, employeeIds);
+  if (employeesRes.error) return { data: null, error: employeesRes.error };
+
+  const employeeById = new Map<string, EmployeeRow>();
+  for (const emp of Array.isArray(employeesRes.data) ? employeesRes.data : []) {
+    const employeeUuid = isUuid(emp?.id) ? String(emp.id).trim() : "";
+    if (employeeUuid) employeeById.set(employeeUuid, emp);
+  }
+
+  const results: ContractEmployeeRow[] = contracts.map((row: any) => {
+    const employeeUuid = String(row?.employee_id ?? "").trim();
+    const employee = employeeById.get(employeeUuid) ?? {};
+
+    return {
+      contract_id: row?.id,
+      contract_number: row?.contract_number,
+      contract_status: row?.status,
+      contract_start_date: row?.start_date,
+      contract_leave_date: row?.leave_date,
+      contract_pay_frequency: row?.pay_frequency,
+      contract_pay_basis: row?.pay_basis,
+      contract_annual_salary: row?.annual_salary,
+      contract_hourly_rate: row?.hourly_rate,
+      contract_hours_per_week: row?.hours_per_week,
+      contract_pay_after_leaving: row?.pay_after_leaving,
+      contract_job_title: row?.job_title,
+
+      employee_uuid: employee?.id ?? row?.employee_id,
+      employee_id: employee?.employee_id,
+      employee_number: employee?.employee_number,
+      employee_status: employee?.status,
+
+      tax_code: employee?.tax_code,
+      taxCode: employee?.tax_code,
+      tax_code_basis: employee?.tax_code_basis,
+      tax_basis: employee?.tax_basis,
+      taxBasis: employee?.tax_basis,
+      ni_category: employee?.ni_category,
+      niCategory: employee?.ni_category,
+      student_loan: employee?.student_loan,
+      loan_plan: employee?.loan_plan,
+      studentLoan: employee?.student_loan,
+      student_loan_plan: employee?.student_loan_plan,
+      postgraduate_loan: employee?.postgraduate_loan,
+      has_pgl: employee?.has_pgl,
+      postgrad_loan: employee?.postgrad_loan,
+      dob_verified: employee?.dob_verified,
+      date_of_birth: employee?.date_of_birth,
+      dateOfBirth: employee?.date_of_birth,
+    };
+  });
 
   return { data: results, error: null };
 }
@@ -313,16 +621,22 @@ export async function POST(req: Request, { params }: RouteContext) {
 
   const body = (await req.json().catch(() => null)) as AttachSelectedBody | null;
 
-  const list1 = Array.isArray(body?.employee_ids) ? (body?.employee_ids as unknown[]) : null;
-  const list2 = Array.isArray(body?.employeeIds) ? (body?.employeeIds as unknown[]) : null;
-  const list3 = Array.isArray(body?.employee_ids_to_attach) ? (body?.employee_ids_to_attach as unknown[]) : null;
+  const list1 = Array.isArray(body?.contract_ids) ? (body?.contract_ids as unknown[]) : null;
+  const list2 = Array.isArray(body?.contractIds) ? (body?.contractIds as unknown[]) : null;
+  const list3 = Array.isArray(body?.employee_ids) ? (body?.employee_ids as unknown[]) : null;
+  const list4 = Array.isArray(body?.employeeIds) ? (body?.employeeIds as unknown[]) : null;
+  const list5 = Array.isArray(body?.employee_ids_to_attach) ? (body?.employee_ids_to_attach as unknown[]) : null;
 
-  const rawList: unknown[] = list1 ?? list2 ?? list3 ?? [];
+  const rawList: unknown[] = list1 ?? list2 ?? list3 ?? list4 ?? list5 ?? [];
   const rawIds: string[] = rawList.map((x) => String(x ?? "").trim()).filter(Boolean);
 
   if (rawIds.length === 0) {
     return NextResponse.json(
-      { ok: false, error: "NO_EMPLOYEES_SELECTED", message: "Provide employee_ids as an array of employee UUIDs." },
+      {
+        ok: false,
+        error: "NO_CONTRACTS_SELECTED",
+        message: "Provide contract_ids as an array of contract UUIDs.",
+      },
       { status: 400 }
     );
   }
@@ -332,36 +646,62 @@ export async function POST(req: Request, { params }: RouteContext) {
 
   if (selectedIds.length === 0) {
     return NextResponse.json(
-      { ok: false, error: "NO_VALID_EMPLOYEE_IDS", message: "No valid UUID employee ids were provided.", invalidIds },
+      {
+        ok: false,
+        error: "NO_VALID_CONTRACT_IDS",
+        message: "No valid UUID contract ids were provided.",
+        invalidIds,
+      },
       { status: 400 }
     );
   }
 
-  const { data: runRowRaw, error: runError } = await supabase.from("payroll_runs").select("*").eq("id", runId).maybeSingle();
+  const { data: runRowRaw, error: runError } = await supabase
+    .from("payroll_runs")
+    .select("*")
+    .eq("id", runId)
+    .maybeSingle();
 
   if (runError) {
     return NextResponse.json(
-      { ok: false, error: "RUN_LOAD_FAILED", message: "Failed to load payroll run.", details: (runError as any)?.message ?? null },
+      {
+        ok: false,
+        error: "RUN_LOAD_FAILED",
+        message: "Failed to load payroll run.",
+        details: (runError as any)?.message ?? null,
+      },
       { status: statusFromErr(runError) }
     );
   }
 
   const runRow = (runRowRaw as PayrollRunRow | null) ?? null;
   if (!runRow) {
-    return NextResponse.json({ ok: false, error: "RUN_NOT_FOUND", message: "Payroll run not found." }, { status: 404 });
+    return NextResponse.json(
+      { ok: false, error: "RUN_NOT_FOUND", message: "Payroll run not found." },
+      { status: 404 }
+    );
   }
 
-  const companyIdStr = String(runRow.company_id ?? runRow.companyId ?? "").trim();
+  const companyId = String(runRow.company_id ?? runRow.companyId ?? "").trim();
   const runFrequency = normalizeFrequency(runRow.frequency ?? runRow.pay_frequency ?? runRow.payFrequency ?? null);
 
-  const runPeriodStart = pickFirst(runRow.period_start, runRow.pay_period_start, runRow.start_date, runRow.periodStart);
-  const asOfDate = toIsoDateOnly(runPeriodStart) || toIsoDateOnly(runRow.created_at) || toIsoDateOnly(new Date());
+  const runPeriodStartRaw = pickFirst(runRow.period_start, runRow.pay_period_start, runRow.start_date, runRow.periodStart);
+  const runPeriodEndRaw = pickFirst(
+    (runRow as any).period_end,
+    (runRow as any).pay_period_end,
+    (runRow as any).end_date,
+    (runRow as any).periodEnd
+  );
+  const runPayDateRaw = pickFirst((runRow as any).pay_date, (runRow as any).payDate);
 
-  const runKindRaw = String(pickFirst(runRow.run_kind, runRow.kind, "") ?? "").trim().toLowerCase();
-  const parentRunId = String(pickFirst(runRow.parent_run_id, runRow.parentRunId, "") ?? "").trim();
-  const isSupplementary = runKindRaw === "supplementary" || Boolean(parentRunId);
+  const runPeriodStartIso = toIsoDateOnly(runPeriodStartRaw) || "";
+  const runPeriodEndIso = toIsoDateOnly(runPeriodEndRaw) || "";
+  const runPayDateIso = toIsoDateOnly(runPayDateRaw) || "";
 
-  if (!companyIdStr || !isUuid(companyIdStr)) {
+  const eligibilityStartDate = runPeriodStartIso || runPayDateIso || toIsoDateOnly(runRow.created_at) || toIsoDateOnly(new Date());
+  const asOfDate = runPeriodEndIso || runPayDateIso || eligibilityStartDate;
+
+  if (!companyId || !isUuid(companyId)) {
     return NextResponse.json(
       { ok: false, error: "RUN_MISSING_COMPANY", message: "Payroll run is missing a company_id." },
       { status: 500 }
@@ -370,63 +710,88 @@ export async function POST(req: Request, { params }: RouteContext) {
 
   if (!runFrequency) {
     return NextResponse.json(
-      { ok: false, error: "RUN_MISSING_FREQUENCY", message: "Payroll run is missing a frequency. Cannot validate selected employees." },
+      {
+        ok: false,
+        error: "RUN_MISSING_FREQUENCY",
+        message: "Payroll run is missing a frequency. Cannot validate selected contracts.",
+      },
       { status: 500 }
     );
   }
 
-  const employeesRes = await loadEmployeesByIds(supabase, companyIdStr, selectedIds);
+  const contractsRes = await loadContractsByIds(supabase, companyId, selectedIds);
 
-  if (employeesRes.error) {
+  if (contractsRes.error) {
     return NextResponse.json(
       {
         ok: false,
-        error: "EMPLOYEES_LOAD_FAILED",
-        message: "Failed to load selected employees for this company.",
-        details: (employeesRes.error as any)?.message ?? String(employeesRes.error),
+        error: "CONTRACTS_LOAD_FAILED",
+        message: "Failed to load selected employee contracts for this company.",
+        details: (contractsRes.error as any)?.message ?? String(contractsRes.error),
       },
-      { status: statusFromErr(employeesRes.error) }
+      { status: statusFromErr(contractsRes.error) }
     );
   }
 
-  const employeeRows = employeesRes.data ?? [];
-  const foundIds = new Set(employeeRows.map((e) => String(e?.id ?? "").trim()).filter(Boolean));
+  const contractRows = contractsRes.data ?? [];
+  const contractById = new Map<string, ContractEmployeeRow>();
+  for (const row of contractRows) {
+    const contractId = isUuid(row.contract_id) ? String(row.contract_id).trim() : "";
+    if (contractId) contractById.set(contractId, row);
+  }
+
+  const foundIds = new Set(Array.from(contractById.keys()));
   const missingIds = selectedIds.filter((id) => !foundIds.has(id));
 
-  type EligibleEmployee = { emp: EmployeeRow; employeeUuid: string; employeeKey: string };
+  type EligibleContract = {
+    row: ContractEmployeeRow;
+    contractUuid: string;
+    employeeUuid: string;
+    employeeKey: string;
+  };
 
   const rejected: RejectedRow[] = [];
-  const eligibleEmployees: EligibleEmployee[] = employeeRows
-    .map((emp) => {
-      const employeeUuid = isUuid(emp?.id) ? String(emp.id).trim() : "";
-      const employeeKey = String(emp?.employee_id ?? "").trim() || employeeUuid || "";
+  const eligibleContracts: EligibleContract[] = contractRows
+    .map((row) => {
+      const contractUuid = isUuid(row.contract_id) ? String(row.contract_id).trim() : "";
+      const employeeUuid = isUuid(row.employee_uuid) ? String(row.employee_uuid).trim() : "";
+      const employeeKey =
+        String(row.employee_id ?? "").trim() ||
+        String(row.employee_number ?? "").trim() ||
+        employeeUuid;
 
-      const status = String(emp?.status ?? "").trim().toLowerCase();
-      const isActive = !status || status === "active";
+      const contractStatus = String(row.contract_status ?? "").trim().toLowerCase();
+      const isActiveContract = !contractStatus || contractStatus === "active";
 
-      const empFreq = normalizeFrequency(pickFirst(emp?.pay_frequency, emp?.frequency, emp?.payFrequency, emp?.payFrequencyUsed));
+      const contractFreq = normalizeFrequency(row.contract_pay_frequency);
+      const contractStart = toIsoDateOnly(row.contract_start_date);
+      const contractLeave = toIsoDateOnly(row.contract_leave_date);
+      const payAfterLeaving = Boolean(row.contract_pay_after_leaving ?? false);
 
       const reasons: string[] = [];
+      if (!contractUuid) reasons.push("missing_or_invalid_contract_uuid");
       if (!employeeUuid) reasons.push("missing_or_invalid_employee_uuid");
       if (!employeeKey) reasons.push("missing_employee_key");
-      if (!isActive) reasons.push("not_active");
-      if (empFreq !== runFrequency) reasons.push("frequency_mismatch");
+      if (!isActiveContract) reasons.push("contract_not_active");
+      if (contractFreq !== runFrequency) reasons.push("frequency_mismatch");
+      if (contractStart && contractStart > asOfDate) reasons.push("contract_not_started");
+      if (contractLeave && contractLeave < eligibilityStartDate && !payAfterLeaving) reasons.push("contract_already_left");
 
       if (reasons.length > 0) {
-        rejected.push({ employee_id: employeeUuid || String(emp?.id ?? ""), reasons });
+        rejected.push({ selected_id: contractUuid || String(row.contract_id ?? ""), reasons });
         return null;
       }
 
-      return { emp, employeeUuid, employeeKey };
+      return { row, contractUuid, employeeUuid, employeeKey };
     })
-    .filter((x): x is EligibleEmployee => Boolean(x));
+    .filter((x): x is EligibleContract => Boolean(x));
 
-  if (eligibleEmployees.length === 0) {
+  if (eligibleContracts.length === 0) {
     return NextResponse.json(
       {
         ok: false,
-        error: "NO_ELIGIBLE_SELECTED_EMPLOYEES",
-        message: "None of the selected employees are eligible for this run.",
+        error: "NO_ELIGIBLE_SELECTED_CONTRACTS",
+        message: "None of the selected contracts are eligible for this run.",
         runFrequency,
         missingIds,
         invalidIds,
@@ -436,20 +801,20 @@ export async function POST(req: Request, { params }: RouteContext) {
     );
   }
 
-  const employeeUuids = eligibleEmployees.map((x) => String(x.employeeUuid));
+  const contractIds = eligibleContracts.map((x) => x.contractUuid);
 
   const { data: existingRowsRaw, error: existingError } = await supabase
     .from("payroll_run_employees")
-    .select("employee_id")
+    .select("contract_id")
     .eq("run_id", runId)
-    .in("employee_id", employeeUuids);
+    .in("contract_id", contractIds);
 
   if (existingError) {
     return NextResponse.json(
       {
         ok: false,
         error: "EXISTING_ROWS_LOAD_FAILED",
-        message: "Failed to check existing employees already attached to this run.",
+        message: "Failed to check existing contracts already attached to this run.",
         details: (existingError as any)?.message ?? String(existingError),
       },
       { status: statusFromErr(existingError) }
@@ -457,20 +822,20 @@ export async function POST(req: Request, { params }: RouteContext) {
   }
 
   const existingRows = (Array.isArray(existingRowsRaw) ? existingRowsRaw : []) as unknown as ExistingAttachedRow[];
-  const existingIds = new Set(existingRows.map((row) => String(row.employee_id ?? "").trim()).filter(Boolean));
-  const toAttach = eligibleEmployees.filter((x) => !existingIds.has(String(x.employeeUuid)));
+  const existingIds = new Set(existingRows.map((row) => String(row.contract_id ?? "").trim()).filter(Boolean));
+  const toAttach = eligibleContracts.filter((x) => !existingIds.has(x.contractUuid));
 
   if (toAttach.length === 0) {
     return NextResponse.json(
       {
         ok: true,
         error: null,
-        message: "All selected eligible employees are already attached to this payroll run.",
+        message: "All selected eligible contracts are already attached to this payroll run.",
         attachedCount: 0,
         totalSelected: selectedIds.length,
-        eligibleSelected: eligibleEmployees.length,
-        missingIds,
+        eligibleSelected: eligibleContracts.length,
         invalidIds,
+        missingIds,
         rejected,
       },
       { status: 200 }
@@ -490,7 +855,7 @@ export async function POST(req: Request, { params }: RouteContext) {
       const { data, error } = await supabase
         .from("employee_payroll_settings_history")
         .select("id, employee_key, status, source, effective_from")
-        .eq("company_id", companyIdStr)
+        .eq("company_id", companyId)
         .in("employee_key", chunk)
         .in("status", ["pending", "approved"])
         .lte("effective_from", asOfDate)
@@ -538,7 +903,9 @@ export async function POST(req: Request, { params }: RouteContext) {
     );
   }
 
-  async function loadAppliedSettings(keys: string[]): Promise<{ data: SettingsAppliedRow[] | null; error: unknown | null }> {
+  async function loadAppliedSettings(
+    keys: string[]
+  ): Promise<{ data: SettingsAppliedRow[] | null; error: unknown | null }> {
     const results: SettingsAppliedRow[] = [];
 
     for (let i = 0; i < keys.length; i += 200) {
@@ -562,7 +929,7 @@ export async function POST(req: Request, { params }: RouteContext) {
             "created_at",
           ].join(",")
         )
-        .eq("company_id", companyIdStr)
+        .eq("company_id", companyId)
         .eq("status", "applied")
         .in("employee_key", chunk)
         .lte("effective_from", asOfDate)
@@ -603,28 +970,27 @@ export async function POST(req: Request, { params }: RouteContext) {
 
   const nowIso = new Date().toISOString();
 
-  const rowsToInsert: Record<string, unknown>[] = toAttach.map(({ emp, employeeUuid, employeeKey }) => {
+  const rowsToInsert: Record<string, unknown>[] = toAttach.map(({ row, contractUuid, employeeUuid, employeeKey }) => {
     const applied = appliedByKey.get(employeeKey) ?? null;
 
-    const empTaxCode = pickFirst(emp?.tax_code, emp?.taxCode);
-    const empTaxCodeBasis = pickFirst(emp?.tax_code_basis, emp?.tax_basis, emp?.taxBasis);
-    const empNiCat = pickFirst(emp?.ni_category, emp?.niCategory);
+    const empTaxCode = pickFirst(row.tax_code, row.taxCode);
+    const empTaxCodeBasis = pickFirst(row.tax_code_basis, row.tax_basis, row.taxBasis);
+    const empNiCat = pickFirst(row.ni_category, row.niCategory);
 
-    const empLoan = pickFirst(emp?.student_loan, emp?.loan_plan, emp?.studentLoan, emp?.student_loan_plan);
-    const empPg = emp?.postgraduate_loan ?? emp?.has_pgl ?? emp?.postgrad_loan ?? null;
+    const empLoan = pickFirst(row.student_loan, row.loan_plan, row.studentLoan, row.student_loan_plan);
+    const empPg = row.postgraduate_loan ?? row.has_pgl ?? row.postgrad_loan ?? null;
 
     const taxCodeUsed = String(applied?.tax_code ?? empTaxCode ?? "1257L").trim().toUpperCase() || "1257L";
     const taxCodeBasisUsed = normalizeTaxCodeBasis(applied?.tax_code_basis ?? applied?.tax_basis ?? empTaxCodeBasis);
     const niCategoryUsed =
-      String(applied?.ni_category ?? empNiCat ?? defaultNiCategory(emp)).trim().toUpperCase() || defaultNiCategory(emp);
+      String(applied?.ni_category ?? empNiCat ?? defaultNiCategory(row)).trim().toUpperCase() || defaultNiCategory(row);
 
     const studentLoanUsed = normalizeLoanPlan(applied?.student_loan_plan ?? empLoan ?? "none");
     const pgLoanUsed = Boolean(applied?.postgrad_loan ?? empPg ?? false);
 
-    const payFrequencyUsed = normalizeFrequency(pickFirst(emp?.pay_frequency, emp?.frequency)) || runFrequency;
-    const payBasisUsed = pickFirst(emp?.pay_basis, emp?.pay_basis_used, emp?.pay_type, emp?.payType);
-
-    const hoursUsedRaw = pickFirst(emp?.hours_per_week, emp?.hoursPerWeek);
+    const payFrequencyUsed = normalizeFrequency(row.contract_pay_frequency) || runFrequency;
+    const payBasisUsed = pickFirst(row.contract_pay_basis);
+    const hoursUsedRaw = pickFirst(row.contract_hours_per_week);
     const hoursUsed =
       hoursUsedRaw == null || hoursUsedRaw === ""
         ? null
@@ -633,11 +999,13 @@ export async function POST(req: Request, { params }: RouteContext) {
           : null;
 
     const settingsHistoryIdUsed = applied?.id ?? null;
+    const payAfterLeaving = Boolean(row.contract_pay_after_leaving ?? false);
 
     return {
       run_id: runRow.id,
       employee_id: employeeUuid,
-      company_id: companyIdStr,
+      contract_id: contractUuid,
+      company_id: companyId,
 
       tax_code_used: taxCodeUsed,
       tax_code_basis_used: taxCodeBasisUsed,
@@ -672,7 +1040,7 @@ export async function POST(req: Request, { params }: RouteContext) {
 
       calc_mode: "uncomputed",
 
-      pay_after_leaving: false,
+      pay_after_leaving: payAfterLeaving,
       allow_negative_net: false,
       negative_net_reason: null,
       included_in_rti: false,
@@ -685,6 +1053,8 @@ export async function POST(req: Request, { params }: RouteContext) {
         tax_code_basis_used: taxCodeBasisUsed,
         employee_key: employeeKey,
         attach_mode: "selected",
+        contract_id: contractUuid,
+        contract_number: pickFirst(row.contract_number),
       },
 
       created_at: nowIso,
@@ -698,8 +1068,8 @@ export async function POST(req: Request, { params }: RouteContext) {
     return NextResponse.json(
       {
         ok: false,
-        error: "ATTACH_SELECTED_FAILED",
-        message: "Failed to attach selected employees to this payroll run.",
+        error: "ATTACH_SELECTED_CONTRACTS_FAILED",
+        message: "Failed to attach selected contracts to this payroll run.",
         details: (insertRes.error as any)?.message ?? String(insertRes.error),
         strippedColumns: insertRes.stripped,
       },
@@ -707,17 +1077,68 @@ export async function POST(req: Request, { params }: RouteContext) {
     );
   }
 
-  if (isSupplementary) {
-    const upd = await supabase.from("payroll_runs").update({ attached_all_due_employees: false }).eq("id", runId);
+  const insertedLookupRes = await loadInsertedRunEmployeeRows(
+    supabase,
+    runId,
+    toAttach.map((x) => x.contractUuid)
+  );
+
+  if (!insertedLookupRes.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "ATTACH_LOOKUP_FAILED",
+        message: "Contracts were attached, but the inserted rows could not be reloaded for BASIC pay seeding.",
+        details: (insertedLookupRes.error as any)?.message ?? String(insertedLookupRes.error),
+      },
+      { status: statusFromErr(insertedLookupRes.error) }
+    );
+  }
+
+  const contractMap = new Map<string, ContractEmployeeRow>();
+  for (const row of contractRows) {
+    const contractId = isUuid(row.contract_id) ? String(row.contract_id).trim() : "";
+    if (contractId) contractMap.set(contractId, row);
+  }
+
+  const basicSeed = await seedInitialBasicPayElements({
+    supabase,
+    runRow,
+    companyId,
+    runFrequency,
+    insertedRows: insertedLookupRes.rows,
+    contractById: contractMap,
+  });
+
+  if (!basicSeed.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: basicSeed.error,
+        message: "Contracts were attached, but automatic BASIC pay element creation failed.",
+        details: basicSeed.details ?? null,
+        attachedCount: rowsToInsert.length,
+      },
+      { status: 500 }
+    );
+  }
+
+  if (isSupplementaryRun(runRow)) {
+    const upd = await supabase
+      .from("payroll_runs")
+      .update({ attached_all_due_employees: false })
+      .eq("id", runId);
 
     if (upd.error && !isMissingColumnError(upd.error)) {
       return NextResponse.json(
         {
           ok: false,
           error: "RUN_UPDATE_FAILED",
-          message: "Employees were attached, but updating the payroll run metadata failed.",
+          message: "Contracts were attached, but updating the payroll run metadata failed.",
           details: (upd.error as any)?.message ?? String(upd.error),
           attachedCount: rowsToInsert.length,
+          basicSeededCount: basicSeed.seededCount,
+          basicSkippedCount: basicSeed.skippedCount,
         },
         { status: statusFromErr(upd.error) }
       );
@@ -728,15 +1149,17 @@ export async function POST(req: Request, { params }: RouteContext) {
     {
       ok: true,
       error: null,
-      message: "Selected employees attached to payroll run.",
+      message: "Selected contracts attached to payroll run.",
       attachedCount: rowsToInsert.length,
       totalSelected: selectedIds.length,
-      eligibleSelected: eligibleEmployees.length,
+      eligibleSelected: eligibleContracts.length,
       asOfDate,
       invalidIds,
       missingIds,
       rejected,
       strippedColumns: insertRes.stripped,
+      basicSeededCount: basicSeed.seededCount,
+      basicSkippedCount: basicSeed.skippedCount,
     },
     { status: 200 }
   );
