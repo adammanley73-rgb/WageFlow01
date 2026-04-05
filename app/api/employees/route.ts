@@ -11,6 +11,10 @@ import { randomUUID } from "crypto";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+type ContractPayFrequency = "weekly" | "fortnightly" | "four_weekly" | "monthly";
+type ContractPayBasis = "salary" | "hourly";
+type ContractStatus = "active" | "inactive" | "leaver";
+
 function json(status: number, body: any) {
   return NextResponse.json(body, {
     status,
@@ -78,10 +82,48 @@ function splitName(full: string): { first_name: string; last_name: string } | nu
   return { first_name, last_name };
 }
 
+function normalizePayFrequency(v: any): ContractPayFrequency | null {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (s === "weekly") return "weekly";
+  if (s === "fortnightly") return "fortnightly";
+  if (s === "four_weekly" || s === "4-weekly" || s === "4 weekly") return "four_weekly";
+  if (s === "monthly") return "monthly";
+  return null;
+}
+
 function isAllowedPayFrequency(v: any) {
-  const s = String(v ?? "").trim();
-  if (!s) return true; // allow null/empty
-  return ["weekly", "fortnightly", "four_weekly", "monthly"].includes(s);
+  return normalizePayFrequency(v) !== null || !String(v ?? "").trim();
+}
+
+function normalizePayBasis(v: any): ContractPayBasis | null {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (s === "salary" || s === "salaried") return "salary";
+  if (s === "hourly" || s === "hour") return "hourly";
+  return null;
+}
+
+function derivePayBasis(body: any, annualSalary: number | null, hourlyRate: number | null): ContractPayBasis {
+  const explicit =
+    normalizePayBasis(body?.pay_basis) ??
+    normalizePayBasis(body?.pay_type) ??
+    normalizePayBasis(body?.pay_source);
+
+  if (explicit) return explicit;
+  if (annualSalary === null && hourlyRate !== null) return "hourly";
+  return "salary";
+}
+
+function sanitizeContractBase(v: string | null): string | null {
+  const cleaned = String(v ?? "").trim().replace(/[^A-Za-z0-9-]/g, "");
+  return cleaned ? cleaned : null;
+}
+
+function makeInitialContractNumber(employeeNumber: string | null, employeeUuid: string): string {
+  const base = sanitizeContractBase(employeeNumber);
+  if (base) return `${base}-01`;
+  return `EMP-${String(employeeUuid).slice(0, 8)}-01`;
 }
 
 function isStaffRole(role: string) {
@@ -221,7 +263,7 @@ export async function POST(req: Request) {
       return json(400, { ok: false, code: "MISSING_NAME", error: "first_name and last_name are required" });
     }
 
-    const email = strOrNull(body?.email);
+    const email = strOrNull(body?.email)?.toLowerCase() ?? null;
     if (!email) {
       return json(400, { ok: false, code: "MISSING_EMAIL", error: "email is required" });
     }
@@ -233,8 +275,8 @@ export async function POST(req: Request) {
 
     const hire_date = strOrNull(body?.hire_date) ?? start_date ?? todayISO();
 
-    const pay_frequency = strOrNull(body?.pay_frequency);
-    if (!isAllowedPayFrequency(pay_frequency)) {
+    const normalisedPayFrequency = normalizePayFrequency(body?.pay_frequency ?? null);
+    if (!isAllowedPayFrequency(body?.pay_frequency)) {
       return json(400, {
         ok: false,
         code: "BAD_PAY_FREQUENCY",
@@ -252,14 +294,18 @@ export async function POST(req: Request) {
     }
 
     const annual_salary = numOrNull(body?.annual_salary !== undefined ? body.annual_salary : body?.salary);
+    const hourly_rate = numOrNull(body?.hourly_rate);
+    const hours_per_week = numOrNull(body?.hours_per_week);
+    const pay_basis = derivePayBasis(body, annual_salary, hourly_rate);
 
     const employee_id = strOrNull(body?.employee_id) ?? randomUUID();
+    const employee_number = strOrNull(body?.employee_number);
 
     const insertRow: Record<string, any> = {
       company_id: companyId,
       employee_id,
 
-      employee_number: strOrNull(body?.employee_number),
+      employee_number,
 
       first_name,
       last_name,
@@ -276,13 +322,15 @@ export async function POST(req: Request) {
       employment_type: strOrNull(body?.employment_type) ?? "full_time",
 
       annual_salary,
-      hourly_rate: numOrNull(body?.hourly_rate),
-      hours_per_week: numOrNull(body?.hours_per_week),
+      hourly_rate,
+      hours_per_week,
 
       ni_number: ni,
       national_insurance_number: ni,
 
-      pay_frequency,
+      pay_frequency: normalisedPayFrequency,
+      pay_basis,
+      pay_type: pay_basis,
 
       address: body?.address ?? null,
 
@@ -290,6 +338,7 @@ export async function POST(req: Request) {
       is_director: false,
       pay_after_leaving: false,
       is_apprentice: !!body?.is_apprentice,
+      apprenticeship_year: numOrNull(body?.apprenticeship_year),
 
       ytd_gross: 0,
       ytd_tax: 0,
@@ -306,21 +355,77 @@ export async function POST(req: Request) {
     const { data, error } = await gate.supabase
       .from("employees")
       .insert(insertRow)
-      .select("employee_id, id")
+      .select("employee_id, id, employee_number, first_name, last_name, email")
       .single();
 
     if (error) {
       return json(500, { ok: false, code: "INSERT_FAILED", error: error.message });
     }
 
-    const eid = (data as any)?.employee_id ?? null;
-    const uuid = (data as any)?.id ?? null;
+    const eid = String((data as any)?.employee_id ?? "").trim() || null;
+    const uuid = String((data as any)?.id ?? "").trim() || null;
+    const savedEmployeeNumber =
+      strOrNull((data as any)?.employee_number) ??
+      employee_number;
 
-    if (!eid) {
-      return json(500, { ok: false, code: "MISSING_EMPLOYEE_ID", error: "Employee created but no employee_id returned" });
+    if (!eid || !uuid) {
+      return json(500, {
+        ok: false,
+        code: "MISSING_EMPLOYEE_KEYS",
+        error: "Employee created but employee_id or UUID was not returned",
+      });
     }
 
-    return json(201, { ok: true, id: eid, employee_id: eid, uuid, employee: { employee_id: eid, id: uuid } });
+    const contractInsertRow: Record<string, any> = {
+      company_id: companyId,
+      employee_id: uuid,
+      contract_number: makeInitialContractNumber(savedEmployeeNumber, uuid),
+      job_title: strOrNull(body?.job_title),
+      department: strOrNull(body?.department),
+      status: "active" as ContractStatus,
+      start_date,
+      leave_date: null,
+      pay_frequency: normalisedPayFrequency ?? "monthly",
+      pay_basis,
+      annual_salary,
+      hourly_rate,
+      hours_per_week,
+      pay_after_leaving: false,
+    };
+
+    const { data: contractData, error: contractError } = await gate.supabase
+      .from("employee_contracts")
+      .insert(contractInsertRow)
+      .select("id, contract_number")
+      .single();
+
+    if (contractError) {
+      await gate.supabase
+        .from("employees")
+        .delete()
+        .eq("id", uuid);
+
+      return json(500, {
+        ok: false,
+        code: "CONTRACT_INSERT_FAILED",
+        error: contractError.message,
+      });
+    }
+
+    return json(201, {
+      ok: true,
+      id: eid,
+      employee_id: eid,
+      uuid,
+      employee: {
+        employee_id: eid,
+        id: uuid,
+      },
+      contract: {
+        id: (contractData as any)?.id ?? null,
+        contract_number: (contractData as any)?.contract_number ?? null,
+      },
+    });
   } catch (err: any) {
     return json(500, { ok: false, code: "UNHANDLED", error: err?.message ?? "Unexpected server error" });
   }
