@@ -1,4 +1,4 @@
-﻿// C:\Projects\wageflow01\app\api\payroll\[id]\attach-candidates\route.ts
+// C:\Projects\wageflow01\app\api\payroll\[id]\attach-candidates\route.ts
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -14,29 +14,52 @@ type RouteContext = {
 
 type PayrollRunRow = {
   id: string;
-  company_id: string | null;
-  frequency: string | null;
-  pay_frequency: string | null;
+  company_id?: string | null;
+  companyId?: string | null;
+  frequency?: string | null;
+  pay_frequency?: string | null;
+  payFrequency?: string | null;
+  period_start?: string | null;
+  pay_period_start?: string | null;
+  start_date?: string | null;
+  periodStart?: string | null;
+  period_end?: string | null;
+  pay_period_end?: string | null;
+  end_date?: string | null;
+  periodEnd?: string | null;
+  pay_date?: string | null;
+  payDate?: string | null;
+  created_at?: string | null;
+  [key: string]: unknown;
 };
 
 type PayrollRunEmployeeRow = {
   employee_id: string | null;
+  contract_id?: string | null;
+};
+
+type ContractRow = {
+  id: string | null;
+  company_id: string | null;
+  employee_id: string | null;
+  contract_number: string | null;
+  job_title: string | null;
+  status: string | null;
+  pay_frequency: string | null;
+  start_date?: string | null;
+  leave_date?: string | null;
+  pay_after_leaving?: boolean | null;
 };
 
 type EmployeeRow = {
   id: string;
   company_id: string | null;
-  status: string | null;
-  pay_frequency: string | null;
-  frequency: string | null;
   first_name: string | null;
   last_name: string | null;
-  full_name: string | null;
+  known_as?: string | null;
   employee_number: string | null;
-  payroll_number: string | null;
   email: string | null;
-  work_email: string | null;
-  personal_email: string | null;
+  [key: string]: unknown;
 };
 
 type Candidate = {
@@ -72,7 +95,9 @@ function pickFirst(...values: unknown[]): unknown | null {
 function normalizeFrequency(v: unknown): string {
   const s = String(v ?? "").trim().toLowerCase();
   if (!s) return "";
-  if (s === "4weekly" || s === "fourweekly" || s === "four-weekly") return "four_weekly";
+  if (s === "4weekly" || s === "fourweekly" || s === "four-weekly" || s === "4-weekly" || s === "4 weekly") {
+    return "four_weekly";
+  }
   return s;
 }
 
@@ -84,6 +109,20 @@ function cleanEmail(v: unknown): string {
   if (lower === "null" || lower === "undefined" || lower === "n/a") return "";
   if (s.includes("\uFFFD")) return "";
   return s;
+}
+
+function normalizeStatus(v: unknown): string {
+  return String(v ?? "").trim().toLowerCase();
+}
+
+
+function toIsoDateOnly(value: unknown): string {
+  const s = String(value ?? "").trim();
+  if (!s) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const dt = new Date(s);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toISOString().slice(0, 10);
 }
 
 export async function GET(_req: Request, { params }: RouteContext) {
@@ -106,7 +145,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
 
   const { data: runRow, error: runError } = await supabase
     .from("payroll_runs")
-    .select("id, company_id, frequency, pay_frequency")
+    .select("*")
     .eq("id", runId)
     .maybeSingle<PayrollRunRow>();
 
@@ -129,10 +168,10 @@ export async function GET(_req: Request, { params }: RouteContext) {
     );
   }
 
-  const companyIdRaw = pickFirst(runRow.company_id);
+  const companyIdRaw = pickFirst(runRow.company_id, runRow.companyId);
   const companyId = companyIdRaw == null ? "" : String(companyIdRaw).trim();
 
-  const runFrequencyRaw = pickFirst(runRow.frequency, runRow.pay_frequency);
+  const runFrequencyRaw = pickFirst(runRow.frequency, runRow.pay_frequency, runRow.payFrequency);
   const runFrequency = normalizeFrequency(runFrequencyRaw);
 
   if (!companyId || !isUuid(companyId)) {
@@ -153,9 +192,15 @@ export async function GET(_req: Request, { params }: RouteContext) {
     );
   }
 
+  const runPeriodStartIso = toIsoDateOnly(pickFirst(runRow.period_start, runRow.pay_period_start, runRow.start_date, runRow.periodStart)) || "";
+  const runPeriodEndIso = toIsoDateOnly(pickFirst(runRow.period_end, runRow.pay_period_end, runRow.end_date, runRow.periodEnd)) || "";
+  const runPayDateIso = toIsoDateOnly(pickFirst(runRow.pay_date, runRow.payDate)) || "";
+  const eligibilityStartDate = runPeriodStartIso || runPayDateIso || toIsoDateOnly(runRow.created_at) || toIsoDateOnly(new Date());
+  const asOfDate = runPeriodEndIso || runPayDateIso || eligibilityStartDate;
+
   const { data: existingRows, error: existingError } = await supabase
     .from("payroll_run_employees")
-    .select("employee_id")
+    .select("employee_id, contract_id")
     .eq("run_id", runId)
     .returns<PayrollRunEmployeeRow[]>();
 
@@ -171,31 +216,43 @@ export async function GET(_req: Request, { params }: RouteContext) {
     );
   }
 
-  const existingIds = new Set(
+  const existingContractIds = new Set(
     (existingRows ?? [])
-      .map((r) => String(r.employee_id ?? "").trim())
+      .map((r) => String(r.contract_id ?? "").trim())
       .filter((id) => Boolean(id))
   );
 
-  const { data: employeeRows, error: employeesError } = await supabase
-    .from("employees")
+  const { data: contractRows, error: contractsError } = await supabase
+    .from("employee_contracts")
     .select(
       [
         "id",
         "company_id",
+        "employee_id",
+        "contract_number",
+        "job_title",
         "status",
         "pay_frequency",
-        "frequency",
-        "first_name",
-        "last_name",
-        "full_name",
-        "employee_number",
-        "payroll_number",
-        "email",
-        "work_email",
-        "personal_email",
       ].join(",")
     )
+    .eq("company_id", companyId)
+    .returns<ContractRow[]>();
+
+  if (contractsError) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "CONTRACTS_LOAD_FAILED",
+        message: "Failed to load employee contracts for this company.",
+        details: contractsError.message,
+      },
+      { status: statusFromErr(contractsError) }
+    );
+  }
+
+  const { data: employeeRows, error: employeesError } = await supabase
+    .from("employees")
+    .select("*")
     .eq("company_id", companyId)
     .returns<EmployeeRow[]>();
 
@@ -211,38 +268,61 @@ export async function GET(_req: Request, { params }: RouteContext) {
     );
   }
 
-  const allEmployees: EmployeeRow[] = Array.isArray(employeeRows) ? employeeRows : [];
+  const employeeById = new Map<string, EmployeeRow>();
+  for (const emp of Array.isArray(employeeRows) ? employeeRows : []) {
+    const employeeUuid = isUuid(emp.id) ? String(emp.id).trim() : "";
+    if (employeeUuid) employeeById.set(employeeUuid, emp);
+  }
 
-  const candidates: Candidate[] = allEmployees
-    .filter((emp) => {
-      const status = String(emp.status ?? "").trim().toLowerCase();
-      const isActive = !status || status === "active";
-      if (!isActive) return false;
+  const allContracts: ContractRow[] = Array.isArray(contractRows) ? contractRows : [];
 
-      const empFreq = normalizeFrequency(pickFirst(emp.pay_frequency, emp.frequency));
-      if (!empFreq) return false;
-      if (empFreq !== runFrequency) return false;
+  const candidates: Candidate[] = allContracts
+    .filter((contract) => {
+      const contractId = isUuid(contract.id) ? String(contract.id).trim() : "";
+      const employeeUuid = isUuid(contract.employee_id) ? String(contract.employee_id).trim() : "";
+      if (!contractId || !employeeUuid) return false;
+      if (existingContractIds.has(contractId)) return false;
 
-      const employeeUuid = isUuid(emp.id) ? String(emp.id).trim() : "";
-      if (!employeeUuid) return false;
-      if (existingIds.has(employeeUuid)) return false;
+      const contractStatus = normalizeStatus(contract.status);
+      if (contractStatus && contractStatus !== "active") return false;
 
-      return true;
+      const contractFreq = normalizeFrequency(contract.pay_frequency);
+      if (!contractFreq || contractFreq !== runFrequency) return false;
+
+      const contractStart = toIsoDateOnly(contract.start_date);
+      if (contractStart && contractStart > asOfDate) return false;
+
+      const contractLeave = toIsoDateOnly(contract.leave_date);
+      if (contractLeave && contractLeave < eligibilityStartDate && !Boolean(contract.pay_after_leaving ?? false)) {
+        return false;
+      }
+
+      return employeeById.has(employeeUuid);
     })
-    .map((emp) => {
-      const id = String(emp.id).trim();
+    .map((contract) => {
+      const contractId = String(contract.id).trim();
+      const employeeUuid = String(contract.employee_id).trim();
+      const emp = employeeById.get(employeeUuid)!;
+
       const first = String(emp.first_name ?? "").trim();
       const last = String(emp.last_name ?? "").trim();
-      const fullName = String(pickFirst(emp.full_name, `${first} ${last}`.trim(), "") ?? "").trim();
+      const knownAs = String(emp.known_as ?? "").trim();
+      const baseName = String(
+        pickFirst(knownAs ? `${knownAs} ${last}`.trim() : "", `${first} ${last}`.trim(), "") ?? ""
+      ).trim();
 
-      const employeeNumber = String(pickFirst(emp.employee_number, emp.payroll_number, "") ?? "").trim();
+      const contractNumber = String(contract.contract_number ?? "").trim();
+      const masterEmployeeNumber = String(pickFirst(emp.employee_number, "") ?? "").trim();
+      const jobTitle = String(contract.job_title ?? "").trim();
+      const email = cleanEmail(pickFirst(emp.email, ""));
 
-      const email = cleanEmail(pickFirst(emp.email, emp.work_email, emp.personal_email, ""));
+      const nameParts = [baseName || masterEmployeeNumber || contractNumber || contractId];
+      if (jobTitle) nameParts.push(`(${jobTitle})`);
 
       return {
-        id,
-        name: fullName || employeeNumber || id,
-        employeeNumber: employeeNumber || "",
+        id: contractId,
+        name: nameParts.join(" ").trim(),
+        employeeNumber: contractNumber || masterEmployeeNumber || "",
         email: email || "",
         payFrequency: runFrequency,
       };
