@@ -131,13 +131,36 @@ function cleanCell(value: string): string {
   return String(value ?? "").trim();
 }
 
+function pad2(value: string): string {
+  return String(value || "").trim().padStart(2, "0");
+}
+
+function normalizeCsvDate(value: string): string {
+  const s = cleanCell(value);
+  if (!s) return "";
+
+  const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    return `${pad2(dd)}-${pad2(mm)}-${yyyy}`;
+  }
+
+  const ukMatch = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+  if (ukMatch) {
+    const [, dd, mm, yyyy] = ukMatch;
+    return `${pad2(dd)}-${pad2(mm)}-${yyyy}`;
+  }
+
+  return s;
+}
+
 function isUkDateOnly(value: string): boolean {
-  return /^\d{2}-\d{2}-\d{4}$/.test(String(value || "").trim());
+  return /^\d{2}-\d{2}-\d{4}$/.test(normalizeCsvDate(value));
 }
 
 function ukDateToIso(value: string): string {
-  const s = String(value || "").trim();
-  if (!isUkDateOnly(s)) return s;
+  const s = normalizeCsvDate(value);
+  if (!/^\d{2}-\d{2}-\d{4}$/.test(s)) return s;
   const [dd, mm, yyyy] = s.split("-");
   return `${yyyy}-${mm}-${dd}`;
 }
@@ -285,9 +308,9 @@ function normaliseRow(rawRow: ParsedRow): ParsedRow {
   out.email = out.email.toLowerCase();
   out.phone = out.phone;
   out.job_title = out.job_title;
-  out.start_date = out.start_date;
-  out.hire_date = out.hire_date;
-  out.date_of_birth = out.date_of_birth;
+  out.start_date = normalizeCsvDate(out.start_date);
+  out.hire_date = normalizeCsvDate(out.hire_date);
+  out.date_of_birth = normalizeCsvDate(out.date_of_birth);
   out.employment_type = out.employment_type;
   out.annual_salary = out.annual_salary;
   out.hourly_rate = out.hourly_rate;
@@ -319,15 +342,15 @@ function validateRow(rawRow: ParsedRow, rowNumber: number): ValidationResult {
   }
 
   if (normalized.start_date && !isUkDateOnly(normalized.start_date)) {
-    errors.push("start_date must be DD-MM-YYYY.");
+    errors.push("start_date must be DD-MM-YYYY or DD/MM/YYYY.");
   }
 
   if (normalized.hire_date && !isUkDateOnly(normalized.hire_date)) {
-    errors.push("hire_date must be DD-MM-YYYY when provided.");
+    errors.push("hire_date must be DD-MM-YYYY or DD/MM/YYYY when provided.");
   }
 
   if (normalized.date_of_birth && !isUkDateOnly(normalized.date_of_birth)) {
-    errors.push("date_of_birth must be DD-MM-YYYY when provided.");
+    errors.push("date_of_birth must be DD-MM-YYYY or DD/MM/YYYY when provided.");
   }
 
   if (normalized.pay_frequency && !PAY_FREQUENCIES.includes(normalized.pay_frequency as (typeof PAY_FREQUENCIES)[number])) {
@@ -610,7 +633,7 @@ export default function EmployeesImportPage() {
                 <h2 className="text-sm font-semibold text-neutral-900">Rules</h2>
                 <div className="mt-2 space-y-2 text-sm text-neutral-700">
                   <p>Required: first_name, last_name, email, start_date, p45_provided.</p>
-                  <p>Dates in the CSV must be DD-MM-YYYY.</p>
+                  <p>Dates in the CSV should be DD-MM-YYYY. DD/MM/YYYY is also accepted.</p>
                   <p>pay_frequency must be weekly, fortnightly, four_weekly, or monthly.</p>
                   <p>NI is checked when provided.</p>
                   <p>If p45_provided is false, starter_declaration, student_loan_plan, and postgraduate_loan are required.</p>
