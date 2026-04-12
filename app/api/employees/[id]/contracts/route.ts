@@ -273,7 +273,7 @@ async function fetchEmployeeByRouteId(
       .select(selectCols)
       .eq("company_id", companyId)
       .eq(col, value)
-      .maybeSingle<EmployeeLookupRow>();
+      .maybeSingle();
   }
 
   let employee: EmployeeLookupRow | null = null;
