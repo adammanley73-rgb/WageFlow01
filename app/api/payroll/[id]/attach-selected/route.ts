@@ -152,6 +152,12 @@ type AttachedSeedRow = {
   contract_id: string;
 };
 
+type SettingsHistoryQueryResult<T> = {
+  data: T[] | null;
+  error: unknown | null;
+  unavailable: boolean;
+};
+
 function statusFromErr(err: unknown, fallback = 500): number {
   const anyErr = err as { status?: unknown } | null;
   const s = Number(anyErr?.status);
@@ -219,6 +225,38 @@ function isMissingColumnError(err: unknown): boolean {
   if (msg.includes("schema cache") && msg.includes("could not find") && msg.includes("column")) return true;
 
   return false;
+}
+
+function isMissingTableError(err: unknown): boolean {
+  const anyErr = err as { code?: unknown; message?: unknown } | null;
+  const code = String(anyErr?.code ?? "");
+  const msg = String(anyErr?.message ?? "").toLowerCase();
+
+  if (code === "42P01") return true;
+  if (msg.includes('relation "') && msg.includes('" does not exist')) return true;
+  if (msg.includes("relation") && msg.includes("does not exist")) return true;
+
+  if (
+    code.toLowerCase().startsWith("pgrst") &&
+    msg.includes("schema cache") &&
+    (msg.includes("table") || msg.includes("relation"))
+  ) {
+    return true;
+  }
+
+  if (
+    code.toLowerCase().startsWith("pgrst") &&
+    msg.includes("could not find") &&
+    (msg.includes("table") || msg.includes("relation"))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isSettingsHistoryUnavailableError(err: unknown): boolean {
+  return isMissingColumnError(err) || isMissingTableError(err);
 }
 
 function missingColumnName(err: unknown): string | null {
@@ -614,7 +652,11 @@ export async function POST(req: Request, { params }: RouteContext) {
 
   if (!runId) {
     return NextResponse.json(
-      { ok: false, error: "BAD_REQUEST", message: "Payroll run id is required." },
+      {
+        ok: false,
+        error: "BAD_REQUEST",
+        message: "Payroll run id is required.",
+      },
       { status: 400 }
     );
   }
@@ -846,7 +888,7 @@ export async function POST(req: Request, { params }: RouteContext) {
 
   async function loadPendingOrApproved(
     keys: string[]
-  ): Promise<{ data: SettingsPendingOrApprovedRow[] | null; error: unknown | null }> {
+  ): Promise<SettingsHistoryQueryResult<SettingsPendingOrApprovedRow>> {
     const results: SettingsPendingOrApprovedRow[] = [];
 
     for (let i = 0; i < keys.length; i += 200) {
@@ -862,13 +904,18 @@ export async function POST(req: Request, { params }: RouteContext) {
         .order("effective_from", { ascending: false })
         .limit(500);
 
-      if (error) return { data: null, error };
+      if (error) {
+        if (isSettingsHistoryUnavailableError(error)) {
+          return { data: [], error: null, unavailable: true };
+        }
+        return { data: null, error, unavailable: false };
+      }
 
       const rows = (Array.isArray(data) ? data : []) as unknown as SettingsPendingOrApprovedRow[];
       if (rows.length) results.push(...rows);
     }
 
-    return { data: results, error: null };
+    return { data: results, error: null, unavailable: false };
   }
 
   const pendingCheck = await loadPendingOrApproved(employeeKeys);
@@ -886,6 +933,8 @@ export async function POST(req: Request, { params }: RouteContext) {
   }
 
   const pendingRows = pendingCheck.data ?? [];
+  let settingsHistoryUnavailable = pendingCheck.unavailable === true;
+
   if (pendingRows.length > 0) {
     const affectedKeys = Array.from(new Set(pendingRows.map((r) => String(r.employee_key)))).slice(0, 20);
 
@@ -905,7 +954,7 @@ export async function POST(req: Request, { params }: RouteContext) {
 
   async function loadAppliedSettings(
     keys: string[]
-  ): Promise<{ data: SettingsAppliedRow[] | null; error: unknown | null }> {
+  ): Promise<SettingsHistoryQueryResult<SettingsAppliedRow>> {
     const results: SettingsAppliedRow[] = [];
 
     for (let i = 0; i < keys.length; i += 200) {
@@ -937,35 +986,47 @@ export async function POST(req: Request, { params }: RouteContext) {
         .order("created_at", { ascending: false })
         .limit(2000);
 
-      if (error) return { data: null, error };
+      if (error) {
+        if (isSettingsHistoryUnavailableError(error)) {
+          return { data: [], error: null, unavailable: true };
+        }
+        return { data: null, error, unavailable: false };
+      }
 
       const rows = (Array.isArray(data) ? data : []) as unknown as SettingsAppliedRow[];
       if (rows.length) results.push(...rows);
     }
 
-    return { data: results, error: null };
+    return { data: results, error: null, unavailable: false };
   }
 
-  const appliedRes = await loadAppliedSettings(employeeKeys);
-
-  if (appliedRes.error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "SETTINGS_LOAD_FAILED",
-        message: "Failed to load applied payroll settings for employees.",
-        details: (appliedRes.error as any)?.message ?? String(appliedRes.error),
-      },
-      { status: statusFromErr(appliedRes.error) }
-    );
-  }
-
-  const appliedRows = appliedRes.data ?? [];
   const appliedByKey = new Map<string, SettingsAppliedRow>();
-  for (const r of appliedRows) {
-    const k = String(r.employee_key ?? "").trim();
-    if (!k) continue;
-    if (!appliedByKey.has(k)) appliedByKey.set(k, r);
+
+  if (!settingsHistoryUnavailable) {
+    const appliedRes = await loadAppliedSettings(employeeKeys);
+
+    if (appliedRes.error) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "SETTINGS_LOAD_FAILED",
+          message: "Failed to load applied payroll settings for employees.",
+          details: (appliedRes.error as any)?.message ?? String(appliedRes.error),
+        },
+        { status: statusFromErr(appliedRes.error) }
+      );
+    }
+
+    if (appliedRes.unavailable) {
+      settingsHistoryUnavailable = true;
+    }
+
+    const appliedRows = appliedRes.data ?? [];
+    for (const r of appliedRows) {
+      const k = String(r.employee_key ?? "").trim();
+      if (!k) continue;
+      if (!appliedByKey.has(k)) appliedByKey.set(k, r);
+    }
   }
 
   const nowIso = new Date().toISOString();
@@ -1055,6 +1116,7 @@ export async function POST(req: Request, { params }: RouteContext) {
         attach_mode: "selected",
         contract_id: contractUuid,
         contract_number: pickFirst(row.contract_number),
+        settings_history_unavailable: settingsHistoryUnavailable,
       },
 
       created_at: nowIso,
@@ -1160,6 +1222,7 @@ export async function POST(req: Request, { params }: RouteContext) {
       strippedColumns: insertRes.stripped,
       basicSeededCount: basicSeed.seededCount,
       basicSkippedCount: basicSeed.skippedCount,
+      settingsHistoryUnavailable,
     },
     { status: 200 }
   );
