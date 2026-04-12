@@ -1,5 +1,3 @@
-// C:\Projects\wageflow01\app\dashboard\employees\[id]\page.tsx
-
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -166,6 +164,38 @@ type EmployeeRow = {
   updated_at?: string | null;
 };
 
+type ContractRow = {
+  id?: string | null;
+  employee_id?: string | null;
+  contract_number?: string | null;
+  job_title?: string | null;
+  department?: string | null;
+  status?: string | null;
+  start_date?: string | null;
+  leave_date?: string | null;
+  pay_frequency?: string | null;
+  pay_basis?: string | null;
+  annual_salary?: any | null;
+  hourly_rate?: any | null;
+  hours_per_week?: any | null;
+  pay_after_leaving?: boolean | null;
+  created_at?: string | null;
+
+  pension_enabled?: boolean | null;
+  pension_status?: string | null;
+  pension_scheme_name?: string | null;
+  pension_reference?: string | null;
+  pension_contribution_method?: string | null;
+  pension_earnings_basis?: string | null;
+  pension_employee_rate?: any | null;
+  pension_employer_rate?: any | null;
+  pension_worker_category?: string | null;
+  pension_enrolment_date?: string | null;
+  pension_opt_in_date?: string | null;
+  pension_opt_out_date?: string | null;
+  pension_postponement_date?: string | null;
+};
+
 function tryParseJsonObject(v: any): any {
   if (!v) return null;
   if (typeof v === "object") return v;
@@ -253,6 +283,7 @@ function formatPensionStatus(value: string | null | undefined) {
   if (v === "opted_in") return "Opted in";
   if (v === "opted_out") return "Opted out";
   if (v === "postponed") return "Postponed";
+  if (v === "ceased") return "Ceased";
 
   return MISSING;
 }
@@ -287,6 +318,83 @@ function formatWorkerCategory(value: string | null | undefined) {
   if (v === "unknown") return "Unknown";
 
   return MISSING;
+}
+
+function formatContractStatus(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "active") return "Active";
+  if (v === "inactive") return "Inactive";
+  if (v === "leaver") return "Leaver";
+  return MISSING;
+}
+
+function contractStatusClass(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "active") return "border-emerald-300 bg-emerald-100 text-emerald-800";
+  if (v === "leaver") return "border-red-300 bg-red-100 text-red-800";
+  if (v === "inactive") return "border-neutral-300 bg-neutral-100 text-neutral-700";
+  return "border-neutral-300 bg-neutral-100 text-neutral-700";
+}
+
+function formatPayBasis(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "salary" || v === "salaried") return "Salary";
+  if (v === "hourly") return "Hourly";
+  return MISSING;
+}
+
+function formatPayFrequency(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "weekly") return "Weekly";
+  if (v === "fortnightly") return "Fortnightly";
+  if (v === "four_weekly") return "Four-weekly";
+  if (v === "monthly") return "Monthly";
+  return MISSING;
+}
+
+function getContractSuffixNumber(contractNumber: string | null | undefined): number | null {
+  const raw = String(contractNumber || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/-(\d+)$/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toSortableTime(value: string | null | undefined): number {
+  const raw = String(value || "").trim();
+  if (!raw) return Number.MAX_SAFE_INTEGER;
+  const ts = new Date(raw).getTime();
+  return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER;
+}
+
+function sortContractsMainFirst(rows: ContractRow[]): ContractRow[] {
+  return [...rows].sort((a, b) => {
+    const aSuffix = getContractSuffixNumber(a.contract_number);
+    const bSuffix = getContractSuffixNumber(b.contract_number);
+
+    if (aSuffix !== null && bSuffix !== null && aSuffix !== bSuffix) {
+      return aSuffix - bSuffix;
+    }
+
+    if (aSuffix !== null && bSuffix === null) return -1;
+    if (aSuffix === null && bSuffix !== null) return 1;
+
+    const aStart = toSortableTime(a.start_date);
+    const bStart = toSortableTime(b.start_date);
+    if (aStart !== bStart) return aStart - bStart;
+
+    const aCreated = toSortableTime(a.created_at);
+    const bCreated = toSortableTime(b.created_at);
+    if (aCreated !== bCreated) return aCreated - bCreated;
+
+    return String(a.contract_number || "").localeCompare(String(b.contract_number || ""));
+  });
+}
+
+function contractDisplayLabel(index: number): string {
+  if (index === 0) return "Primary contract";
+  return `Additional contract ${index + 1}`;
 }
 
 export default async function EmployeeDetailsPage({
@@ -423,6 +531,57 @@ export default async function EmployeeDetailsPage({
   const preferredId = String(employee.id || "").trim();
   const legacyId = String(employee.employee_id || "").trim();
   const empKey = preferredId || legacyId || routeId;
+  const addContractHref = `/dashboard/employees/${empKey}/contracts/new`;
+
+  let contracts: ContractRow[] = [];
+  let contractsError: string | null = null;
+
+  if (preferredId) {
+    const { data: contractData, error: contractErr } = await supabase
+      .from("employee_contracts")
+      .select(
+        [
+          "id",
+          "employee_id",
+          "contract_number",
+          "job_title",
+          "department",
+          "status",
+          "start_date",
+          "leave_date",
+          "pay_frequency",
+          "pay_basis",
+          "annual_salary",
+          "hourly_rate",
+          "hours_per_week",
+          "pay_after_leaving",
+          "created_at",
+          "pension_enabled",
+          "pension_status",
+          "pension_scheme_name",
+          "pension_reference",
+          "pension_contribution_method",
+          "pension_earnings_basis",
+          "pension_employee_rate",
+          "pension_employer_rate",
+          "pension_worker_category",
+          "pension_enrolment_date",
+          "pension_opt_in_date",
+          "pension_opt_out_date",
+          "pension_postponement_date",
+        ].join(",")
+      )
+      .eq("company_id", activeCompanyId)
+      .eq("employee_id", preferredId);
+
+    if (contractErr) {
+      contractsError = String(contractErr.message || "Could not load contracts.");
+    } else {
+      contracts = sortContractsMainFirst(
+        (Array.isArray(contractData) ? contractData : []) as ContractRow[]
+      );
+    }
+  }
 
   const status = String(employee.status ?? "active").toLowerCase();
   const isLeaver = status === "leaver";
@@ -502,7 +661,7 @@ export default async function EmployeeDetailsPage({
 
               <Link
                 href={`/dashboard/employees/${empKey}/wizard/starter`}
-                className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+                className="inline-flex items-center justify-center rounded-full bg-neutral-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-neutral-700"
               >
                 Wizard
               </Link>
@@ -514,6 +673,149 @@ export default async function EmployeeDetailsPage({
                 Payroll history
               </Link>
             </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
+          <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-neutral-900">
+                Contracts
+              </div>
+              <div className="text-xs text-neutral-700">
+                Contract records for this employee. One person can hold two or more contracts.
+              </div>
+            </div>
+
+            <Link
+              href={addContractHref}
+              className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+            >
+              Add contract
+            </Link>
+          </div>
+
+          <div className="p-4">
+            {contractsError ? (
+              <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+                {contractsError}
+              </div>
+            ) : contracts.length === 0 ? (
+              <div className="rounded-lg border border-neutral-300 bg-white p-4 text-sm text-neutral-700">
+                No contract records found for this employee.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {contracts.map((contract, index) => {
+                  const contractNumber = safeStr(contract.contract_number);
+                  const contractStatus = String(contract.status || "").trim().toLowerCase();
+                  const humanLabel = contractDisplayLabel(index);
+                  const pensionEnabled = Boolean(contract.pension_enabled);
+                  const editContractHref = contract.id
+                    ? `/dashboard/employees/${empKey}/contracts/${contract.id}/edit`
+                    : null;
+
+                  return (
+                    <div
+                      key={String(contract.id || contract.contract_number || `${index}`)}
+                      className="rounded-lg border border-neutral-300 bg-white p-4"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-neutral-900">
+                            {contractNumber}
+                          </div>
+                          <div className="mt-1 text-xs text-neutral-600">
+                            {humanLabel}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {editContractHref ? (
+                            <Link
+                              href={editContractHref}
+                              className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600"
+                            >
+                              Edit contract
+                            </Link>
+                          ) : null}
+
+                          <span className={pillClass(contractStatusClass(contractStatus))}>
+                            {formatContractStatus(contract.status)}
+                          </span>
+
+                          {contract.pay_after_leaving === true ? (
+                            <span className={pillClass("border-amber-300 bg-amber-100 text-amber-900")}>
+                              Pay after leaving
+                            </span>
+                          ) : null}
+
+                          {pensionEnabled ? (
+                            <span className={pillClass("border-blue-300 bg-blue-100 text-blue-800")}>
+                              Pension on
+                            </span>
+                          ) : (
+                            <span className={pillClass("border-neutral-300 bg-neutral-100 text-neutral-700")}>
+                              Pension off
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {cardBox("Job title", safeStr(contract.job_title))}
+                        {cardBox("Department", safeStr(contract.department))}
+                        {cardBox("Start date", fmtDate(contract.start_date))}
+                        {cardBox("Leave date", fmtDate(contract.leave_date))}
+                        {cardBox("Pay frequency", formatPayFrequency(contract.pay_frequency))}
+                        {cardBox("Pay basis", formatPayBasis(contract.pay_basis))}
+                        {cardBox("Annual salary", fmtMoney(contract.annual_salary))}
+                        {cardBox("Hourly rate", fmtMoney(contract.hourly_rate))}
+                        {cardBox(
+                          "Hours per week",
+                          contract.hours_per_week !== null && contract.hours_per_week !== undefined
+                            ? String(contract.hours_per_week)
+                            : MISSING
+                        )}
+                      </div>
+
+                      <div className="mt-4 rounded-lg border border-neutral-300 bg-neutral-50 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-600">
+                          Contract pension
+                        </div>
+
+                        {pensionEnabled ? (
+                          <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            {cardBox("Pension status", formatPensionStatus(contract.pension_status))}
+                            {cardBox("Worker category", formatWorkerCategory(contract.pension_worker_category))}
+                            {cardBox("Scheme name", safeStr(contract.pension_scheme_name))}
+                            {cardBox("Pension reference", safeStr(contract.pension_reference))}
+                            {cardBox(
+                              "Contribution method",
+                              formatPensionMethod(contract.pension_contribution_method)
+                            )}
+                            {cardBox(
+                              "Earnings basis",
+                              formatPensionBasis(contract.pension_earnings_basis)
+                            )}
+                            {cardBox("Employee rate", fmtPercent(contract.pension_employee_rate))}
+                            {cardBox("Employer rate", fmtPercent(contract.pension_employer_rate))}
+                            {cardBox("Enrolment date", fmtDate(contract.pension_enrolment_date))}
+                            {cardBox("Opt-in date", fmtDate(contract.pension_opt_in_date))}
+                            {cardBox("Opt-out date", fmtDate(contract.pension_opt_out_date))}
+                            {cardBox("Postponement date", fmtDate(contract.pension_postponement_date))}
+                          </div>
+                        ) : (
+                          <div className="mt-3 rounded-lg border border-neutral-300 bg-white p-4 text-sm text-neutral-700">
+                            Pension is not enabled for this contract.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 

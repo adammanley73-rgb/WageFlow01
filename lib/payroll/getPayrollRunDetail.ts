@@ -1,4 +1,4 @@
-// C:\Projects\wageflow01\lib\payroll\getPayrollRunDetail.ts
+﻿// C:\Projects\wageflow01\lib\payroll\getPayrollRunDetail.ts
 
 import { calculatePay } from "@/lib/payroll/calculatePay";
 
@@ -85,25 +85,22 @@ export function deriveRunPayDate(run: any): string | null {
     .trim()
     .toLowerCase();
 
-  const isWeekly =
-    frequency === "weekly" ||
-    frequency === "week" ||
-    frequency === "1_week";
+  const isWeekly = frequency === "weekly" || frequency === "week" || frequency === "1_week";
 
   if (isWeekly) {
     const overridden = parseBoolStrict(
       pickFirst(run?.pay_date_overridden, run?.payDateOverridden, null)
     );
-
     if (overridden === true) {
-      const stored = String(pickFirst(run?.pay_date, run?.payDate, "") || "").trim();
+      const stored = String(
+        pickFirst(run?.pay_date, run?.payDate, "") || ""
+      ).trim();
       if (isIsoDateOnly(stored)) return stored;
     }
 
     const periodEnd = String(
       pickFirst(run?.period_end, run?.pay_period_end, run?.end_date, "") || ""
     ).trim();
-
     if (isIsoDateOnly(periodEnd)) return getNextFriday(periodEnd);
   }
 
@@ -125,11 +122,9 @@ function parseBoolStrict(v: any): boolean | null {
 
 function getObjectSafe(value: any): Record<string, any> | null {
   if (!value) return null;
-
   if (typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, any>;
   }
-
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
@@ -140,14 +135,14 @@ function getObjectSafe(value: any): Record<string, any> | null {
       // ignore invalid JSON
     }
   }
-
   return null;
 }
 
-function normalizeTaxCodeBasisValue(value: any): "cumulative" | "week1_month1" | null {
+function normalizeTaxCodeBasisValue(
+  value: any
+): "cumulative" | "week1_month1" | null {
   const s = String(value ?? "").trim().toLowerCase();
   if (!s) return null;
-
   if (
     s === "week1_month1" ||
     s === "w1m1" ||
@@ -159,13 +154,52 @@ function normalizeTaxCodeBasisValue(value: any): "cumulative" | "week1_month1" |
   ) {
     return "week1_month1";
   }
-
   return "cumulative";
 }
 
 function normalisePayElementSide(value: any): "earning" | "deduction" {
   const s = String(value ?? "").trim().toLowerCase();
   return s === "deduction" ? "deduction" : "earning";
+}
+
+function getContractSuffixNumber(contractNumber: string | null | undefined): number | null {
+  const raw = String(contractNumber || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/-(\d+)$/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toSortableTime(value: string | null | undefined): number {
+  const raw = String(value || "").trim();
+  if (!raw) return Number.MAX_SAFE_INTEGER;
+  const ts = new Date(raw).getTime();
+  return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER;
+}
+
+function sortContractsMainFirst(rows: any[]): any[] {
+  return [...rows].sort((a, b) => {
+    const aSuffix = getContractSuffixNumber(a?.contract_number);
+    const bSuffix = getContractSuffixNumber(b?.contract_number);
+    if (aSuffix !== null && bSuffix !== null && aSuffix !== bSuffix) {
+      return aSuffix - bSuffix;
+    }
+    if (aSuffix !== null && bSuffix === null) return -1;
+    if (aSuffix === null && bSuffix !== null) return 1;
+
+    const aStart = toSortableTime(a?.start_date);
+    const bStart = toSortableTime(b?.start_date);
+    if (aStart !== bStart) return aStart - bStart;
+
+    const aCreated = toSortableTime(a?.created_at);
+    const bCreated = toSortableTime(b?.created_at);
+    if (aCreated !== bCreated) return aCreated - bCreated;
+
+    return String(a?.contract_number || "").localeCompare(
+      String(b?.contract_number || "")
+    );
+  });
 }
 
 type LocalNormalisedPayElement = {
@@ -207,10 +241,12 @@ type PensionOverlayResult = {
   employeePensionCode: "EE_PEN" | "EE_PEN_RAS" | "EE_PEN_SAL_SAC";
 };
 
-function resolveBooleanOverride(overrideValue: any, defaultValue: any): boolean {
+function resolveBooleanOverride(
+  overrideValue: any,
+  defaultValue: any
+): boolean {
   const override = parseBoolStrict(overrideValue);
   if (override !== null) return override;
-
   const fallback = parseBoolStrict(defaultValue);
   return fallback === true;
 }
@@ -240,7 +276,6 @@ function normalizePensionBasisValue(
   ) {
     return "qualifying_earnings";
   }
-
   if (
     s === "pensionable_pay" ||
     s === "pensionable" ||
@@ -249,11 +284,9 @@ function normalizePensionBasisValue(
   ) {
     return "pensionable_pay";
   }
-
   if (s === "basic_pay" || s === "basic" || s === "basic_only") {
     return "basic_pay";
   }
-
   return "qualifying_earnings";
 }
 
@@ -274,7 +307,6 @@ function normalizePensionMethodValue(
   ) {
     return "relief_at_source";
   }
-
   if (
     s === "salary_sacrifice" ||
     s === "salarysacrifice" ||
@@ -283,7 +315,6 @@ function normalizePensionMethodValue(
   ) {
     return "salary_sacrifice";
   }
-
   return "net_pay";
 }
 
@@ -298,121 +329,120 @@ function pickPensionBasisAmount(
   const qualifying = round2(Math.max(0, qualifyingPay || 0));
 
   if (basis === "qualifying_earnings") return qualifying;
-
   if (basis === "basic_pay") {
     if (basic > 0) return basic;
     if (pensionable > 0) return pensionable;
     return qualifying;
   }
-
   if (basis === "pensionable_pay") {
     if (pensionable > 0) return pensionable;
     if (basic > 0) return basic;
     return qualifying;
   }
-
   return qualifying;
 }
 
-function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
+function readPensionSettingsFromSource(source: any): EmployeePensionSettings {
   const explicitEnabled = parseBoolStrict(
     pickFirst(
-      emp?.pension_enabled,
-      emp?.pensionEnabled,
-      emp?.pension_enrolled,
-      emp?.pensionEnrolled,
-      emp?.pension_active,
-      emp?.pensionActive,
-      emp?.auto_enrolment_enabled,
-      emp?.autoEnrolmentEnabled,
-      emp?.auto_enrolment_active,
-      emp?.autoEnrolmentActive,
-      emp?.ae_enabled,
-      emp?.aeEnabled,
-      emp?.ae_enrolled,
-      emp?.aeEnrolled,
-      emp?.ae_active,
-      emp?.aeActive,
+      source?.pension_enabled,
+      source?.pensionEnabled,
+      source?.pension_enrolled,
+      source?.pensionEnrolled,
+      source?.pension_active,
+      source?.pensionActive,
+      source?.auto_enrolment_enabled,
+      source?.autoEnrolmentEnabled,
+      source?.auto_enrolment_active,
+      source?.autoEnrolmentActive,
+      source?.ae_enabled,
+      source?.aeEnabled,
+      source?.ae_enrolled,
+      source?.aeEnrolled,
+      source?.ae_active,
+      source?.aeActive,
       null
     )
   );
 
   const employeePercent = normalizePercentMaybe(
     pickFirst(
-      emp?.pension_employee_percent,
-      emp?.pensionEmployeePercent,
-      emp?.employee_pension_percent,
-      emp?.employeePensionPercent,
-      emp?.pension_employee_rate,
-      emp?.pensionEmployeeRate,
-      emp?.employee_pension_rate,
-      emp?.employeePensionRate,
-      emp?.employee_contribution_percent,
-      emp?.employeeContributionPercent,
-      emp?.employee_contribution_rate,
-      emp?.employeeContributionRate,
-      emp?.pension_percent_employee,
-      emp?.pensionPercentEmployee,
-      emp?.pension_pct_employee,
-      emp?.pensionPctEmployee,
+      source?.pension_employee_percent,
+      source?.pensionEmployeePercent,
+      source?.employee_pension_percent,
+      source?.employeePensionPercent,
+      source?.pension_employee_rate,
+      source?.pensionEmployeeRate,
+      source?.employee_pension_rate,
+      source?.employeePensionRate,
+      source?.employee_contribution_percent,
+      source?.employeeContributionPercent,
+      source?.employee_contribution_rate,
+      source?.employeeContributionRate,
+      source?.pension_percent_employee,
+      source?.pensionPercentEmployee,
+      source?.pension_pct_employee,
+      source?.pensionPctEmployee,
       0
     )
   );
 
   const employerPercent = normalizePercentMaybe(
     pickFirst(
-      emp?.pension_employer_percent,
-      emp?.pensionEmployerPercent,
-      emp?.employer_pension_percent,
-      emp?.employerPensionPercent,
-      emp?.pension_employer_rate,
-      emp?.pensionEmployerRate,
-      emp?.employer_pension_rate,
-      emp?.employerPensionRate,
-      emp?.employer_contribution_percent,
-      emp?.employerContributionPercent,
-      emp?.employer_contribution_rate,
-      emp?.employerContributionRate,
-      emp?.pension_percent_employer,
-      emp?.pensionPercentEmployer,
-      emp?.pension_pct_employer,
-      emp?.pensionPctEmployer,
+      source?.pension_employer_percent,
+      source?.pensionEmployerPercent,
+      source?.employer_pension_percent,
+      source?.employerPensionPercent,
+      source?.pension_employer_rate,
+      source?.pensionEmployerRate,
+      source?.employer_pension_rate,
+      source?.employerPensionRate,
+      source?.employer_contribution_percent,
+      source?.employerContributionPercent,
+      source?.employer_contribution_rate,
+      source?.employerContributionRate,
+      source?.pension_percent_employer,
+      source?.pensionPercentEmployer,
+      source?.pension_pct_employer,
+      source?.pensionPctEmployer,
       0
     )
   );
 
-  const enabled = explicitEnabled !== null ? explicitEnabled : employeePercent > 0 || employerPercent > 0;
+  const enabled = explicitEnabled !== null
+    ? explicitEnabled
+    : employeePercent > 0 || employerPercent > 0;
 
   const basis = normalizePensionBasisValue(
     pickFirst(
-      emp?.pension_basis,
-      emp?.pensionBasis,
-      emp?.pension_basis_type,
-      emp?.pensionBasisType,
-      emp?.pensionable_basis,
-      emp?.pensionableBasis,
-      emp?.pension_earnings_basis,
-      emp?.pensionEarningsBasis,
-      emp?.ae_basis,
-      emp?.aeBasis,
-      emp?.auto_enrolment_basis,
-      emp?.autoEnrolmentBasis,
+      source?.pension_basis,
+      source?.pensionBasis,
+      source?.pension_basis_type,
+      source?.pensionBasisType,
+      source?.pensionable_basis,
+      source?.pensionableBasis,
+      source?.pension_earnings_basis,
+      source?.pensionEarningsBasis,
+      source?.ae_basis,
+      source?.aeBasis,
+      source?.auto_enrolment_basis,
+      source?.autoEnrolmentBasis,
       "qualifying_earnings"
     )
   );
 
   const method = normalizePensionMethodValue(
     pickFirst(
-      emp?.pension_method,
-      emp?.pensionMethod,
-      emp?.pension_contribution_method,
-      emp?.pensionContributionMethod,
-      emp?.pension_tax_treatment,
-      emp?.pensionTaxTreatment,
-      emp?.ae_method,
-      emp?.aeMethod,
-      emp?.auto_enrolment_method,
-      emp?.autoEnrolmentMethod,
+      source?.pension_method,
+      source?.pensionMethod,
+      source?.pension_contribution_method,
+      source?.pensionContributionMethod,
+      source?.pension_tax_treatment,
+      source?.pensionTaxTreatment,
+      source?.ae_method,
+      source?.aeMethod,
+      source?.auto_enrolment_method,
+      source?.autoEnrolmentMethod,
       "net_pay"
     )
   );
@@ -426,6 +456,173 @@ function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
   };
 }
 
+function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
+  return readPensionSettingsFromSource(emp);
+}
+
+function hasMeaningfulPensionSettings(source: any): boolean {
+  if (!source) return false;
+
+  const explicitEnabled = parseBoolStrict(
+    pickFirst(
+      source?.pension_enabled,
+      source?.pensionEnabled,
+      source?.pension_enrolled,
+      source?.pensionEnrolled,
+      source?.pension_active,
+      source?.pensionActive,
+      source?.auto_enrolment_enabled,
+      source?.autoEnrolmentEnabled,
+      source?.auto_enrolment_active,
+      source?.autoEnrolmentActive,
+      source?.ae_enabled,
+      source?.aeEnabled,
+      source?.ae_enrolled,
+      source?.aeEnrolled,
+      source?.ae_active,
+      source?.aeActive,
+      null
+    )
+  );
+
+  if (explicitEnabled === true) return true;
+
+  const status = String(
+    pickFirst(source?.pension_status, source?.pensionStatus, "") || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (status && status !== "not_assessed" && status !== "not_eligible") {
+    return true;
+  }
+
+  if (
+    normalizePercentMaybe(
+      pickFirst(
+        source?.pension_employee_percent,
+        source?.pensionEmployeePercent,
+        source?.employee_pension_percent,
+        source?.employeePensionPercent,
+        source?.pension_employee_rate,
+        source?.pensionEmployeeRate,
+        source?.employee_pension_rate,
+        source?.employeePensionRate,
+        source?.employee_contribution_percent,
+        source?.employeeContributionPercent,
+        source?.employee_contribution_rate,
+        source?.employeeContributionRate,
+        source?.pension_percent_employee,
+        source?.pensionPercentEmployee,
+        source?.pension_pct_employee,
+        source?.pensionPctEmployee,
+        0
+      )
+    ) > 0
+  ) {
+    return true;
+  }
+
+  if (
+    normalizePercentMaybe(
+      pickFirst(
+        source?.pension_employer_percent,
+        source?.pensionEmployerPercent,
+        source?.employer_pension_percent,
+        source?.employerPensionPercent,
+        source?.pension_employer_rate,
+        source?.pensionEmployerRate,
+        source?.employer_pension_rate,
+        source?.employerPensionRate,
+        source?.employer_contribution_percent,
+        source?.employerContributionPercent,
+        source?.employer_contribution_rate,
+        source?.employerContributionRate,
+        source?.pension_percent_employer,
+        source?.pensionPercentEmployer,
+        source?.pension_pct_employer,
+        source?.pensionPctEmployer,
+        0
+      )
+    ) > 0
+  ) {
+    return true;
+  }
+
+  const hasText = Boolean(
+    pickFirst(
+      source?.pension_scheme_name,
+      source?.pensionSchemeName,
+      source?.pension_reference,
+      source?.pensionReference,
+      source?.pension_contribution_method,
+      source?.pensionContributionMethod,
+      source?.pension_earnings_basis,
+      source?.pensionEarningsBasis,
+      source?.pension_basis,
+      source?.pensionBasis,
+      source?.pension_basis_type,
+      source?.pensionBasisType,
+      source?.pension_worker_category,
+      source?.pensionWorkerCategory,
+      source?.pension_enrolment_date,
+      source?.pensionEnrolmentDate,
+      source?.pension_opt_in_date,
+      source?.pensionOptInDate,
+      source?.pension_opt_out_date,
+      source?.pensionOptOutDate,
+      source?.pension_postponement_date,
+      source?.pensionPostponementDate,
+      null
+    )
+  );
+
+  return hasText;
+}
+
+function resolvePensionSettingsForRow(args: {
+  contract: any;
+  emp: any;
+  isPrimaryContract: boolean;
+}): { settings: EmployeePensionSettings; source: "contract" | "employee" | "none" } {
+  const hasContract = Boolean(args.contract);
+  const contractMeaningful = hasMeaningfulPensionSettings(args.contract);
+  const employeeMeaningful = hasMeaningfulPensionSettings(args.emp);
+
+  if (hasContract && contractMeaningful) {
+    return {
+      settings: readPensionSettingsFromSource(args.contract),
+      source: "contract",
+    };
+  }
+
+  if (hasContract && args.isPrimaryContract && employeeMeaningful) {
+    return {
+      settings: readPensionSettingsFromSource(args.emp),
+      source: "employee",
+    };
+  }
+
+  if (!hasContract && employeeMeaningful) {
+    return {
+      settings: readPensionSettingsFromSource(args.emp),
+      source: "employee",
+    };
+  }
+
+  if (hasContract) {
+    return {
+      settings: readPensionSettingsFromSource(args.contract),
+      source: "none",
+    };
+  }
+
+  return {
+    settings: readPensionSettingsFromSource(args.emp),
+    source: "none",
+  };
+}
+
 function getAeQualifyingEarningsBounds(payFrequency: any): { lower: number; upper: number } {
   const s = String(payFrequency ?? "")
     .trim()
@@ -436,31 +633,38 @@ function getAeQualifyingEarningsBounds(payFrequency: any): { lower: number; uppe
   if (s === "weekly" || s === "week" || s === "1_week") {
     return { lower: 120, upper: 967 };
   }
-
   if (s === "fortnightly" || s === "fortnight" || s === "2_weeks") {
     return { lower: 240, upper: 1934 };
   }
-
-  if (s === "4_weekly" || s === "four_weekly" || s === "4_weeks" || s === "four_weeks") {
+  if (
+    s === "4_weekly" ||
+    s === "four_weekly" ||
+    s === "4_weeks" ||
+    s === "four_weeks"
+  ) {
     return { lower: 480, upper: 3867 };
   }
-
   if (s === "quarterly" || s === "quarter" || s === "1_quarter") {
     return { lower: 1560, upper: 12568 };
   }
-
-  if (s === "biannual" || s === "bi_annual" || s === "semiannual" || s === "semi_annual") {
+  if (
+    s === "biannual" ||
+    s === "bi_annual" ||
+    s === "semiannual" ||
+    s === "semi_annual"
+  ) {
     return { lower: 3120, upper: 25135 };
   }
-
   if (s === "annual" || s === "yearly" || s === "year") {
     return { lower: 6240, upper: 50270 };
   }
-
   return { lower: 520, upper: 4189 };
 }
 
-function computeQualifyingEarnings(qualifyingSourcePay: number, payFrequency: any): number {
+function computeQualifyingEarnings(
+  qualifyingSourcePay: number,
+  payFrequency: any
+): number {
   const source = round2(Math.max(0, qualifyingSourcePay || 0));
   if (source <= 0) return 0;
 
@@ -469,10 +673,20 @@ function computeQualifyingEarnings(qualifyingSourcePay: number, payFrequency: an
 }
 
 function normaliseLocalPayElement(row: any, type: any): LocalNormalisedPayElement {
-  const payrollRunEmployeeId = String(pickFirst(row?.payroll_run_employee_id, row?.payrollRunEmployeeId, "") || "").trim();
-  const payElementTypeId = String(pickFirst(row?.pay_element_type_id, row?.payElementTypeId, "") || "").trim();
-  const code = String(pickFirst(type?.code, row?.code, "") || "").trim().toUpperCase();
+  const payrollRunEmployeeId = String(
+    pickFirst(row?.payroll_run_employee_id, row?.payrollRunEmployeeId, "") || ""
+  ).trim();
+
+  const payElementTypeId = String(
+    pickFirst(row?.pay_element_type_id, row?.payElementTypeId, "") || ""
+  ).trim();
+
+  const code = String(pickFirst(type?.code, row?.code, "") || "")
+    .trim()
+    .toUpperCase();
+
   const side = normalisePayElementSide(pickFirst(type?.side, row?.side, null));
+
   const amount = round2(toNumberSafe(pickFirst(row?.amount, 0)));
 
   const effectivePensionable = resolveBooleanOverride(
@@ -563,7 +777,11 @@ function getNonCumulativeTaxMarker(payFrequency: any): "M1" | "W1" {
   return "W1";
 }
 
-function formatTaxCodeForCalc(taxCode: any, basis: any, payFrequency?: any): string {
+function formatTaxCodeForCalc(
+  taxCode: any,
+  basis: any,
+  payFrequency?: any
+): string {
   const rawBase = (String(taxCode ?? "").trim() || "1257L").toUpperCase();
   const basisNorm = String(basis ?? "").trim().toLowerCase();
 
@@ -576,7 +794,9 @@ function formatTaxCodeForCalc(taxCode: any, basis: any, payFrequency?: any): str
     basisNorm === "wk1/mth1" ||
     basisNorm === "wk1mth1";
 
-  const baseHasNonCumulativeMarker = /\b(?:WK1\/MTH1|WK1MTH1|W1M1|W1|M1)\b/i.test(rawBase);
+  const baseHasNonCumulativeMarker = /\b(?:WK1\/MTH1|WK1MTH1|W1M1|W1|M1)\b/i.test(
+    rawBase
+  );
 
   const cleanedBase = rawBase
     .replace(/\bWK1\/MTH1\b/gi, " ")
@@ -592,7 +812,6 @@ function formatTaxCodeForCalc(taxCode: any, basis: any, payFrequency?: any): str
   if (basisRequestsNonCumulative || baseHasNonCumulativeMarker) {
     return `${base} ${getNonCumulativeTaxMarker(payFrequency)}`.trim();
   }
-
   return base;
 }
 
@@ -607,24 +826,62 @@ type NiThresholds = {
 
 function getNiThresholds(taxYear?: number): NiThresholds {
   if (!taxYear || taxYear >= 2025) {
-    return { PT: 1048, UEL: 4189, ST: 417, employeeMain: 0.08, employeeUpper: 0.02, employerRate: 0.15 };
+    return {
+      PT: 1048,
+      UEL: 4189,
+      ST: 417,
+      employeeMain: 0.08,
+      employeeUpper: 0.02,
+      employerRate: 0.15,
+    };
   }
   if (taxYear === 2024) {
-    return { PT: 1048, UEL: 4189, ST: 758, employeeMain: 0.08, employeeUpper: 0.02, employerRate: 0.138 };
+    return {
+      PT: 1048,
+      UEL: 4189,
+      ST: 758,
+      employeeMain: 0.08,
+      employeeUpper: 0.02,
+      employerRate: 0.138,
+    };
   }
   if (taxYear === 2023) {
-    return { PT: 1048, UEL: 4189, ST: 758, employeeMain: 0.10, employeeUpper: 0.02, employerRate: 0.138 };
+    return {
+      PT: 1048,
+      UEL: 4189,
+      ST: 758,
+      employeeMain: 0.1,
+      employeeUpper: 0.02,
+      employerRate: 0.138,
+    };
   }
   if (taxYear === 2022) {
-    return { PT: 1048, UEL: 4189, ST: 758, employeeMain: 0.1325, employeeUpper: 0.0325, employerRate: 0.1485 };
+    return {
+      PT: 1048,
+      UEL: 4189,
+      ST: 758,
+      employeeMain: 0.1325,
+      employeeUpper: 0.0325,
+      employerRate: 0.1485,
+    };
   }
-  return { PT: 1048, UEL: 4189, ST: 417, employeeMain: 0.08, employeeUpper: 0.02, employerRate: 0.15 };
+  return {
+    PT: 1048,
+    UEL: 4189,
+    ST: 417,
+    employeeMain: 0.08,
+    employeeUpper: 0.02,
+    employerRate: 0.15,
+  };
 }
 
-function computeApproxMonthlyNi(gross: number, niCategory: any, taxYear?: number) {
+function computeApproxMonthlyNi(
+  gross: number,
+  niCategory: any,
+  taxYear?: number
+) {
   const pay = Math.max(0, Number(gross || 0));
   const cat = String(niCategory ?? "A").trim().toUpperCase();
-
   const { PT, UEL, ST, employeeMain, employeeUpper, employerRate } = getNiThresholds(taxYear);
 
   let employee = 0;
@@ -636,7 +893,6 @@ function computeApproxMonthlyNi(gross: number, niCategory: any, taxYear?: number
       const employeeUpperBand = Math.max(pay - UEL, 0);
       employee = employeeMainBand * employeeMain + employeeUpperBand * employeeUpper;
     }
-
     employer = Math.max(pay - ST, 0) * employerRate;
   }
 
@@ -658,11 +914,7 @@ function computeMonthlyPayeAndNiFromGross(args: {
 }): MonthlyPayeAndNiResult {
   const payFrequency = String(args.payFrequency ?? "").trim().toLowerCase();
   if (payFrequency !== "monthly") {
-    return {
-      paye: 0,
-      employeeNi: 0,
-      employerNi: 0,
-    };
+    return { paye: 0, employeeNi: 0, employerNi: 0 };
   }
 
   const grossForTax = round2(Math.max(0, args.grossForTax || 0));
@@ -679,14 +931,22 @@ function computeMonthlyPayeAndNiFromGross(args: {
       ytdTaxPaidBeforeThisPeriod: 0,
       taxYear: args.taxYear,
     });
-
     paye = round2(Number((payResult as any)?.tax ?? 0));
   } catch {
     paye = 0;
   }
 
-  const employeeNi = computeApproxMonthlyNi(grossForEmployeeNi, args.niCategory, args.taxYear).employee;
-  const employerNi = computeApproxMonthlyNi(grossForEmployerNi, args.niCategory, args.taxYear).employer;
+  const employeeNi = computeApproxMonthlyNi(
+    grossForEmployeeNi,
+    args.niCategory,
+    args.taxYear
+  ).employee;
+
+  const employerNi = computeApproxMonthlyNi(
+    grossForEmployerNi,
+    args.niCategory,
+    args.taxYear
+  ).employer;
 
   return {
     paye: round2(paye),
@@ -711,6 +971,7 @@ function overlayPensionFromEmployeeSettings(args: {
   const basicPay = round2(Math.max(0, args.basicPay || 0));
   const pensionablePay = round2(Math.max(0, args.pensionablePay || 0));
   const aeQualifyingSourcePay = round2(Math.max(0, args.aeQualifyingSourcePay || 0));
+
   const settings = args.settings;
 
   const qualifyingEarnings = computeQualifyingEarnings(
@@ -793,7 +1054,6 @@ export function resultLooksGrossOnly(result: any): boolean {
     const gross = toNumberSafe(row?.gross);
     const deductions = toNumberSafe(row?.deductions);
     const net = toNumberSafe(row?.net);
-
     if (gross <= 0) return true;
     return deductions === 0 && Math.abs(net - gross) <= 0.01;
   });
@@ -802,12 +1062,15 @@ export function resultLooksGrossOnly(result: any): boolean {
 }
 
 async function loadRun(supabase: any, runId: string) {
-  const { data, error } = await supabase.from("payroll_runs").select("*").eq("id", runId).maybeSingle();
+  const { data, error } = await supabase
+    .from("payroll_runs")
+    .select("*")
+    .eq("id", runId)
+    .maybeSingle();
 
   if (error) {
     return { ok: false as const, status: 500, error: error.message };
   }
-
   if (!data) {
     return { ok: false as const, status: 404, error: "Payroll run not found" };
   }
@@ -837,14 +1100,22 @@ async function loadAttachments(supabase: any, runId: string, companyId: string) 
   attempts.push({
     table: "payroll_run_employees",
     col: "run_id,company_id",
-    error: { code: a.error.code, message: a.error.message, details: a.error.details, hint: a.error.hint },
+    error: {
+      code: a.error.code,
+      message: a.error.message,
+      details: a.error.details,
+      hint: a.error.hint,
+    },
   });
 
   const msg = String(a.error.message || "").toLowerCase();
   const missingCol = a.error.code === "42703" || (msg.includes("column") && msg.includes("does not exist"));
 
   if (missingCol) {
-    const b = await supabase.from("payroll_run_employees").select("*").eq("run_id", runId);
+    const b = await supabase
+      .from("payroll_run_employees")
+      .select("*")
+      .eq("run_id", runId);
 
     if (!b.error) {
       return {
@@ -859,17 +1130,60 @@ async function loadAttachments(supabase: any, runId: string, companyId: string) 
     attempts.push({
       table: "payroll_run_employees",
       col: "run_id",
-      error: { code: b.error.code, message: b.error.message, details: b.error.details, hint: b.error.hint },
+      error: {
+        code: b.error.code,
+        message: b.error.message,
+        details: b.error.details,
+        hint: b.error.hint,
+      },
     });
   }
 
-  return { ok: false as const, tableUsed: null, whereColumn: null, rows: [], attempts };
+  return {
+    ok: false as const,
+    tableUsed: null,
+    whereColumn: null,
+    rows: [],
+    attempts,
+  };
 }
 
-function buildEmployeeRow(att: any, emp: any, run: any) {
+async function loadContracts(
+  supabase: any,
+  companyId: string,
+  contractIds: string[]
+) {
+  if (!Array.isArray(contractIds) || contractIds.length === 0) {
+    return { ok: true as const, rows: [] as any[] };
+  }
+
+  const { data, error } = await supabase
+    .from("employee_contracts")
+    .select("*")
+    .eq("company_id", companyId)
+    .in("id", contractIds);
+
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+
+  return {
+    ok: true as const,
+    rows: Array.isArray(data) ? data : [],
+  };
+}
+
+function buildEmployeeRow(
+  att: any,
+  emp: any,
+  contract: any,
+  run: any,
+  isPrimaryContract: boolean
+) {
   const meta = getObjectSafe(att?.metadata);
 
   const employeeId = String(pickFirst(att?.employee_id, att?.employeeId, "") || "");
+  const contractId = String(pickFirst(att?.contract_id, att?.contractId, contract?.id, "") || "");
 
   const employeeName = String(
     pickFirst(
@@ -901,18 +1215,21 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
   const storedTax = round2(toNumberSafe(pickFirst(att?.tax, att?.paye_tax, att?.income_tax, 0)));
   const storedEmployeeNi = round2(toNumberSafe(pickFirst(att?.ni_employee, att?.employee_ni, att?.ni, 0)));
   const storedEmployerNi = round2(toNumberSafe(pickFirst(att?.ni_employer, att?.employer_ni, 0)));
+
   const pensionEmployee = round2(
     toNumberSafe(pickFirst(att?.pension_employee, att?.pensionEmployee, att?.employee_pension, 0))
   );
   const pensionEmployer = round2(
     toNumberSafe(pickFirst(att?.pension_employer, att?.pensionEmployer, att?.employer_pension, 0))
   );
+
   const otherDeductions = round2(toNumberSafe(pickFirst(att?.other_deductions, att?.otherDeductions, 0)));
   const aoe = round2(toNumberSafe(pickFirst(att?.attachment_of_earnings, att?.attachmentOfEarnings, 0)));
   const studentLoanDeduction = round2(toNumberSafe(pickFirst(att?.student_loan, att?.studentLoan, 0)));
   const postgradLoanDeduction = round2(
     toNumberSafe(pickFirst(att?.pg_loan, att?.postgrad_loan, att?.pgLoan, 0))
   );
+
   const storedNet = round2(toNumberSafe(pickFirst(att?.net_pay, att?.netPay, att?.net, gross)));
 
   let tax = storedTax;
@@ -961,27 +1278,40 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
       : String(niCategoryUsedRaw).trim().toUpperCase() || null;
 
   const runFrequency = String(
-    pickFirst(run?.frequency, run?.pay_frequency, run?.payFrequency, att?.pay_frequency_used, "") || ""
+    pickFirst(
+      run?.frequency,
+      run?.pay_frequency,
+      run?.payFrequency,
+      att?.pay_frequency_used,
+      contract?.pay_frequency,
+      ""
+    ) || ""
   )
     .trim()
     .toLowerCase();
 
-  const pensionSettings = readEmployeePensionSettings(emp);
+  const resolvedPension = resolvePensionSettingsForRow({
+    contract,
+    emp,
+    isPrimaryContract,
+  });
+  const pensionSettings = resolvedPension.settings;
+
   const taxReductionFromPension =
     pensionSettings.method === "salary_sacrifice" || pensionSettings.method === "net_pay"
       ? pensionEmployee
       : 0;
   const niReductionFromPension =
-    pensionSettings.method === "salary_sacrifice"
-      ? pensionEmployee
-      : 0;
+    pensionSettings.method === "salary_sacrifice" ? pensionEmployee : 0;
 
   const grossForTaxFallback = round2(Math.max(0, gross - taxReductionFromPension));
   const grossForNiFallback = round2(Math.max(0, gross - niReductionFromPension));
 
   if (tax <= 0 && gross > 0 && runFrequency === "monthly" && taxCodeUsed) {
     try {
-      const periodStartSrc = String(pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || "");
+      const periodStartSrc = String(
+        pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || ""
+      );
       const taxYear = parseInt(periodStartSrc.slice(0, 4), 10);
 
       const payResult = calculatePay({
@@ -991,7 +1321,9 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
         ytdTaxableBeforeThisPeriod: toNumberSafe(
           pickFirst(att?.ytd_taxable_before, att?.ytd_gross_before, emp?.ytd_gross, 0)
         ),
-        ytdTaxPaidBeforeThisPeriod: toNumberSafe(pickFirst(att?.ytd_tax_before, emp?.ytd_tax, 0)),
+        ytdTaxPaidBeforeThisPeriod: toNumberSafe(
+          pickFirst(att?.ytd_tax_before, emp?.ytd_tax, 0)
+        ),
         taxYear: Number.isFinite(taxYear) ? taxYear : undefined,
       });
 
@@ -1005,22 +1337,28 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
     }
   }
 
-  if (gross > 0 && runFrequency === "monthly" && niCategoryUsed && (employeeNi <= 0 || employerNi <= 0)) {
+  if (
+    gross > 0 &&
+    runFrequency === "monthly" &&
+    niCategoryUsed &&
+    (employeeNi <= 0 || employerNi <= 0)
+  ) {
     try {
-      const periodStartSrc = String(pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || "");
+      const periodStartSrc = String(
+        pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || ""
+      );
       const taxYearForNi = parseInt(periodStartSrc.slice(0, 4), 10);
       const niTaxYear = Number.isFinite(taxYearForNi) ? taxYearForNi : undefined;
+
       const ni = computeApproxMonthlyNi(grossForNiFallback, niCategoryUsed, niTaxYear);
       const cat = String(niCategoryUsed || "").trim().toUpperCase();
 
       if ((employeeNi <= 0 && ni.employee > 0) || cat === "C") {
         employeeNi = ni.employee;
       }
-
       if (employerNi <= 0 && ni.employer >= 0) {
         employerNi = ni.employer;
       }
-
       usedNiFallback = true;
     } catch {
       // leave stored values as-is
@@ -1053,138 +1391,195 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
   const safeId = String(pickFirst(att?.id, "") || "");
   const calcMode = String(pickFirst(att?.calc_mode, "uncomputed") || "uncomputed");
 
+  const contractNumber = pickFirst(
+    contract?.contract_number,
+    meta?.contract_number,
+    att?.contract_number,
+    att?.contractNumber,
+    null
+  );
+
+  const contractJobTitle = pickFirst(
+    contract?.job_title,
+    att?.contract_job_title,
+    att?.contractJobTitle,
+    meta?.contract_job_title,
+    null
+  );
+
+  const contractStatus = pickFirst(
+    contract?.status,
+    att?.contract_status,
+    att?.contractStatus,
+    null
+  );
+
+  const contractStartDate = pickFirst(
+    contract?.start_date,
+    att?.contract_start_date,
+    att?.contractStartDate,
+    null
+  );
+
+  const contractLeaveDate = pickFirst(
+    contract?.leave_date,
+    att?.contract_leave_date,
+    att?.contractLeaveDate,
+    null
+  );
+
+  const contractPayAfterLeaving = pickFirst(
+    contract?.pay_after_leaving,
+    att?.contract_pay_after_leaving,
+    att?.contractPayAfterLeaving,
+    null
+  );
+
   return {
     ...(att && typeof att === "object" ? att : {}),
-
     id: safeId,
     payroll_run_employee_id: safeId,
     payrollRunEmployeeId: safeId,
-
     employee_id: employeeId,
     employeeId: employeeId,
-
+    contract_id: contractId || null,
+    contractId: contractId || null,
+    contract_number: contractNumber,
+    contractNumber,
+    contract_job_title: contractJobTitle,
+    contractJobTitle: contractJobTitle,
+    contract_status: contractStatus,
+    contractStatus,
+    contract_start_date: contractStartDate,
+    contractStartDate: contractStartDate,
+    contract_leave_date: contractLeaveDate,
+    contractLeaveDate: contractLeaveDate,
+    contract_pay_after_leaving: contractPayAfterLeaving,
+    contractPayAfterLeaving: contractPayAfterLeaving,
+    pension_settings_source: resolvedPension.source,
     employee_name: employeeName,
     employeeName: employeeName,
-
     employee_number: employeeNumber,
     employeeNumber: employeeNumber,
     payroll_number: employeeNumber,
     payrollNumber: employeeNumber,
-
     email,
     employee_email: email,
     employeeEmail: email,
-
     gross: round2(gross),
     gross_pay: round2(gross),
     total_gross: round2(gross),
     gross_pay_used: round2(gross),
-
     tax: round2(tax),
     total_tax: round2(tax),
     tax_pay: round2(tax),
     paye_tax: round2(tax),
     income_tax: round2(tax),
-
     ni: round2(employeeNi),
     ni_employee: round2(employeeNi),
     employee_ni: round2(employeeNi),
     niEmployee: round2(employeeNi),
     employeeNi: round2(employeeNi),
-
     ni_employer: round2(employerNi),
     employer_ni: round2(employerNi),
     niEmployer: round2(employerNi),
     employerNi: round2(employerNi),
-
     pension_employee: round2(pensionEmployee),
     pensionEmployee: round2(pensionEmployee),
     employee_pension: round2(pensionEmployee),
-
     pension_employer: round2(pensionEmployer),
     pensionEmployer: round2(pensionEmployer),
     employer_pension: round2(pensionEmployer),
-
     other_deductions: round2(otherDeductions),
     otherDeductions: round2(otherDeductions),
-
     attachment_of_earnings: round2(aoe),
     attachmentOfEarnings: round2(aoe),
-
     student_loan: round2(studentLoanDeduction),
     studentLoan: round2(studentLoanDeduction),
-
     pg_loan: round2(postgradLoanDeduction),
     postgrad_loan: round2(postgradLoanDeduction),
     pgLoan: round2(postgradLoanDeduction),
-
     deductions: round2(deductions),
     total_deductions: round2(deductions),
     deduction_total: round2(deductions),
-
     net: round2(net),
     net_pay: round2(net),
     total_net: round2(net),
-
     calc_mode: calcMode,
     manual_override: Boolean(att?.manual_override ?? false),
-
     tax_code_used: taxCodeUsed,
     tax_code: taxCodeUsed,
     taxCode: taxCodeUsed,
-
     tax_code_basis_used: taxCodeBasisUsed,
     tax_code_basis: taxCodeBasisUsed,
     tax_basis_used: taxCodeBasisUsed,
     tax_basis: taxCodeBasisUsed,
-
     ni_category_used: niCategoryUsed,
     ni_category: niCategoryUsed,
     niCategory: niCategoryUsed,
-
     pay_frequency_used: pickFirst(
       att?.pay_frequency_used,
+      contract?.pay_frequency,
       emp?.pay_frequency,
       emp?.frequency,
       run?.frequency,
       run?.pay_frequency,
       null
     ),
-
     pay_basis_used: pickFirst(
       att?.pay_basis_used,
+      contract?.pay_basis,
       emp?.pay_basis,
       emp?.pay_basis_used,
       emp?.pay_type,
       emp?.payType,
       null
     ),
-
-    hours_per_week_used: pickFirst(att?.hours_per_week_used, emp?.hours_per_week, emp?.hoursPerWeek, null),
+    hours_per_week_used: pickFirst(
+      att?.hours_per_week_used,
+      contract?.hours_per_week,
+      emp?.hours_per_week,
+      emp?.hoursPerWeek,
+      null
+    ),
   };
 }
 
 function summariseEmployeeRows(employees: any[]) {
   const gross = round2(
-    employees.reduce((sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.gross, row?.gross_pay, 0)), 0)
-  );
-  const tax = round2(
-    employees.reduce((sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.tax, row?.total_tax, 0)), 0)
-  );
-  const ni = round2(
     employees.reduce(
-      (sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.ni_employee, row?.employee_ni, row?.ni, 0)),
+      (sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.gross, row?.gross_pay, 0)),
       0
     )
   );
+
+  const tax = round2(
+    employees.reduce(
+      (sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.tax, row?.total_tax, 0)),
+      0
+    )
+  );
+
+  const ni = round2(
+    employees.reduce(
+      (sum: number, row: any) =>
+        sum + toNumberSafe(pickFirst(row?.ni_employee, row?.employee_ni, row?.ni, 0)),
+      0
+    )
+  );
+
   const deductions = round2(
     employees.reduce(
       (sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.deductions, row?.total_deductions, 0)),
       0
     )
   );
+
   const net = round2(
-    employees.reduce((sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.net, row?.net_pay, 0)), 0)
+    employees.reduce(
+      (sum: number, row: any) => sum + toNumberSafe(pickFirst(row?.net, row?.net_pay, 0)),
+      0
+    )
   );
 
   return { gross, tax, ni, deductions, net };
@@ -1193,12 +1588,15 @@ function summariseEmployeeRows(employees: any[]) {
 function deriveSeededMode(run: any, attachments: any[]): boolean {
   if (!Array.isArray(attachments) || attachments.length === 0) return true;
 
-  const hasCalcMode = attachments.some((r: any) => r && typeof r === "object" && "calc_mode" in r);
+  const hasCalcMode = attachments.some(
+    (r: any) => r && typeof r === "object" && "calc_mode" in r
+  );
+
   if (hasCalcMode) {
-    const anyNotFull = attachments.some(
-      (r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) !== "full"
+    const allFull = attachments.every(
+      (r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) === "full"
     );
-    if (!anyNotFull) return false;
+    if (allFull) return false;
     return true;
   }
 
@@ -1226,7 +1624,6 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
   for (const att of attachments || []) {
     const employeeId = String(pickFirst(att?.employee_id, "") || "").trim();
     const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
-
     const emp = employeeId ? empById.get(employeeId) : null;
 
     const employeeName = String(
@@ -1244,10 +1641,23 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
 
     if (gross <= 0) codes.push("GROSS_ZERO");
 
-    const taxCode = pickFirst(att?.tax_code_used, emp?.tax_code, emp?.taxCode, emp?.taxcode, null);
+    const taxCode = pickFirst(
+      att?.tax_code_used,
+      emp?.tax_code,
+      emp?.taxCode,
+      emp?.taxcode,
+      null
+    );
     if (!taxCode) codes.push("MISSING_TAX_CODE");
 
-    const niCat = pickFirst(att?.ni_category_used, emp?.ni_category, emp?.niCategory, emp?.ni_cat, emp?.niCat, null);
+    const niCat = pickFirst(
+      att?.ni_category_used,
+      emp?.ni_category,
+      emp?.niCategory,
+      emp?.ni_cat,
+      emp?.niCat,
+      null
+    );
     if (!niCat) codes.push("MISSING_NI_CATEGORY");
 
     const blocking = codes.includes("MISSING_TAX_CODE") || codes.includes("MISSING_NI_CATEGORY");
@@ -1265,7 +1675,12 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
     }
   }
 
-  return { items, blockingCount, warningCount, total: items.length };
+  return {
+    items,
+    blockingCount,
+    warningCount,
+    total: items.length,
+  };
 }
 
 export async function getPayrollRunDetail(
@@ -1329,7 +1744,16 @@ export async function getPayrollRunDetail(
     )
   );
 
+  const contractIds: string[] = Array.from(
+    new Set(
+      attachments
+        .map((r: any) => String(pickFirst(r?.contract_id, r?.contractId, "") || "").trim())
+        .filter((id: string) => Boolean(id) && isUuid(id))
+    )
+  );
+
   let empRows: any[] = [];
+  let contractRows: any[] = [];
 
   if (employeeIds.length > 0) {
     const { data: emps, error: empErr } = await supabase
@@ -1346,11 +1770,33 @@ export async function getPayrollRunDetail(
         debug: includeDebug ? { ...debug, empErr: empErr.message } : undefined,
       };
     }
-
     empRows = Array.isArray(emps) ? emps : [];
   }
 
-  debug.stage.employeeFetch = { ok: true, requested: employeeIds.length, found: empRows.length };
+  if (contractIds.length > 0) {
+    const contractRes = await loadContracts(supabase, companyId, contractIds);
+    if (!contractRes.ok) {
+      return {
+        ok: false,
+        status: 500,
+        error: "Failed to load contracts for payroll run.",
+        debug: includeDebug ? { ...debug, contractErr: contractRes.error } : undefined,
+      };
+    }
+    contractRows = contractRes.rows;
+  }
+
+  debug.stage.employeeFetch = {
+    ok: true,
+    requested: employeeIds.length,
+    found: empRows.length,
+  };
+
+  debug.stage.contractFetch = {
+    ok: true,
+    requested: contractIds.length,
+    found: contractRows.length,
+  };
 
   const empById = new Map<string, any>();
   for (const e of empRows) {
@@ -1358,10 +1804,31 @@ export async function getPayrollRunDetail(
     if (id) empById.set(id, e);
   }
 
+  const contractById = new Map<string, any>();
+  for (const c of contractRows) {
+    const id = String((c as any)?.id || "").trim();
+    if (id) contractById.set(id, c);
+  }
+
+  const sortedContracts = sortContractsMainFirst(contractRows);
+  const primaryContractId = String(sortedContracts[0]?.id || "").trim();
+
   const employees = attachments.map((att: any) => {
     const employeeId = String(pickFirst(att?.employee_id, "") || "").trim();
+    const contractId = String(
+      pickFirst(att?.contract_id, att?.contractId, "") || ""
+    ).trim();
+
     const emp = employeeId ? empById.get(employeeId) : null;
-    return buildEmployeeRow(att, emp, run);
+    const contract = contractId ? contractById.get(contractId) : null;
+
+    return buildEmployeeRow(
+      att,
+      emp,
+      contract,
+      run,
+      Boolean(contractId) && contractId === primaryContractId
+    );
   });
 
   const storedTotalGross = round2(toNumberSafe(pickFirst(run?.total_gross_pay, 0)));
@@ -1370,28 +1837,30 @@ export async function getPayrollRunDetail(
   const storedTotalNet = round2(toNumberSafe(pickFirst(run?.total_net_pay, 0)));
 
   const rowTotals = summariseEmployeeRows(employees);
+
   const storedDerivedDeductions = round2(storedTotalGross - storedTotalNet);
 
   const storedTotalsLookStale =
     employees.length > 0 &&
     ((rowTotals.tax > 0 && storedTotalTax === 0) ||
       (rowTotals.ni > 0 && storedTotalNi === 0) ||
-      (rowTotals.net > 0 &&
-        Math.abs(storedTotalNet - rowTotals.net) > 0.01 &&
+      (rowTotals.net > 0 && Math.abs(storedTotalNet - rowTotals.net) > 0.01 &&
         (storedTotalTax === 0 || storedTotalNi === 0)) ||
       (rowTotals.deductions > 0 &&
         Math.abs(storedDerivedDeductions - rowTotals.deductions) > 0.01 &&
         (storedTotalTax === 0 || storedTotalNi === 0)));
 
-  const totalGross = storedTotalsLookStale && rowTotals.gross > 0 ? rowTotals.gross : storedTotalGross;
+  const totalGross =
+    storedTotalsLookStale && rowTotals.gross > 0 ? rowTotals.gross : storedTotalGross;
   const totalTax = storedTotalsLookStale ? rowTotals.tax : storedTotalTax;
   const totalNi = storedTotalsLookStale ? rowTotals.ni : storedTotalNi;
-  const totalNet = storedTotalsLookStale && rowTotals.net > 0 ? rowTotals.net : storedTotalNet;
+  const totalNet =
+    storedTotalsLookStale && rowTotals.net > 0 ? rowTotals.net : storedTotalNet;
   const totalDeductions = storedTotalsLookStale
     ? rowTotals.deductions
     : rowTotals.deductions > 0
-      ? rowTotals.deductions
-      : storedDerivedDeductions;
+    ? rowTotals.deductions
+    : storedDerivedDeductions;
 
   const totals = {
     gross: totalGross,
@@ -1408,7 +1877,6 @@ export async function getPayrollRunDetail(
 
   const seededMode = deriveSeededMode(run, attachments);
   const exceptions = computeExceptions(attachments, empById);
-
   const effectivePayDate = deriveRunPayDate(run);
 
   return {
@@ -1422,7 +1890,11 @@ export async function getPayrollRunDetail(
     totals,
     seededMode,
     exceptions,
-    attachmentsMeta: { tableUsed: attachTry.tableUsed, whereColumn: attachTry.whereColumn },
+    attachmentsMeta: {
+      tableUsed: attachTry.tableUsed,
+      whereColumn: attachTry.whereColumn,
+    },
     debug: includeDebug ? debug : undefined,
   };
 }
+
