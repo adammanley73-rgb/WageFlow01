@@ -1,4 +1,4 @@
-// C:\Projects\wageflow01\lib\payroll\getPayrollRunDetail.ts
+﻿// C:\Projects\wageflow01\lib\payroll\getPayrollRunDetail.ts
 
 import { calculatePay } from "@/lib/payroll/calculatePay";
 
@@ -1744,11 +1744,11 @@ export async function getPayrollRunDetail(
     )
   );
 
-  const contractIds = Array.from(
+  const contractIds: string[] = Array.from(
     new Set(
       attachments
         .map((r: any) => String(pickFirst(r?.contract_id, r?.contractId, "") || "").trim())
-        .filter((id) => Boolean(id) && isUuid(id))
+        .filter((id: string) => Boolean(id) && isUuid(id))
     )
   );
 
@@ -1897,3 +1897,4 @@ export async function getPayrollRunDetail(
     debug: includeDebug ? debug : undefined,
   };
 }
+
