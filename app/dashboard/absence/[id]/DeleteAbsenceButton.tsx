@@ -1,3 +1,4 @@
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\[id]\DeleteAbsenceButton.tsx
 "use client";
 
 import React, { useState } from "react";
@@ -10,7 +11,7 @@ type DeleteAbsenceButtonProps = {
 
 export default function DeleteAbsenceButton({
   absenceId,
-  redirectTo = "/dashboard/absence",
+  redirectTo = "/dashboard/absence/list",
 }: DeleteAbsenceButtonProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
@@ -30,20 +31,32 @@ export default function DeleteAbsenceButton({
     setIsDeleting(true);
 
     try {
-      const res = await fetch(`/api/absences/${encodeURIComponent(absenceId)}`, {
+      const res = await fetch(`/api/absence/${encodeURIComponent(absenceId)}`, {
         method: "DELETE",
         cache: "no-store",
       });
 
-      const text = await res.text().catch(() => "");
-      const body = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
+      const contentType = String(res.headers.get("content-type") || "").toLowerCase();
 
-      if (!res.ok) {
-        setMsg(typeof body === "string" ? body : JSON.stringify(body));
-        return;
+      let json: any = null;
+      let text = "";
+
+      if (contentType.includes("application/json")) {
+        json = await res.json().catch(() => null);
+      } else {
+        text = await res.text().catch(() => "");
       }
 
-      setMsg(typeof body === "string" ? body : JSON.stringify(body));
+      if (!res.ok) {
+        const message =
+          json?.message ||
+          json?.error ||
+          (res.status === 404
+            ? "Delete failed because the absence record was not found."
+            : "Delete failed.");
+        setMsg(message);
+        return;
+      }
 
       router.push(redirectTo);
       router.refresh();
@@ -61,20 +74,13 @@ export default function DeleteAbsenceButton({
         type="button"
         onClick={handleDelete}
         disabled={isDeleting}
-        style={{
-          padding: "8px 12px",
-          borderRadius: 8,
-          border: "1px solid #ccc",
-          cursor: isDeleting ? "not-allowed" : "pointer",
-          opacity: isDeleting ? 0.7 : 1,
-          background: "white",
-        }}
+        className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isDeleting ? "Deleting..." : "Delete"}
       </button>
 
       {msg ? (
-        <div style={{ marginTop: 8, fontSize: 13, whiteSpace: "pre-wrap" }}>
+        <div className="mt-2 text-xs text-red-700">
           {msg}
         </div>
       ) : null}
