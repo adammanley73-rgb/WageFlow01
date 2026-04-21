@@ -1,4 +1,4 @@
-// C:\Projects\wageflow01\app\dashboard\absence\[id]\page.tsx
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\[id]\page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -6,8 +6,19 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import PageTemplate from "@/components/layout/PageTemplate";
 import DeleteAbsenceButton from "./DeleteAbsenceButton";
+import { formatUkDate } from "@/lib/formatUkDate";
 
 const CARD = "rounded-2xl bg-white/90 ring-1 ring-neutral-300 shadow-sm p-6";
+
+type SelectedContractDto = {
+  id: string;
+  contractNumber: string;
+  jobTitle: string;
+  status: string;
+  startDate: string;
+  leaveDate: string;
+  payAfterLeaving: boolean;
+};
 
 type AbsenceDto = {
   id: string;
@@ -19,12 +30,91 @@ type AbsenceDto = {
   lastDayExpected: string | null;
   lastDayActual: string | null;
   referenceNotes: string | null;
+  selectedContractIds?: string[];
+  selected_contract_ids?: string[];
+  selectedContracts?: SelectedContractDto[];
 };
 
 function getParamId(raw: unknown): string | null {
   if (typeof raw === "string") return raw;
   if (Array.isArray(raw) && typeof raw[0] === "string") return raw[0];
   return null;
+}
+
+function cleanText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function typeLabel(value: string | null | undefined): string {
+  const v = cleanText(value).toLowerCase();
+  if (!v) return "";
+
+  switch (v) {
+    case "annual":
+    case "annual_leave":
+      return "Annual leave";
+    case "sickness":
+      return "Sickness";
+    case "maternity":
+      return "Maternity";
+    case "paternity":
+      return "Paternity";
+    case "shared_parental":
+      return "Shared parental leave";
+    case "adoption":
+      return "Adoption";
+    case "parental_bereavement":
+      return "Parental bereavement";
+    case "bereaved_partners_paternity":
+      return "Bereaved partner's paternity leave";
+    case "unpaid_leave":
+    case "unpaid_other":
+      return "Unpaid leave";
+    default:
+      return v.replaceAll("_", " ");
+  }
+}
+
+function statusLabel(value: string | null | undefined): string {
+  const v = cleanText(value).toLowerCase();
+  if (!v) return "";
+
+  switch (v) {
+    case "draft":
+      return "Draft";
+    case "scheduled":
+      return "Scheduled";
+    case "active":
+      return "Active";
+    case "completed":
+      return "Completed";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return v.replaceAll("_", " ");
+  }
+}
+
+function contractStatusLabel(value: string | null | undefined): string {
+  const v = cleanText(value).toLowerCase();
+  if (v === "active") return "Active";
+  if (v === "inactive") return "Inactive";
+  if (v === "leaver") return "Leaver";
+  return v ? v.replaceAll("_", " ") : "Unknown";
+}
+
+function contractPillClass(status: string | null | undefined) {
+  const v = cleanText(status).toLowerCase();
+
+  if (v === "active") {
+    return "inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800";
+  }
+
+  if (v === "leaver") {
+    return "inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900";
+  }
+
+  return "inline-flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700";
 }
 
 export default function AbsenceDetailPage() {
@@ -155,6 +245,11 @@ export default function AbsenceDetailPage() {
     }
   }
 
+  const isSickness = cleanText(absence?.type).toLowerCase() === "sickness";
+  const selectedContracts = Array.isArray(absence?.selectedContracts)
+    ? absence!.selectedContracts
+    : [];
+
   return (
     <PageTemplate title="Absence" currentSection="absence">
       <div className={CARD}>
@@ -193,28 +288,103 @@ export default function AbsenceDetailPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
                 <div className="text-xs text-neutral-500">Employee</div>
-                <div className="text-sm font-semibold text-neutral-900">{absence.employeeLabel}</div>
+                <div className="text-sm font-semibold text-neutral-900">
+                  {absence.employeeLabel}
+                </div>
               </div>
 
               <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
                 <div className="text-xs text-neutral-500">Type</div>
-                <div className="text-sm font-semibold text-neutral-900">{absence.type || ""}</div>
+                <div className="text-sm font-semibold text-neutral-900">
+                  {typeLabel(absence.type)}
+                </div>
               </div>
 
               <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
                 <div className="text-xs text-neutral-500">Status</div>
-                <div className="text-sm font-semibold text-neutral-900">{absence.status || ""}</div>
+                <div className="text-sm font-semibold text-neutral-900">
+                  {statusLabel(absence.status)}
+                </div>
               </div>
 
               <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3">
                 <div className="text-xs text-neutral-500">Dates</div>
                 <div className="text-sm font-semibold text-neutral-900">
-                  {absence.firstDay || ""}{" "}
-                  {absence.lastDayExpected ? `to ${absence.lastDayExpected}` : ""}
-                  {absence.lastDayActual ? ` (actual: ${absence.lastDayActual})` : ""}
+                  {absence.firstDay ? formatUkDate(absence.firstDay, absence.firstDay) : ""}
+                  {absence.lastDayExpected
+                    ? ` to ${formatUkDate(absence.lastDayExpected, absence.lastDayExpected)}`
+                    : ""}
+                  {absence.lastDayActual
+                    ? ` (actual: ${formatUkDate(absence.lastDayActual, absence.lastDayActual)})`
+                    : ""}
                 </div>
               </div>
             </div>
+
+            {isSickness ? (
+              <div className="mt-5">
+                <div className="mb-2 text-sm font-semibold text-neutral-900">
+                  Affected contracts
+                </div>
+                <div className="mb-3 text-xs text-neutral-600">
+                  These are the contracts currently linked to this sickness absence.
+                </div>
+
+                {selectedContracts.length === 0 ? (
+                  <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+                    No contracts are currently linked to this sickness absence.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {selectedContracts.map((contract) => {
+                      const contractNumber =
+                        cleanText(contract.contractNumber) || "Unnamed contract";
+                      const jobTitle = cleanText(contract.jobTitle);
+                      const startLabel = contract.startDate
+                        ? formatUkDate(contract.startDate, contract.startDate)
+                        : "No start date";
+                      const leaveLabel = contract.leaveDate
+                        ? formatUkDate(contract.leaveDate, contract.leaveDate)
+                        : "";
+
+                      return (
+                        <div
+                          key={contract.id}
+                          className="rounded-2xl border border-blue-600 bg-blue-50/60 px-4 py-4"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-semibold text-neutral-900">
+                              {contractNumber}
+                            </div>
+
+                            <span className={contractPillClass(contract.status)}>
+                              {contractStatusLabel(contract.status)}
+                            </span>
+
+                            {contract.payAfterLeaving ? (
+                              <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                                Pay after leaving
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {jobTitle ? (
+                            <div className="mt-1 text-sm text-neutral-700">
+                              {jobTitle}
+                            </div>
+                          ) : null}
+
+                          <div className="mt-2 flex flex-wrap gap-3 text-xs text-neutral-600">
+                            <span>Start: {startLabel}</span>
+                            {leaveLabel ? <span>Leave: {leaveLabel}</span> : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : null}
 
             <div className="mt-5">
               <label className="mb-1 block text-sm font-medium text-neutral-700">
@@ -245,7 +415,9 @@ export default function AbsenceDetailPage() {
               />
 
               {saveMsg ? (
-                <div className="text-sm font-semibold text-emerald-700">{saveMsg}</div>
+                <div className="text-sm font-semibold text-emerald-700">
+                  {saveMsg}
+                </div>
               ) : null}
             </div>
           </>

@@ -1,4 +1,4 @@
-// C:\Projects\wageflow01\app\dashboard\absence\[id]\edit\page.tsx
+// C:\Users\adamm\Projects\wageflow01\app\dashboard\absence\[id]\edit\page.tsx
 
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { formatUkDate } from "@/lib/formatUkDate";
 import { createClient } from "@/lib/supabase/server";
+import DeleteAbsenceButton from "../DeleteAbsenceButton";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,21 @@ type AbsenceRow = {
 type EmployeeRow = {
   id: string;
   [key: string]: any;
+};
+
+type EmployeeContractRow = {
+  id: string;
+  contract_number: string | null;
+  job_title: string | null;
+  status: string | null;
+  start_date: string | null;
+  leave_date: string | null;
+  pay_after_leaving?: boolean | null;
+  created_at?: string | null;
+};
+
+type AbsenceContractTargetRow = {
+  contract_id: string | null;
 };
 
 type AbsenceTypeItem = {
@@ -120,6 +136,65 @@ function fallbackAbsenceTypes(): AbsenceTypeItem[] {
     { code: "unpaid_leave", label: "Unpaid leave" },
     { code: "bereaved_partners_paternity", label: "Bereaved partner's paternity leave" },
   ];
+}
+
+function getContractSuffixNumber(contractNumber: string | null | undefined): number | null {
+  const raw = String(contractNumber || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/-(\d+)$/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toSortableTime(value: string | null | undefined): number {
+  const raw = String(value || "").trim();
+  if (!raw) return Number.MAX_SAFE_INTEGER;
+  const ts = new Date(raw).getTime();
+  return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER;
+}
+
+function sortContractsMainFirst(rows: EmployeeContractRow[]): EmployeeContractRow[] {
+  return [...rows].sort((a, b) => {
+    const aSuffix = getContractSuffixNumber(a.contract_number);
+    const bSuffix = getContractSuffixNumber(b.contract_number);
+
+    if (aSuffix !== null && bSuffix !== null && aSuffix !== bSuffix) {
+      return aSuffix - bSuffix;
+    }
+
+    if (aSuffix !== null && bSuffix === null) return -1;
+    if (aSuffix === null && bSuffix !== null) return 1;
+
+    const aStart = toSortableTime(a.start_date);
+    const bStart = toSortableTime(b.start_date);
+    if (aStart !== bStart) return aStart - bStart;
+
+    const aCreated = toSortableTime(a.created_at);
+    const bCreated = toSortableTime(b.created_at);
+    if (aCreated !== bCreated) return aCreated - bCreated;
+
+    return String(a.contract_number || "").localeCompare(String(b.contract_number || ""));
+  });
+}
+
+function contractStatusLabel(value: string | null | undefined) {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "active") return "Active";
+  if (v === "inactive") return "Inactive";
+  if (v === "leaver") return "Leaver";
+  return v ? v.replaceAll("_", " ") : "Unknown";
+}
+
+function contractPillClass(status: string | null | undefined) {
+  const v = String(status || "").trim().toLowerCase();
+  if (v === "active") {
+    return "inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800";
+  }
+  if (v === "leaver") {
+    return "inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900";
+  }
+  return "inline-flex items-center rounded-full border border-neutral-300 bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700";
 }
 
 async function loadAbsenceTypesFromApi(): Promise<AbsenceTypeItem[] | null> {
@@ -214,12 +289,37 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
       );
     }
 
+    const { data: currentAbsence, error: currentAbsenceErr } = await supabase
+      .from("absences")
+      .select("id, employee_id, type, first_day, last_day_expected, last_day_actual, reference_notes, status")
+      .eq("id", absenceId)
+      .eq("company_id", activeCompanyIdInner)
+      .maybeSingle();
+
+    if (currentAbsenceErr || !currentAbsence) {
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("This absence could not be found for the active company.")
+      );
+    }
+
+    const currentAbsenceRow = currentAbsence as AbsenceRow;
+
     const first_day = safeStr(formData.get("first_day")).trim();
     const last_day_expected = safeStr(formData.get("last_day_expected")).trim();
     const last_day_actual_raw = safeStr(formData.get("last_day_actual")).trim();
     const reference_notes = safeStr(formData.get("reference_notes")).trim();
     const type = safeStr(formData.get("type")).trim();
     const status = safeStr(formData.get("status")).trim();
+
+    const selectedContractIds = Array.from(
+      new Set(
+        formData
+          .getAll("selected_contract_ids")
+          .map((v) => (typeof v === "string" ? v.trim() : ""))
+          .filter(Boolean)
+      )
+    );
 
     if (!first_day || !isIsoDate(first_day)) {
       redirect(
@@ -236,6 +336,7 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
     }
 
     const last_day_actual = last_day_actual_raw ? last_day_actual_raw : null;
+
     if (last_day_actual && !isIsoDate(last_day_actual)) {
       redirect(
         `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
@@ -243,15 +344,64 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
       );
     }
 
+    if (last_day_expected < first_day) {
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("Expected end date cannot be earlier than the start date")
+      );
+    }
+
+    if (last_day_actual && last_day_actual < first_day) {
+      redirect(
+        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+          encodeURIComponent("Actual end date cannot be earlier than the start date")
+      );
+    }
+
+    if (type === "sickness") {
+      const { data: validContractsRaw, error: validContractsErr } = await supabase
+        .from("employee_contracts")
+        .select("id")
+        .eq("company_id", activeCompanyIdInner)
+        .eq("employee_id", currentAbsenceRow.employee_id);
+
+      if (validContractsErr) {
+        redirect(
+          `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+            encodeURIComponent("Could not validate selected contracts.")
+        );
+      }
+
+      const validIds = new Set(
+        (Array.isArray(validContractsRaw) ? validContractsRaw : [])
+          .map((row: any) => String(row?.id || "").trim())
+          .filter(Boolean)
+      );
+
+      if (validIds.size > 0 && selectedContractIds.length === 0) {
+        redirect(
+          `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+            encodeURIComponent("Select at least one contract affected by this sickness absence.")
+        );
+      }
+
+      const invalidIds = selectedContractIds.filter((id) => !validIds.has(id));
+      if (invalidIds.length > 0) {
+        redirect(
+          `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+            encodeURIComponent("One or more selected contracts are invalid for this employee.")
+        );
+      }
+    }
+
     const updatePayload: Record<string, any> = {
       first_day,
       last_day_expected,
       last_day_actual,
       reference_notes: reference_notes || null,
+      type: type || null,
+      status: status || null,
     };
-
-    updatePayload.type = type || null;
-    updatePayload.status = status || null;
 
     const { data, error } = await supabase
       .from("absences")
@@ -284,6 +434,107 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
         `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
           encodeURIComponent("Nothing updated. Not found for this company.")
       );
+    }
+
+    if (type === "sickness") {
+      const sicknessEndDate = last_day_actual || last_day_expected;
+
+      const { data: updatedSicknessRows, error: sicknessUpdateErr } = await supabase
+        .from("sickness_periods")
+        .update({
+          company_id: activeCompanyIdInner,
+          employee_id: currentAbsenceRow.employee_id,
+          start_date: first_day,
+          end_date: sicknessEndDate,
+        })
+        .eq("company_id", activeCompanyIdInner)
+        .eq("absence_id", absenceId)
+        .select("id");
+
+      if (sicknessUpdateErr) {
+        redirect(
+          `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+            encodeURIComponent("Absence saved, but the sickness period could not be updated.")
+        );
+      }
+
+      if (!Array.isArray(updatedSicknessRows) || updatedSicknessRows.length === 0) {
+        const { error: sicknessInsertErr } = await supabase.from("sickness_periods").insert({
+          absence_id: absenceId,
+          company_id: activeCompanyIdInner,
+          employee_id: currentAbsenceRow.employee_id,
+          start_date: first_day,
+          end_date: sicknessEndDate,
+        });
+
+        if (sicknessInsertErr) {
+          redirect(
+            `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+              encodeURIComponent("Absence saved, but the sickness period could not be stored.")
+          );
+        }
+      }
+
+      const { error: deleteTargetsErr } = await supabase
+        .from("absence_contract_targets")
+        .delete()
+        .eq("company_id", activeCompanyIdInner)
+        .eq("absence_id", absenceId);
+
+      if (deleteTargetsErr) {
+        redirect(
+          `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+            encodeURIComponent("Absence saved, but the old contract targets could not be cleared.")
+        );
+      }
+
+      if (selectedContractIds.length > 0) {
+        const targetRows = selectedContractIds.map((contractId) => ({
+          company_id: activeCompanyIdInner,
+          absence_id: absenceId,
+          employee_id: currentAbsenceRow.employee_id,
+          contract_id: contractId,
+        }));
+
+        const { error: targetInsertErr } = await supabase
+          .from("absence_contract_targets")
+          .insert(targetRows);
+
+        if (targetInsertErr) {
+          redirect(
+            `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+              encodeURIComponent("Absence saved, but the selected contract targets could not be stored.")
+          );
+        }
+      }
+    } else {
+      if (currentAbsenceRow.type === "sickness") {
+        const { error: deleteTargetsErr } = await supabase
+          .from("absence_contract_targets")
+          .delete()
+          .eq("company_id", activeCompanyIdInner)
+          .eq("absence_id", absenceId);
+
+        if (deleteTargetsErr) {
+          redirect(
+            `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+              encodeURIComponent("Absence saved, but old sickness contract targets could not be removed.")
+          );
+        }
+
+        const { error: deleteSicknessErr } = await supabase
+          .from("sickness_periods")
+          .delete()
+          .eq("company_id", activeCompanyIdInner)
+          .eq("absence_id", absenceId);
+
+        if (deleteSicknessErr) {
+          redirect(
+            `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
+              encodeURIComponent("Absence saved, but the old sickness period could not be removed.")
+          );
+        }
+      }
     }
 
     revalidatePath("/dashboard/absence");
@@ -424,6 +675,43 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
     }
   }
 
+  let employeeContracts: EmployeeContractRow[] = [];
+  let selectedContractIdSet = new Set<string>();
+
+  if (absence?.type === "sickness" && absence.employee_id) {
+    try {
+      const { data: contractData, error: contractErr } = await supabase
+        .from("employee_contracts")
+        .select("id, contract_number, job_title, status, start_date, leave_date, pay_after_leaving, created_at")
+        .eq("company_id", activeCompanyId)
+        .eq("employee_id", absence.employee_id);
+
+      if (!contractErr && Array.isArray(contractData)) {
+        employeeContracts = sortContractsMainFirst(contractData as EmployeeContractRow[]);
+      }
+    } catch {
+      employeeContracts = [];
+    }
+
+    try {
+      const { data: targetData, error: targetErr } = await supabase
+        .from("absence_contract_targets")
+        .select("contract_id")
+        .eq("company_id", activeCompanyId)
+        .eq("absence_id", absence.id);
+
+      if (!targetErr && Array.isArray(targetData)) {
+        selectedContractIdSet = new Set(
+          (targetData as AbsenceContractTargetRow[])
+            .map((row) => String(row?.contract_id || "").trim())
+            .filter(Boolean)
+        );
+      }
+    } catch {
+      selectedContractIdSet = new Set<string>();
+    }
+  }
+
   const statusLower = safeStr(absence?.status).trim().toLowerCase();
   const editingLocked = statusLower === "cancelled" || statusLower === "completed";
 
@@ -452,7 +740,11 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
   const typeLabelMap: Record<string, string> = {};
   for (const t of types) typeLabelMap[t.code] = t.label;
 
-  const currentTypeLabel = currentType ? typeLabelMap[currentType] || currentType.replaceAll("_", " ") : "Unknown";
+  const currentTypeLabel = currentType
+    ? typeLabelMap[currentType] || currentType.replaceAll("_", " ")
+    : "Unknown";
+
+  const showSicknessContracts = currentType === "sickness";
 
   return (
     <PageTemplate title="Absence" currentSection="absence">
@@ -477,7 +769,9 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
           </div>
 
           {!absence ? (
-            <div className="mt-4 text-sm text-neutral-700">This absence could not be loaded for the active company.</div>
+            <div className="mt-4 text-sm text-neutral-700">
+              This absence could not be loaded for the active company.
+            </div>
           ) : (
             <div className="mt-4">
               <div className="text-sm text-neutral-900 font-semibold">{employeeText}</div>
@@ -502,7 +796,9 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
                       className="mt-2 w-full rounded-xl ring-1 ring-neutral-300 px-3 py-2 text-sm"
                       disabled={editingLocked}
                     />
-                    <div className="mt-1 text-xs text-neutral-600">{startIso ? "UK: " + formatUkDate(startIso) : ""}</div>
+                    <div className="mt-1 text-xs text-neutral-600">
+                      {startIso ? "UK: " + formatUkDate(startIso) : ""}
+                    </div>
                   </div>
 
                   <div>
@@ -569,6 +865,87 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
                   </div>
                 </div>
 
+                {showSicknessContracts ? (
+                  <section className="flex flex-col gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-neutral-900">Affected contracts</div>
+                      <div className="mt-1 text-xs text-neutral-600">
+                        Tick every contract that should receive this sickness absence.
+                      </div>
+                    </div>
+
+                    {employeeContracts.length === 0 ? (
+                      <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+                        No contracts were found for this employee.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        {employeeContracts.map((contract) => {
+                          const contractId = String(contract.id || "").trim();
+                          const checked = selectedContractIdSet.has(contractId);
+                          const startLabel = contract.start_date
+                            ? formatUkDate(contract.start_date, contract.start_date)
+                            : "No start date";
+                          const leaveLabel = contract.leave_date
+                            ? formatUkDate(contract.leave_date, contract.leave_date)
+                            : "";
+
+                          return (
+                            <label
+                              key={contractId}
+                              className={`flex cursor-pointer flex-col gap-3 rounded-2xl border px-4 py-4 transition ${
+                                checked
+                                  ? "border-blue-600 bg-blue-50/60"
+                                  : "border-neutral-300 bg-white hover:bg-neutral-50"
+                              } ${editingLocked ? "opacity-70 cursor-not-allowed" : ""}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  name="selected_contract_ids"
+                                  value={contractId}
+                                  defaultChecked={checked}
+                                  disabled={editingLocked}
+                                  className="mt-1 h-4 w-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-600"
+                                />
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="text-sm font-semibold text-neutral-900">
+                                      {String(contract.contract_number || "").trim() || "Unnamed contract"}
+                                    </div>
+
+                                    <span className={contractPillClass(contract.status)}>
+                                      {contractStatusLabel(contract.status)}
+                                    </span>
+
+                                    {contract.pay_after_leaving === true ? (
+                                      <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                                        Pay after leaving
+                                      </span>
+                                    ) : null}
+                                  </div>
+
+                                  {String(contract.job_title || "").trim() ? (
+                                    <div className="mt-1 text-sm text-neutral-700">
+                                      {String(contract.job_title || "").trim()}
+                                    </div>
+                                  ) : null}
+
+                                  <div className="mt-2 flex flex-wrap gap-3 text-xs text-neutral-600">
+                                    <span>Start: {startLabel}</span>
+                                    {leaveLabel ? <span>Leave: {leaveLabel}</span> : null}
+                                  </div>
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+
                 <div>
                   <label className="block text-sm font-semibold text-neutral-900">Reference notes</label>
                   <textarea
@@ -580,21 +957,31 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
                   />
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <button
                     type="submit"
                     disabled={editingLocked}
                     className={
                       "rounded-xl px-5 py-2 font-semibold text-white " +
-                      (editingLocked ? "bg-neutral-400 opacity-60 cursor-not-allowed" : "bg-green-600 hover:bg-green-700")
+                      (editingLocked
+                        ? "bg-neutral-400 opacity-60 cursor-not-allowed"
+                        : "bg-green-600 hover:bg-green-700")
                     }
                   >
                     Save
                   </button>
 
-                  <Link href="/dashboard/absence/list" className="text-sm text-blue-700 underline">
+                  <Link
+                    href="/dashboard/absence/list"
+                    className="inline-flex items-center justify-center rounded-full bg-[#23408e] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#1d3576]"
+                  >
                     Cancel
                   </Link>
+
+                  <DeleteAbsenceButton
+                    absenceId={absence.id}
+                    redirectTo="/dashboard/absence/list"
+                  />
                 </div>
               </form>
             </div>
