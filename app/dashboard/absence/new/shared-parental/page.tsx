@@ -111,10 +111,15 @@ export default function SharedParentalLeaveWizardPage() {
   function validate(): boolean {
     const nextErrors: FormErrors = {};
 
-    if (!form.employeeName.trim())
+    if (!form.employeeName.trim()) {
       nextErrors.employeeName = "Employee name is required";
-    if (!form.startDate) nextErrors.startDate = "Start date is required";
-    if (!form.endDate) nextErrors.endDate = "End date is required";
+    }
+    if (!form.startDate) {
+      nextErrors.startDate = "Start date is required";
+    }
+    if (!form.endDate) {
+      nextErrors.endDate = "End date is required";
+    }
 
     if (form.startDate && form.endDate && form.startDate > form.endDate) {
       nextErrors.endDate = "End date cannot be before start date";
@@ -173,7 +178,7 @@ export default function SharedParentalLeaveWizardPage() {
       setForm(initialState);
       setSearchResults([]);
       setSearchError(null);
-      router.push("/dashboard/absence");
+      router.push("/dashboard/absence/list");
     } catch (err) {
       console.error("Shared parental wizard unexpected error", err);
       alert("Something went wrong saving the form.");
@@ -348,7 +353,7 @@ export default function SharedParentalLeaveWizardPage() {
               <div className="flex gap-3 justify-end">
                 <button
                   type="button"
-                  onClick={() => router.push("/dashboard/absence")}
+                  onClick={() => router.push("/dashboard/absence/new")}
                   className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
                 >
                   Cancel

@@ -1163,7 +1163,7 @@ export default function PayrollRunDetailPage() {
         <div ref={employeeTableRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
           <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-extrabold text-slate-900">Employees in this run</h2>
-            <div className="text-sm text-slate-700">Review PAYE, NI, EE Pen and Net Pay, or edit pay items before running calculation.</div>
+            <div className="text-sm text-slate-700">Review PAYE, NI, EE Pen and Net Pay, or edit pay items before running calculation. Open payslip now shows one combined employee payslip across all contracts in this run.</div>
           </div>
           <div className="w-full overflow-hidden">
             <table className="w-full table-fixed border-collapse">
@@ -1186,7 +1186,7 @@ export default function PayrollRunDetailPage() {
                   <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">NI</th>
                   <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">EE Pen</th>
                   <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">Net Pay</th>
-                  <th className="px-2 py-3 text-center text-sm font-extrabold text-slate-900 border-b border-neutral-300">Payslip</th>
+                  <th className="px-2 py-3 text-center text-sm font-extrabold text-slate-900 border-b border-neutral-300">Combined payslip</th>
                 </tr>
               </thead>
               <tbody>
@@ -1204,7 +1204,7 @@ export default function PayrollRunDetailPage() {
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee NI for this employee in this run">{gbp(r.ni)}</div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee pension deduction for this employee in this run">{gbp(r.eePen)}</div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[8.5rem]"><div className="flex flex-col gap-1"><input disabled={!canEditRun} className={`${inter.className} h-10 w-full min-w-0 rounded-xl border border-slate-300 px-2 text-right text-[13px] font-extrabold outline-none focus:ring-2 focus:ring-offset-1`} style={{ color: WF_BLUE, opacity: !canEditRun ? 0.6 : 1, cursor: !canEditRun ? "not-allowed" : "text" }} type="number" step="0.01" value={Number.isFinite(r.net) ? r.net : 0} onChange={(e) => onChangeCell(r.id, "net", e.target.value)} />{rowError ? <div className="text-xs font-semibold text-red-700">{rowError}</div> : null}</div></div></td>
-                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[6.5rem]"><Link href={`/dashboard/payroll/${runId}/payslip/${r.employeeId}`} className="inline-flex h-10 w-full min-w-0 items-center justify-center rounded-xl px-2 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE }}>Open</Link></div></td>
+                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[6.5rem]"><Link href={`/dashboard/payroll/${runId}/payslip/${r.employeeId}`} className="inline-flex h-10 w-full min-w-0 items-center justify-center rounded-xl px-2 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE }} title="Open one combined payslip for this employee across all contracts in the run">Open</Link></div></td>
                   </tr>;
                 })}
               </tbody>

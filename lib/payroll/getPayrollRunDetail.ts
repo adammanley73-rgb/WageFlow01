@@ -241,6 +241,34 @@ type PensionOverlayResult = {
   employeePensionCode: "EE_PEN" | "EE_PEN_RAS" | "EE_PEN_SAL_SAC";
 };
 
+type RowFiguresFromPayElements = {
+  hasElements: boolean;
+  gross: number;
+  basicPay: number;
+  pensionablePay: number;
+  aeQualifyingSourcePay: number;
+  tax: number | null;
+  employeeNi: number | null;
+  employerNi: number | null;
+  pensionEmployee: number | null;
+  pensionEmployer: number | null;
+  otherDeductions: number | null;
+  aoe: number | null;
+  studentLoan: number | null;
+  postgradLoan: number | null;
+};
+
+type PayElementCodeFlags = {
+  isTax: boolean;
+  isEmployeeNi: boolean;
+  isEmployerNi: boolean;
+  isEmployeePension: boolean;
+  isEmployerPension: boolean;
+  isAoe: boolean;
+  isStudentLoan: boolean;
+  isPostgradLoan: boolean;
+};
+
 function resolveBooleanOverride(
   overrideValue: any,
   defaultValue: any
@@ -771,6 +799,223 @@ function isSicknessBasicReductionCode(value: any): boolean {
   return String(value ?? "").trim().toUpperCase() === "SICK_BASIC_REDUCTION";
 }
 
+function isBasicPayCode(value: any): boolean {
+  return String(value ?? "").trim().toUpperCase() === "BASIC";
+}
+
+function getPayElementCodeFlags(value: any): PayElementCodeFlags {
+  const code = String(value ?? "").trim().toUpperCase();
+  return {
+    isTax: ["PAYE", "PAYE_TAX", "TAX", "INCOME_TAX"].includes(code),
+    isEmployeeNi: ["NI", "EE_NI", "EMPLOYEE_NI", "NI_EMPLOYEE"].includes(code),
+    isEmployerNi: ["ER_NI", "EMPLOYER_NI", "NI_EMPLOYER"].includes(code),
+    isEmployeePension: ["EE_PEN", "EE_PEN_RAS", "EE_PEN_SAL_SAC"].includes(code),
+    isEmployerPension: ["ER_PEN", "ER_PENSION", "EMPLOYER_PENSION", "PENSION_EMPLOYER"].includes(code),
+    isAoe: ["AOE", "ATTACHMENT_OF_EARNINGS"].includes(code),
+    isStudentLoan: ["STUDENT_LOAN", "SL"].includes(code),
+    isPostgradLoan: ["POSTGRAD_LOAN", "PG_LOAN", "PGL"].includes(code),
+  };
+}
+
+function buildPrimaryContractIdByEmployee(contractRows: any[]): Map<string, string> {
+  const byEmployee = new Map<string, any[]>();
+
+  for (const row of contractRows || []) {
+    const employeeId = String(pickFirst(row?.employee_id, row?.employeeId, "") || "").trim();
+    const contractId = String(pickFirst(row?.id, row?.contract_id, row?.contractId, "") || "").trim();
+    if (!employeeId || !contractId) continue;
+    const list = byEmployee.get(employeeId) || [];
+    list.push(row);
+    byEmployee.set(employeeId, list);
+  }
+
+  const result = new Map<string, string>();
+
+  for (const [employeeId, rows] of byEmployee.entries()) {
+    const sorted = sortContractsMainFirst(rows);
+    const primaryId = String(pickFirst(sorted[0]?.id, sorted[0]?.contract_id, sorted[0]?.contractId, "") || "").trim();
+    if (primaryId) result.set(employeeId, primaryId);
+  }
+
+  return result;
+}
+
+function buildContractDisplayOrder(contractRows: any[]): Map<string, number> {
+  const byEmployee = new Map<string, any[]>();
+
+  for (const row of contractRows || []) {
+    const employeeId = String(pickFirst(row?.employee_id, row?.employeeId, "") || "").trim();
+    const contractId = String(pickFirst(row?.id, row?.contract_id, row?.contractId, "") || "").trim();
+    if (!employeeId || !contractId) continue;
+    const list = byEmployee.get(employeeId) || [];
+    list.push(row);
+    byEmployee.set(employeeId, list);
+  }
+
+  const result = new Map<string, number>();
+
+  for (const rows of byEmployee.values()) {
+    const sorted = sortContractsMainFirst(rows);
+    sorted.forEach((row, index) => {
+      const contractId = String(pickFirst(row?.id, row?.contract_id, row?.contractId, "") || "").trim();
+      if (contractId) result.set(contractId, index);
+    });
+  }
+
+  return result;
+}
+
+function sortEmployeeRowsForDisplay(
+  rows: any[],
+  employeeDisplayOrder: Map<string, number>,
+  contractDisplayOrder: Map<string, number>
+): any[] {
+  return [...rows].sort((a, b) => {
+    const aEmployeeId = String(pickFirst(a?.employee_id, a?.employeeId, "") || "").trim();
+    const bEmployeeId = String(pickFirst(b?.employee_id, b?.employeeId, "") || "").trim();
+
+    const aEmployeeOrder = employeeDisplayOrder.get(aEmployeeId) ?? Number.MAX_SAFE_INTEGER;
+    const bEmployeeOrder = employeeDisplayOrder.get(bEmployeeId) ?? Number.MAX_SAFE_INTEGER;
+    if (aEmployeeOrder !== bEmployeeOrder) return aEmployeeOrder - bEmployeeOrder;
+
+    const aContractId = String(pickFirst(a?.contract_id, a?.contractId, "") || "").trim();
+    const bContractId = String(pickFirst(b?.contract_id, b?.contractId, "") || "").trim();
+
+    const aContractOrder = contractDisplayOrder.get(aContractId) ?? Number.MAX_SAFE_INTEGER;
+    const bContractOrder = contractDisplayOrder.get(bContractId) ?? Number.MAX_SAFE_INTEGER;
+    if (aContractOrder !== bContractOrder) return aContractOrder - bContractOrder;
+
+    return String(a?.contract_number || a?.contractNumber || "").localeCompare(
+      String(b?.contract_number || b?.contractNumber || "")
+    );
+  });
+}
+
+function computeRowFiguresFromPayElements(
+  rows: any[],
+  payElementTypeById: Map<string, any>
+): RowFiguresFromPayElements | null {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  const normalised = rows
+    .map((row) => {
+      const typeId = String(pickFirst(row?.pay_element_type_id, row?.payElementTypeId, "") || "").trim();
+      const type = typeId ? payElementTypeById.get(typeId) : null;
+      return normaliseLocalPayElement(row, type);
+    })
+    .filter((row) => row.payrollRunEmployeeId);
+
+  if (normalised.length === 0) return null;
+
+  let gross = 0;
+  let basicPay = 0;
+  let pensionablePay = 0;
+  let aeQualifyingSourcePay = 0;
+
+  let tax = 0;
+  let employeeNi = 0;
+  let employerNi = 0;
+  let pensionEmployee = 0;
+  let pensionEmployer = 0;
+  let otherDeductions = 0;
+  let aoe = 0;
+  let studentLoan = 0;
+  let postgradLoan = 0;
+
+  let hasTax = false;
+  let hasEmployeeNi = false;
+  let hasEmployerNi = false;
+  let hasEmployeePension = false;
+  let hasEmployerPension = false;
+  let hasOtherDeductions = false;
+  let hasAoe = false;
+  let hasStudentLoan = false;
+  let hasPostgradLoan = false;
+
+  for (const row of normalised) {
+    const amount = round2(row.amount);
+    const absAmount = round2(Math.abs(amount));
+    const flags = getPayElementCodeFlags(row.code);
+
+    if (row.side === "earning") {
+      gross += amount;
+
+      if (isBasicPayCode(row.code)) {
+        basicPay += amount;
+      }
+      if (row.effectivePensionable) {
+        pensionablePay += amount;
+      }
+      if (row.effectiveAeQualifying) {
+        aeQualifyingSourcePay += amount;
+      }
+    }
+
+    if (flags.isTax) {
+      tax += absAmount;
+      hasTax = true;
+      continue;
+    }
+    if (flags.isEmployeeNi) {
+      employeeNi += absAmount;
+      hasEmployeeNi = true;
+      continue;
+    }
+    if (flags.isEmployerNi) {
+      employerNi += absAmount;
+      hasEmployerNi = true;
+      continue;
+    }
+    if (flags.isEmployeePension) {
+      pensionEmployee += absAmount;
+      hasEmployeePension = true;
+      continue;
+    }
+    if (flags.isEmployerPension) {
+      pensionEmployer += absAmount;
+      hasEmployerPension = true;
+      continue;
+    }
+    if (flags.isAoe) {
+      aoe += absAmount;
+      hasAoe = true;
+      continue;
+    }
+    if (flags.isStudentLoan) {
+      studentLoan += absAmount;
+      hasStudentLoan = true;
+      continue;
+    }
+    if (flags.isPostgradLoan) {
+      postgradLoan += absAmount;
+      hasPostgradLoan = true;
+      continue;
+    }
+
+    if (row.side === "deduction") {
+      otherDeductions += absAmount;
+      hasOtherDeductions = true;
+    }
+  }
+
+  return {
+    hasElements: true,
+    gross: round2(gross),
+    basicPay: round2(basicPay),
+    pensionablePay: round2(pensionablePay),
+    aeQualifyingSourcePay: round2(aeQualifyingSourcePay),
+    tax: hasTax ? round2(tax) : null,
+    employeeNi: hasEmployeeNi ? round2(employeeNi) : null,
+    employerNi: hasEmployerNi ? round2(employerNi) : null,
+    pensionEmployee: hasEmployeePension ? round2(pensionEmployee) : null,
+    pensionEmployer: hasEmployerPension ? round2(pensionEmployer) : null,
+    otherDeductions: hasOtherDeductions ? round2(otherDeductions) : null,
+    aoe: hasAoe ? round2(aoe) : null,
+    studentLoan: hasStudentLoan ? round2(studentLoan) : null,
+    postgradLoan: hasPostgradLoan ? round2(postgradLoan) : null,
+  };
+}
+
 function getNonCumulativeTaxMarker(payFrequency: any): "M1" | "W1" {
   const s = String(payFrequency ?? "").trim().toLowerCase();
   if (!s || s === "monthly") return "M1";
@@ -1173,12 +1418,60 @@ async function loadContracts(
   };
 }
 
+async function loadRunPayElements(
+  supabase: any,
+  payrollRunEmployeeIds: string[]
+) {
+  if (!Array.isArray(payrollRunEmployeeIds) || payrollRunEmployeeIds.length === 0) {
+    return { ok: true as const, rows: [] as any[] };
+  }
+
+  const { data, error } = await supabase
+    .from("payroll_run_pay_elements")
+    .select("*")
+    .in("payroll_run_employee_id", payrollRunEmployeeIds);
+
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+
+  return {
+    ok: true as const,
+    rows: Array.isArray(data) ? data : [],
+  };
+}
+
+async function loadPayElementTypes(
+  supabase: any,
+  payElementTypeIds: string[]
+) {
+  if (!Array.isArray(payElementTypeIds) || payElementTypeIds.length === 0) {
+    return { ok: true as const, rows: [] as any[] };
+  }
+
+  const { data, error } = await supabase
+    .from("pay_element_types")
+    .select("*")
+    .in("id", payElementTypeIds);
+
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+
+  return {
+    ok: true as const,
+    rows: Array.isArray(data) ? data : [],
+  };
+}
+
+
 function buildEmployeeRow(
   att: any,
   emp: any,
   contract: any,
   run: any,
-  isPrimaryContract: boolean
+  isPrimaryContract: boolean,
+  figuresFromPayElements?: RowFiguresFromPayElements | null
 ) {
   const meta = getObjectSafe(att?.metadata);
 
@@ -1210,31 +1503,76 @@ function buildEmployeeRow(
 
   const email = String(pickFirst(emp?.email, emp?.work_email, emp?.workEmail, "-") || "-");
 
-  const gross = round2(toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, att?.gross, 0)));
+  const storedGross = round2(toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, att?.gross, 0)));
+  const gross = round2(
+    figuresFromPayElements?.hasElements ? figuresFromPayElements.gross : storedGross
+  );
 
   const storedTax = round2(toNumberSafe(pickFirst(att?.tax, att?.paye_tax, att?.income_tax, 0)));
   const storedEmployeeNi = round2(toNumberSafe(pickFirst(att?.ni_employee, att?.employee_ni, att?.ni, 0)));
   const storedEmployerNi = round2(toNumberSafe(pickFirst(att?.ni_employer, att?.employer_ni, 0)));
 
-  const pensionEmployee = round2(
+  const storedPensionEmployee = round2(
     toNumberSafe(pickFirst(att?.pension_employee, att?.pensionEmployee, att?.employee_pension, 0))
   );
-  const pensionEmployer = round2(
+  const storedPensionEmployer = round2(
     toNumberSafe(pickFirst(att?.pension_employer, att?.pensionEmployer, att?.employer_pension, 0))
   );
 
-  const otherDeductions = round2(toNumberSafe(pickFirst(att?.other_deductions, att?.otherDeductions, 0)));
-  const aoe = round2(toNumberSafe(pickFirst(att?.attachment_of_earnings, att?.attachmentOfEarnings, 0)));
-  const studentLoanDeduction = round2(toNumberSafe(pickFirst(att?.student_loan, att?.studentLoan, 0)));
-  const postgradLoanDeduction = round2(
+  const storedOtherDeductions = round2(
+    toNumberSafe(pickFirst(att?.other_deductions, att?.otherDeductions, 0))
+  );
+  const storedAoe = round2(
+    toNumberSafe(pickFirst(att?.attachment_of_earnings, att?.attachmentOfEarnings, 0))
+  );
+  const storedStudentLoanDeduction = round2(
+    toNumberSafe(pickFirst(att?.student_loan, att?.studentLoan, 0))
+  );
+  const storedPostgradLoanDeduction = round2(
     toNumberSafe(pickFirst(att?.pg_loan, att?.postgrad_loan, att?.pgLoan, 0))
   );
 
-  const storedNet = round2(toNumberSafe(pickFirst(att?.net_pay, att?.netPay, att?.net, gross)));
+  const storedNet = round2(toNumberSafe(pickFirst(att?.net_pay, att?.netPay, att?.net, storedGross)));
 
-  let tax = storedTax;
-  let employeeNi = storedEmployeeNi;
-  let employerNi = storedEmployerNi;
+  let tax =
+    figuresFromPayElements?.tax !== null && figuresFromPayElements?.tax !== undefined
+      ? round2(figuresFromPayElements.tax)
+      : storedTax;
+  let employeeNi =
+    figuresFromPayElements?.employeeNi !== null && figuresFromPayElements?.employeeNi !== undefined
+      ? round2(figuresFromPayElements.employeeNi)
+      : storedEmployeeNi;
+  let employerNi =
+    figuresFromPayElements?.employerNi !== null && figuresFromPayElements?.employerNi !== undefined
+      ? round2(figuresFromPayElements.employerNi)
+      : storedEmployerNi;
+
+  let pensionEmployee =
+    figuresFromPayElements?.pensionEmployee !== null && figuresFromPayElements?.pensionEmployee !== undefined
+      ? round2(figuresFromPayElements.pensionEmployee)
+      : storedPensionEmployee;
+  let pensionEmployer =
+    figuresFromPayElements?.pensionEmployer !== null && figuresFromPayElements?.pensionEmployer !== undefined
+      ? round2(figuresFromPayElements.pensionEmployer)
+      : storedPensionEmployer;
+
+  const otherDeductions =
+    figuresFromPayElements?.otherDeductions !== null && figuresFromPayElements?.otherDeductions !== undefined
+      ? round2(figuresFromPayElements.otherDeductions)
+      : storedOtherDeductions;
+  const aoe =
+    figuresFromPayElements?.aoe !== null && figuresFromPayElements?.aoe !== undefined
+      ? round2(figuresFromPayElements.aoe)
+      : storedAoe;
+  const studentLoanDeduction =
+    figuresFromPayElements?.studentLoan !== null && figuresFromPayElements?.studentLoan !== undefined
+      ? round2(figuresFromPayElements.studentLoan)
+      : storedStudentLoanDeduction;
+  const postgradLoanDeduction =
+    figuresFromPayElements?.postgradLoan !== null && figuresFromPayElements?.postgradLoan !== undefined
+      ? round2(figuresFromPayElements.postgradLoan)
+      : storedPostgradLoanDeduction;
+
   let usedTaxFallback = false;
   let usedNiFallback = false;
 
@@ -1297,6 +1635,10 @@ function buildEmployeeRow(
   });
   const pensionSettings = resolvedPension.settings;
 
+  const payElementGrossChanged =
+    figuresFromPayElements?.hasElements === true &&
+    Math.abs(round2(figuresFromPayElements.gross) - storedGross) > 0.01;
+
   const taxReductionFromPension =
     pensionSettings.method === "salary_sacrifice" || pensionSettings.method === "net_pay"
       ? pensionEmployee
@@ -1307,7 +1649,17 @@ function buildEmployeeRow(
   const grossForTaxFallback = round2(Math.max(0, gross - taxReductionFromPension));
   const grossForNiFallback = round2(Math.max(0, gross - niReductionFromPension));
 
-  if (tax <= 0 && gross > 0 && runFrequency === "monthly" && taxCodeUsed) {
+  const shouldRecomputeTax =
+    taxCodeUsed &&
+    gross > 0 &&
+    runFrequency === "monthly" &&
+    (
+      payElementGrossChanged ||
+      tax <= 0 ||
+      (figuresFromPayElements?.hasElements === true && figuresFromPayElements.tax == null)
+    );
+
+  if (shouldRecomputeTax) {
     try {
       const periodStartSrc = String(
         pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || ""
@@ -1327,22 +1679,28 @@ function buildEmployeeRow(
         taxYear: Number.isFinite(taxYear) ? taxYear : undefined,
       });
 
-      const computedTax = round2(Number((payResult as any)?.tax ?? 0));
-      if (computedTax > 0) {
-        tax = computedTax;
-        usedTaxFallback = true;
-      }
+      tax = round2(Number((payResult as any)?.tax ?? 0));
+      usedTaxFallback = true;
     } catch {
-      // leave stored values as-is
+      // leave current values as-is
     }
   }
 
-  if (
+  const shouldRecomputeNi =
     gross > 0 &&
     runFrequency === "monthly" &&
     niCategoryUsed &&
-    (employeeNi <= 0 || employerNi <= 0)
-  ) {
+    (
+      payElementGrossChanged ||
+      employeeNi <= 0 ||
+      employerNi <= 0 ||
+      (
+        figuresFromPayElements?.hasElements === true &&
+        (figuresFromPayElements.employeeNi == null || figuresFromPayElements.employerNi == null)
+      )
+    );
+
+  if (shouldRecomputeNi) {
     try {
       const periodStartSrc = String(
         pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || ""
@@ -1351,17 +1709,11 @@ function buildEmployeeRow(
       const niTaxYear = Number.isFinite(taxYearForNi) ? taxYearForNi : undefined;
 
       const ni = computeApproxMonthlyNi(grossForNiFallback, niCategoryUsed, niTaxYear);
-      const cat = String(niCategoryUsed || "").trim().toUpperCase();
-
-      if ((employeeNi <= 0 && ni.employee > 0) || cat === "C") {
-        employeeNi = ni.employee;
-      }
-      if (employerNi <= 0 && ni.employer >= 0) {
-        employerNi = ni.employer;
-      }
+      employeeNi = round2(ni.employee);
+      employerNi = round2(ni.employer);
       usedNiFallback = true;
     } catch {
-      // leave stored values as-is
+      // leave current values as-is
     }
   }
 
@@ -1372,24 +1724,30 @@ function buildEmployeeRow(
   const derivedNet = round2(Math.max(0, gross - deductions));
 
   const storedRowLooksGrossOnly =
-    gross > 0 &&
-    Math.abs(storedNet - gross) <= 0.01 &&
+    storedGross > 0 &&
+    Math.abs(storedNet - storedGross) <= 0.01 &&
     storedTax <= 0 &&
     storedEmployeeNi <= 0 &&
     storedEmployerNi <= 0;
 
   const netShouldBeDerived =
     gross > 0 &&
-    (usedTaxFallback ||
+    (
+      payElementGrossChanged ||
+      figuresFromPayElements?.hasElements === true ||
+      usedTaxFallback ||
       usedNiFallback ||
       storedRowLooksGrossOnly ||
       storedNet <= 0 ||
-      (Math.abs(storedNet - derivedNet) > 0.01 && (storedTax <= 0 || storedEmployeeNi <= 0)));
+      Math.abs(storedNet - derivedNet) > 0.01
+    );
 
   const net = round2(netShouldBeDerived ? derivedNet : storedNet);
 
   const safeId = String(pickFirst(att?.id, "") || "");
-  const calcMode = String(pickFirst(att?.calc_mode, "uncomputed") || "uncomputed");
+  const calcMode = figuresFromPayElements?.hasElements
+    ? "elements"
+    : String(pickFirst(att?.calc_mode, "uncomputed") || "uncomputed");
 
   const contractNumber = pickFirst(
     contract?.contract_number,
@@ -1470,6 +1828,7 @@ function buildEmployeeRow(
     gross_pay: round2(gross),
     total_gross: round2(gross),
     gross_pay_used: round2(gross),
+    basic_pay: round2(figuresFromPayElements?.basicPay ?? toNumberSafe(pickFirst(att?.basic_pay, 0))),
     tax: round2(tax),
     total_tax: round2(tax),
     tax_pay: round2(tax),
@@ -1810,26 +2169,123 @@ export async function getPayrollRunDetail(
     if (id) contractById.set(id, c);
   }
 
-  const sortedContracts = sortContractsMainFirst(contractRows);
-  const primaryContractId = String(sortedContracts[0]?.id || "").trim();
+  const payrollRunEmployeeIds: string[] = Array.from(
+    new Set(
+      attachments
+        .map((r: any) => String(pickFirst(r?.id, r?.payroll_run_employee_id, r?.payrollRunEmployeeId, "") || "").trim())
+        .filter((id: string) => Boolean(id) && isUuid(id))
+    )
+  );
 
-  const employees = attachments.map((att: any) => {
-    const employeeId = String(pickFirst(att?.employee_id, "") || "").trim();
-    const contractId = String(
-      pickFirst(att?.contract_id, att?.contractId, "") || ""
+  let payElementRows: any[] = [];
+  let payElementTypeRows: any[] = [];
+
+  if (payrollRunEmployeeIds.length > 0) {
+    const payElementsRes = await loadRunPayElements(supabase, payrollRunEmployeeIds);
+    if (!payElementsRes.ok) {
+      return {
+        ok: false,
+        status: 500,
+        error: "Failed to load pay elements for payroll run.",
+        debug: includeDebug ? { ...debug, payElementsErr: payElementsRes.error } : undefined,
+      };
+    }
+    payElementRows = payElementsRes.rows;
+  }
+
+  const payElementTypeIds: string[] = Array.from(
+    new Set(
+      payElementRows
+        .map((r: any) => String(pickFirst(r?.pay_element_type_id, r?.payElementTypeId, "") || "").trim())
+        .filter((id: string) => Boolean(id) && isUuid(id))
+    )
+  );
+
+  if (payElementTypeIds.length > 0) {
+    const payElementTypesRes = await loadPayElementTypes(supabase, payElementTypeIds);
+    if (!payElementTypesRes.ok) {
+      return {
+        ok: false,
+        status: 500,
+        error: "Failed to load pay element types for payroll run.",
+        debug: includeDebug ? { ...debug, payElementTypesErr: payElementTypesRes.error } : undefined,
+      };
+    }
+    payElementTypeRows = payElementTypesRes.rows;
+  }
+
+  debug.stage.payElementsFetch = {
+    ok: true,
+    requested: payrollRunEmployeeIds.length,
+    found: payElementRows.length,
+  };
+
+  debug.stage.payElementTypesFetch = {
+    ok: true,
+    requested: payElementTypeIds.length,
+    found: payElementTypeRows.length,
+  };
+
+  const payElementTypeById = new Map<string, any>();
+  for (const row of payElementTypeRows) {
+    const id = String((row as any)?.id || "").trim();
+    if (id) payElementTypeById.set(id, row);
+  }
+
+  const payElementsByPayrollRunEmployeeId = new Map<string, any[]>();
+  for (const row of payElementRows) {
+    const payrollRunEmployeeId = String(
+      pickFirst(row?.payroll_run_employee_id, row?.payrollRunEmployeeId, "") || ""
     ).trim();
+    if (!payrollRunEmployeeId) continue;
+    const list = payElementsByPayrollRunEmployeeId.get(payrollRunEmployeeId) || [];
+    list.push(row);
+    payElementsByPayrollRunEmployeeId.set(payrollRunEmployeeId, list);
+  }
 
-    const emp = employeeId ? empById.get(employeeId) : null;
-    const contract = contractId ? contractById.get(contractId) : null;
+  const primaryContractIdByEmployee = buildPrimaryContractIdByEmployee(contractRows);
+  const contractDisplayOrder = buildContractDisplayOrder(contractRows);
+  const employeeDisplayOrder = new Map<string, number>();
+  for (const att of attachments) {
+    const employeeId = String(pickFirst(att?.employee_id, att?.employeeId, "") || "").trim();
+    if (!employeeId) continue;
+    if (!employeeDisplayOrder.has(employeeId)) {
+      employeeDisplayOrder.set(employeeId, employeeDisplayOrder.size);
+    }
+  }
 
-    return buildEmployeeRow(
-      att,
-      emp,
-      contract,
-      run,
-      Boolean(contractId) && contractId === primaryContractId
-    );
-  });
+  const employees = sortEmployeeRowsForDisplay(
+    attachments.map((att: any) => {
+      const employeeId = String(pickFirst(att?.employee_id, att?.employeeId, "") || "").trim();
+      const contractId = String(
+        pickFirst(att?.contract_id, att?.contractId, "") || ""
+      ).trim();
+      const payrollRunEmployeeId = String(
+        pickFirst(att?.id, att?.payroll_run_employee_id, att?.payrollRunEmployeeId, "") || ""
+      ).trim();
+
+      const emp = employeeId ? empById.get(employeeId) : null;
+      const contract = contractId ? contractById.get(contractId) : null;
+      const payElementRowsForRow = payrollRunEmployeeId
+        ? payElementsByPayrollRunEmployeeId.get(payrollRunEmployeeId) || []
+        : [];
+      const figuresFromPayElements = computeRowFiguresFromPayElements(
+        payElementRowsForRow,
+        payElementTypeById
+      );
+
+      return buildEmployeeRow(
+        att,
+        emp,
+        contract,
+        run,
+        Boolean(contractId) && primaryContractIdByEmployee.get(employeeId) === contractId,
+        figuresFromPayElements
+      );
+    }),
+    employeeDisplayOrder,
+    contractDisplayOrder
+  );
 
   const storedTotalGross = round2(toNumberSafe(pickFirst(run?.total_gross_pay, 0)));
   const storedTotalTax = round2(toNumberSafe(pickFirst(run?.total_tax, 0)));

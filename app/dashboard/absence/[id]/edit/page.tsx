@@ -3,15 +3,16 @@
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
 import { cookies, headers } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { formatUkDate } from "@/lib/formatUkDate";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 type AbsenceRow = {
   id: string;
@@ -40,94 +41,12 @@ type AbsenceTypeItem = {
   effective_from?: string | null;
 };
 
-function getSupabaseUrl(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
-}
+type SearchParamsRecord = Record<string, string | string[] | undefined>;
 
-function getSupabaseAnonKey(): string {
-  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
-}
-
-function readChunkedCookieValue(
-  all: { name: string; value: string }[],
-  baseName: string
-): string | null {
-  const exact = all.find((c) => c.name === baseName);
-  if (exact) return exact.value;
-
-  const parts = all
-    .filter((c) => c.name.startsWith(baseName + "."))
-    .map((c) => {
-      const m = c.name.match(/\.(\d+)$/);
-      const idx = m ? Number(m[1]) : 0;
-      return { idx, value: c.value };
-    })
-    .sort((a, b) => a.idx - b.idx);
-
-  if (parts.length === 0) return null;
-  return parts.map((p) => p.value).join("");
-}
-
-async function extractAccessTokenFromCookies(): Promise<string | null> {
-  try {
-    const jar = await cookies();
-    const all = jar.getAll();
-
-    const bases = new Set<string>();
-    for (const c of all) {
-      const n = c.name;
-      if (!n.includes("auth-token")) continue;
-      if (!n.startsWith("sb-") && !n.includes("sb-")) continue;
-      bases.add(n.replace(/\.\d+$/, ""));
-    }
-
-    for (const base of bases) {
-      const raw = readChunkedCookieValue(all as any, base);
-      if (!raw) continue;
-
-      const decoded = (() => {
-        try {
-          return decodeURIComponent(raw);
-        } catch {
-          return raw;
-        }
-      })();
-
-      try {
-        const obj = JSON.parse(decoded);
-        if (obj && typeof obj.access_token === "string") return obj.access_token;
-      } catch {}
-
-      try {
-        const asJson = Buffer.from(decoded, "base64").toString("utf8");
-        const obj = JSON.parse(asJson);
-        if (obj && typeof obj.access_token === "string") return obj.access_token;
-      } catch {}
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function createSupabaseRlsClientOrNull(): Promise<{ supabase: any; hasToken: boolean } | null> {
-  const url = getSupabaseUrl();
-  const anonKey = getSupabaseAnonKey();
-  if (!url || !anonKey) return null;
-
-  const token = await extractAccessTokenFromCookies();
-
-  const opts: any = {
-    auth: { persistSession: false, autoRefreshToken: false },
-  };
-
-  if (token) {
-    opts.global = { headers: { Authorization: `Bearer ${token}` } };
-  }
-
-  return { supabase: createClient(url, anonKey, opts), hasToken: Boolean(token) };
-}
+type Props = {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<SearchParamsRecord>;
+};
 
 function safeStr(v: unknown) {
   return typeof v === "string" ? v : "";
@@ -240,12 +159,14 @@ async function loadAbsenceTypesFromApi(): Promise<AbsenceTypeItem[] | null> {
   }
 }
 
-type SearchParamsRecord = Record<string, string | string[] | undefined>;
-
-type Props = {
-  params: Promise<{ id: string }>;
-  searchParams?: Promise<SearchParamsRecord>;
-};
+async function getActiveCompanyId(): Promise<string> {
+  const cookieStore = await cookies();
+  return String(
+    cookieStore.get("active_company_id")?.value ??
+      cookieStore.get("company_id")?.value ??
+      ""
+  ).trim();
+}
 
 export default async function AbsenceEditPage({ params, searchParams }: Props) {
   const p = await params;
@@ -255,20 +176,10 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
   const errorParam = typeof sp?.error === "string" ? sp.error : "";
   const savedParam = typeof sp?.saved === "string" ? sp.saved : "";
 
-  const cookieStore = await cookies();
-  const activeCompanyId =
-    cookieStore.get("active_company_id")?.value ?? cookieStore.get("company_id")?.value ?? "";
-
-  const client = await createSupabaseRlsClientOrNull();
-
   async function saveAbsenceAction(formData: FormData) {
     "use server";
 
-    const cookieStoreInner = await cookies();
-    const activeCompanyIdInner =
-      cookieStoreInner.get("active_company_id")?.value ??
-      cookieStoreInner.get("company_id")?.value ??
-      "";
+    const activeCompanyIdInner = await getActiveCompanyId();
 
     if (!activeCompanyIdInner) {
       redirect(
@@ -277,27 +188,23 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
       );
     }
 
-    const clientInner = await createSupabaseRlsClientOrNull();
-    if (!clientInner) {
-      redirect(
-        `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
-          encodeURIComponent("Server config missing")
-      );
-    }
+    const supabase = await createClient();
 
-    if (!clientInner.hasToken) {
+    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    const user = authData?.user ?? null;
+
+    if (authErr || !user) {
       redirect(
         `/dashboard/absence/${encodeURIComponent(absenceId)}/edit?error=` +
           encodeURIComponent("Not signed in. Log in again.")
       );
     }
 
-    const supabaseInner = clientInner.supabase;
-
-    const { data: membership, error: memErr } = await supabaseInner
+    const { data: membership, error: memErr } = await supabase
       .from("company_memberships")
       .select("role")
       .eq("company_id", activeCompanyIdInner)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     if (memErr || !membership) {
@@ -343,10 +250,10 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
       reference_notes: reference_notes || null,
     };
 
-    if (type) updatePayload.type = type;
-    if (status) updatePayload.status = status;
+    updatePayload.type = type || null;
+    updatePayload.status = status || null;
 
-    const { data, error } = await supabaseInner
+    const { data, error } = await supabase
       .from("absences")
       .update(updatePayload)
       .eq("id", absenceId)
@@ -379,8 +286,11 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
       );
     }
 
+    revalidatePath("/dashboard/absence");
     revalidatePath("/dashboard/absence/list");
     revalidatePath(`/dashboard/absence/${encodeURIComponent(absenceId)}`);
+    revalidatePath(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit`);
+
     redirect(`/dashboard/absence/${encodeURIComponent(absenceId)}/edit?saved=1`);
   }
 
@@ -403,6 +313,8 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
     );
   }
 
+  const activeCompanyId = await getActiveCompanyId();
+
   if (!activeCompanyId) {
     return (
       <PageTemplate title="Absence" currentSection="absence">
@@ -422,28 +334,12 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
     );
   }
 
-  if (!client) {
-    return (
-      <PageTemplate title="Absence" currentSection="absence">
-        <div className="flex flex-col gap-3 flex-1 min-h-0">
-          <ActiveCompanyBanner />
-          <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
-            <div className="text-sm font-semibold text-neutral-900">Server config missing</div>
-            <div className="mt-1 text-sm text-neutral-700">
-              SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are not set on the server.
-            </div>
-            <div className="mt-4">
-              <Link href="/dashboard/absence/list" className="text-sm text-blue-700 underline">
-                Back to absence list
-              </Link>
-            </div>
-          </div>
-        </div>
-      </PageTemplate>
-    );
-  }
+  const supabase = await createClient();
 
-  if (!client.hasToken) {
+  const { data: authData, error: authErr } = await supabase.auth.getUser();
+  const user = authData?.user ?? null;
+
+  if (authErr || !user) {
     return (
       <PageTemplate title="Absence" currentSection="absence">
         <div className="flex flex-col gap-3 flex-1 min-h-0">
@@ -462,12 +358,11 @@ export default async function AbsenceEditPage({ params, searchParams }: Props) {
     );
   }
 
-  const supabase = client.supabase;
-
   const { data: membership, error: memErr } = await supabase
     .from("company_memberships")
     .select("role")
     .eq("company_id", activeCompanyId)
+    .eq("user_id", user.id)
     .maybeSingle();
 
   if (memErr || !membership) {

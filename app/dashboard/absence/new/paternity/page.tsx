@@ -1,4 +1,4 @@
-// C:\Users\adamm\Projects\wageflowflow01\app\dashboard\absence\new\paternity\page.tsx
+// C:\Projects\wageflow01\app\dashboard\absence\new\paternity\page.tsx
 "use client";
 
 import React, { useState } from "react";
@@ -112,10 +112,17 @@ export default function PaternityLeaveWizardPage() {
   function validate(): boolean {
     const nextErrors: FormErrors = {};
 
-    if (!form.employeeName.trim())
+    if (!form.employeeName.trim()) {
       nextErrors.employeeName = "Employee name is required";
-    if (!form.startDate) nextErrors.startDate = "Start date is required";
-    if (!form.endDate) nextErrors.endDate = "End date is required";
+    }
+
+    if (!form.startDate) {
+      nextErrors.startDate = "Start date is required";
+    }
+
+    if (!form.endDate) {
+      nextErrors.endDate = "End date is required";
+    }
 
     if (form.startDate && form.endDate && form.startDate > form.endDate) {
       nextErrors.endDate = "End date cannot be before start date";
@@ -125,10 +132,14 @@ export default function PaternityLeaveWizardPage() {
       nextErrors.weeksOfLeave = "Weeks of leave is required";
     } else {
       const n = Number(form.weeksOfLeave);
-      if (!Number.isFinite(n) || n <= 0)
+
+      if (!Number.isFinite(n) || n <= 0) {
         nextErrors.weeksOfLeave = "Enter a valid number of weeks";
-      if (Number.isFinite(n) && n > 2)
+      }
+
+      if (Number.isFinite(n) && n > 2) {
         nextErrors.weeksOfLeave = "Paternity leave is typically 1 or 2 weeks";
+      }
     }
 
     setErrors(nextErrors);
@@ -183,7 +194,7 @@ export default function PaternityLeaveWizardPage() {
       setForm(initialState);
       setSearchResults([]);
       setSearchError(null);
-      router.push("/dashboard/absence");
+      router.push("/dashboard/absence/list");
     } catch (err) {
       console.error("Paternity wizard unexpected error", err);
       alert("Something went wrong saving the form.");
@@ -276,7 +287,9 @@ export default function PaternityLeaveWizardPage() {
             </section>
 
             <section className="flex flex-col gap-4">
-              <h2 className="text-base font-semibold text-neutral-900">Child details</h2>
+              <h2 className="text-base font-semibold text-neutral-900">
+                Child details
+              </h2>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -294,7 +307,9 @@ export default function PaternityLeaveWizardPage() {
             </section>
 
             <section className="flex flex-col gap-4">
-              <h2 className="text-base font-semibold text-neutral-900">Leave dates</h2>
+              <h2 className="text-base font-semibold text-neutral-900">
+                Leave dates
+              </h2>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -354,7 +369,9 @@ export default function PaternityLeaveWizardPage() {
             </section>
 
             <section className="flex flex-col gap-3">
-              <h2 className="text-base font-semibold text-neutral-900">Notes and context</h2>
+              <h2 className="text-base font-semibold text-neutral-900">
+                Notes and context
+              </h2>
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-1">
                   Notes (optional)
@@ -373,7 +390,7 @@ export default function PaternityLeaveWizardPage() {
               <div className="flex gap-3 justify-end">
                 <button
                   type="button"
-                  onClick={() => router.push("/dashboard/absence")}
+                  onClick={() => router.push("/dashboard/absence/new")}
                   className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50"
                 >
                   Cancel

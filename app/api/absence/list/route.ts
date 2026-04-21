@@ -47,14 +47,6 @@ function firstNonEmpty(...values: unknown[]): string {
 }
 
 function buildEmployeeName(e: any): string {
-  const direct = firstNonEmpty(
-    e?.name,
-    e?.full_name,
-    e?.display_name,
-    e?.preferred_name
-  );
-  if (direct) return direct;
-
   const joined = [cleanText(e?.first_name), cleanText(e?.last_name)]
     .filter(Boolean)
     .join(" ")
@@ -64,7 +56,7 @@ function buildEmployeeName(e: any): string {
 }
 
 function buildEmployeeNumber(e: any): string {
-  return firstNonEmpty(e?.employee_number, e?.payroll_number);
+  return firstNonEmpty(e?.employee_number);
 }
 
 function formatEmployeeLabel(e: any) {
@@ -191,12 +183,19 @@ export async function GET(req: Request) {
     if (absenceEmployeeIds.length > 0) {
       const { data: emps, error: empErr } = await gate.supabase
         .from("employees")
-        .select(
-          "id, employee_id, first_name, last_name, full_name, name, display_name, preferred_name, employee_number, payroll_number"
-        )
+        .select("id, employee_id, first_name, last_name, employee_number")
         .eq("company_id", companyId);
 
-      if (!empErr && Array.isArray(emps)) {
+      if (empErr) {
+        return json(500, {
+          ok: false,
+          code: "EMPLOYEE_LOOKUP_FAILED",
+          message: "Could not load employee labels for absences.",
+          details: empErr.message ?? String(empErr),
+        });
+      }
+
+      if (Array.isArray(emps)) {
         for (const e of emps) {
           const dbId = cleanText((e as any)?.id);
           const employeeFileId = cleanText((e as any)?.employee_id);

@@ -1,4 +1,3 @@
-
 // C:\Projects\wageflow01\app\dashboard\payroll\[id]\payslip\[employeeId]\page.tsx
 
 "use client";
@@ -25,12 +24,31 @@ type NormalisedPayElement = {
   description: string | null;
 };
 
+type CorrectedPayrollRow = {
+  payrollRunEmployeeId?: string | null;
+  contractId?: string | null;
+  contractNumber?: string | null;
+  contractJobTitle?: string | null;
+  contractStatus?: string | null;
+  contractStartDate?: string | null;
+  contractLeaveDate?: string | null;
+  contractPayAfterLeaving?: boolean | null;
+  gross?: number | null;
+  tax?: number | null;
+  employeeNi?: number | null;
+  employerNi?: number | null;
+  net?: number | null;
+};
+
 type PayslipApi = {
   ok?: boolean;
   payslip?: {
     runId: string;
     employeeId: string;
     payrollRunEmployeeId?: string | null;
+    combinedPayrollRunEmployeeIds?: string[] | null;
+    combinedPayrollRowCount?: number | null;
+    correctedPayrollRows?: CorrectedPayrollRow[] | null;
     company?: {
       id?: string | null;
       name?: string | null;
@@ -81,6 +99,7 @@ type PayslipApi = {
       initialTaxCode?: string | null;
       starterTaxCode?: string | null;
       finalTaxCode?: string | null;
+      usedCorrectedRunDetailRows?: boolean | null;
       employeeBreakdown?: {
         tax?: number | null;
         employeeNi?: number | null;
@@ -106,6 +125,24 @@ type BreakdownLine = {
   title: string;
   amount: number;
   meta?: string;
+};
+
+type ContractCard = {
+  key: string;
+  title: string;
+  jobTitle: string | null;
+  status: string | null;
+  startDate: string | null;
+  leaveDate: string | null;
+  payAfterLeaving: boolean;
+  gross: number;
+  grossBeforeSalarySacrifice: number;
+  salarySacrifice: number;
+  salarySacrificeMeta: string | null;
+  tax: number;
+  employeeNi: number;
+  employerNi: number;
+  net: number;
 };
 
 const S = {
@@ -173,12 +210,6 @@ const S = {
   num: {
     fontWeight: 900,
   } as CSSProperties,
-  printBar: {
-    display: "flex",
-    gap: 8,
-    justifyContent: "flex-end",
-    marginTop: 12,
-  } as CSSProperties,
   sectionTitle: {
     marginTop: 14,
     paddingTop: 14,
@@ -221,11 +252,6 @@ const S = {
     color: "rgba(0,0,0,0.58)",
     lineHeight: 1.35,
   } as CSSProperties,
-  small: {
-    fontSize: 12,
-    color: "rgba(0,0,0,0.7)",
-    lineHeight: 1.35,
-  } as CSSProperties,
   hint: {
     marginTop: 10,
     padding: "10px 12px",
@@ -236,13 +262,55 @@ const S = {
     color: "rgba(0,0,0,0.75)",
     lineHeight: 1.4,
   } as CSSProperties,
-};
+  contractGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+    marginTop: 10,
+  } as CSSProperties,
+  contractCard: {
+    background: "rgba(15,60,133,0.04)",
+    border: "1px solid rgba(15,60,133,0.12)",
+    borderRadius: 14,
+    padding: 14,
+  } as CSSProperties,
+  contractHeaderTitle: {
+    fontSize: 14,
+    fontWeight: 900,
+    marginBottom: 6,
+  } as CSSProperties,
+  chipRow: {
+    display: "flex",
+    gap: 6,
+    flexWrap: "wrap",
+    marginBottom: 8,
+  } as CSSProperties,
+  chip: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "3px 8px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    background: "rgba(15,60,133,0.08)",
+    color: "var(--wf-blue)",
+    border: "1px solid rgba(15,60,133,0.12)",
+  } as CSSProperties,
+  chipWarn: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "3px 8px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 800,
+    background: "rgba(217,119,6,0.1)",
+    color: "#92400e",
+    border: "1px solid rgba(217,119,6,0.16)",
+  } as CSSProperties,
+} as const;
 
 function toNumberSafe(v: unknown): number {
-  const n =
-    typeof v === "number"
-      ? v
-      : parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
+  const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -419,9 +487,7 @@ function elementMeta(item: NormalisedPayElement): string {
 }
 
 function nonZeroElements(items: NormalisedPayElement[] | null | undefined): NormalisedPayElement[] {
-  return Array.isArray(items)
-    ? items.filter((item) => Math.abs(toNumberSafe(item?.amount)) > 0.004)
-    : [];
+  return Array.isArray(items) ? items.filter((item) => Math.abs(toNumberSafe(item?.amount)) > 0.004) : [];
 }
 
 function earningSortWeight(item: NormalisedPayElement): number {
@@ -447,6 +513,40 @@ function toBreakdownLine(item: NormalisedPayElement, prefix: string): BreakdownL
 
 function amountStyle(amount: number): CSSProperties {
   return amount < 0 ? { fontWeight: 900, color: "#991b1b" } : { fontWeight: 900 };
+}
+
+function formatContractStatus(value: string | null): string | null {
+  const raw = normaliseText(value).toLowerCase();
+  if (!raw) return null;
+  if (raw === "active") return "Active";
+  if (raw === "ended") return "Ended";
+  if (raw === "terminated") return "Terminated";
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+function normaliseCompareText(value: unknown): string {
+  return normaliseText(value).toLowerCase();
+}
+
+function uniqueNonEmptyStrings(values: Array<unknown>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => normaliseCompareText(value))
+        .filter((value) => value.length >= 3)
+    )
+  );
+}
+
+function buildContractMatchTokens(row: CorrectedPayrollRow, fallbackTitle: string): string[] {
+  return uniqueNonEmptyStrings([
+    row?.contractNumber,
+    row?.contractId,
+    row?.payrollRunEmployeeId,
+    row?.contractJobTitle,
+    row?.contractStatus,
+    fallbackTitle,
+  ]);
 }
 
 export default function PayslipPage() {
@@ -511,14 +611,102 @@ export default function PayslipPage() {
   const net = toNumberSafe(totals?.net);
   const tax = toNumberSafe(totals?.tax);
   const ni = toNumberSafe(totals?.ni);
+  const combinedPayrollRowCount = Math.max(1, Number(payslip?.combinedPayrollRowCount ?? 1));
 
-  const rawDeductions = useMemo(() => {
-    return nonZeroElements(payslip?.payElements?.deductions);
-  }, [payslip]);
+  const rawDeductions = useMemo(() => nonZeroElements(payslip?.payElements?.deductions), [payslip]);
 
   const rawSalarySacrificeFromDeductions = useMemo(() => {
     return rawDeductions.filter((item) => isSalarySacrificePensionElement(item));
   }, [rawDeductions]);
+
+  const correctedRows = useMemo(() => {
+    return Array.isArray(payslip?.correctedPayrollRows) ? payslip.correctedPayrollRows : [];
+  }, [payslip]);
+
+  const contractCards = useMemo<ContractCard[]>(() => {
+    const rows = correctedRows;
+    const salarySacrificeItems = rawSalarySacrificeFromDeductions.map((item, index) => ({
+      item,
+      index,
+      amount: Math.abs(round2(toNumberSafe(item.amount))),
+      haystack: [item.code, item.name, item.description].map((value) => normaliseCompareText(value)).join(" "),
+    }));
+
+    const salarySacrificeByRow = rows.map(() => ({
+      amount: 0,
+      meta: null as string | null,
+    }));
+
+    const unassignedItemIndices = new Set<number>(salarySacrificeItems.map((entry) => entry.index));
+
+    salarySacrificeItems.forEach((entry) => {
+      const matchingRowIndices = rows
+        .map((row, rowIndex) => {
+          const contractNumber = normaliseText(row?.contractNumber);
+          const title = contractNumber || `Contract ${String(rowIndex + 1).padStart(2, "0")}`;
+          const tokens = buildContractMatchTokens(row, title);
+          const matched = tokens.some((token) => entry.haystack.includes(token));
+          return matched ? rowIndex : -1;
+        })
+        .filter((rowIndex) => rowIndex >= 0);
+
+      if (matchingRowIndices.length === 1) {
+        const rowIndex = matchingRowIndices[0];
+        salarySacrificeByRow[rowIndex].amount = round2(salarySacrificeByRow[rowIndex].amount + entry.amount);
+        salarySacrificeByRow[rowIndex].meta = "Matched to this contract from returned contract metadata in the payslip payload.";
+        unassignedItemIndices.delete(entry.index);
+      }
+    });
+
+    const remainingItemIndices = Array.from(unassignedItemIndices).sort((a, b) => a - b);
+
+    if (rows.length === 1) {
+      remainingItemIndices.forEach((itemIndex) => {
+        const entry = salarySacrificeItems[itemIndex];
+        salarySacrificeByRow[0].amount = round2(salarySacrificeByRow[0].amount + entry.amount);
+        salarySacrificeByRow[0].meta = "Only one contract row was present, so the returned salary sacrifice line was applied to that contract.";
+      });
+    } else if (rows.length > 1) {
+      remainingItemIndices.forEach((itemIndex, fallbackPosition) => {
+        const targetRowIndex = Math.min(fallbackPosition, rows.length - 1);
+        const entry = salarySacrificeItems[itemIndex];
+        salarySacrificeByRow[targetRowIndex].amount = round2(salarySacrificeByRow[targetRowIndex].amount + entry.amount);
+        if (!salarySacrificeByRow[targetRowIndex].meta) {
+          salarySacrificeByRow[targetRowIndex].meta =
+            "Matched to this contract by returned row order because the payslip API did not tag the salary sacrifice line with contract-level metadata.";
+        }
+      });
+    }
+
+    return rows.map((row, index) => {
+      const contractNumber = normaliseText(row?.contractNumber);
+      const jobTitle = normaliseText(row?.contractJobTitle) || null;
+      const status = formatContractStatus(normaliseText(row?.contractStatus) || null);
+      const startDate = normaliseText(row?.contractStartDate) || null;
+      const leaveDate = normaliseText(row?.contractLeaveDate) || null;
+      const title = contractNumber || `Contract ${String(index + 1).padStart(2, "0")}`;
+      const grossAfterSalarySacrifice = round2(toNumberSafe(row?.gross));
+      const salarySacrifice = round2(salarySacrificeByRow[index]?.amount ?? 0);
+
+      return {
+        key: normaliseText(row?.payrollRunEmployeeId) || `contract-${index + 1}`,
+        title,
+        jobTitle,
+        status,
+        startDate,
+        leaveDate,
+        payAfterLeaving: Boolean(row?.contractPayAfterLeaving),
+        gross: grossAfterSalarySacrifice,
+        grossBeforeSalarySacrifice: round2(grossAfterSalarySacrifice + salarySacrifice),
+        salarySacrifice,
+        salarySacrificeMeta: salarySacrificeByRow[index]?.meta ?? null,
+        tax: round2(toNumberSafe(row?.tax)),
+        employeeNi: round2(toNumberSafe(row?.employeeNi)),
+        employerNi: round2(toNumberSafe(row?.employerNi)),
+        net: round2(toNumberSafe(row?.net)),
+      };
+    });
+  }, [correctedRows, rawSalarySacrificeFromDeductions]);
 
   const rawEarnings = useMemo(() => {
     const directEarnings = nonZeroElements(payslip?.payElements?.earnings);
@@ -588,13 +776,7 @@ export default function PayslipPage() {
   const displayedTaxLines = useMemo<BreakdownLine[]>(() => {
     if (taxElements.length > 0) return taxElements.map((item) => toBreakdownLine(item, "tax"));
     if (Math.abs(tax) > 0.01) {
-      return [
-        {
-          key: "tax-fallback",
-          title: "PAYE income tax",
-          amount: round2(tax),
-        },
-      ];
+      return [{ key: "tax-fallback", title: "PAYE income tax", amount: round2(tax) }];
     }
     return [];
   }, [tax, taxElements]);
@@ -602,13 +784,7 @@ export default function PayslipPage() {
   const displayedEmployeeNiLines = useMemo<BreakdownLine[]>(() => {
     if (employeeNiElements.length > 0) return employeeNiElements.map((item) => toBreakdownLine(item, "eni"));
     if (Math.abs(ni) > 0.01) {
-      return [
-        {
-          key: "ni-fallback",
-          title: "National Insurance (employee)",
-          amount: round2(ni),
-        },
-      ];
+      return [{ key: "ni-fallback", title: "National Insurance (employee)", amount: round2(ni) }];
     }
     return [];
   }, [employeeNiElements, ni]);
@@ -743,8 +919,8 @@ export default function PayslipPage() {
   return (
     <PageShell>
       <Header
-        title="Payslip"
-        subtitle="Printable payslip. Use the Print button to save as PDF."
+        title="Combined payslip"
+        subtitle="Combined employee payslip for this run. Use the Print button to save as PDF."
         actions={
           <div className="wf-no-print" style={{ display: "flex", gap: 8 }}>
             <LinkButton href={`/dashboard/payroll/${runId}`} variant="secondary">
@@ -787,6 +963,21 @@ export default function PayslipPage() {
         </div>
       ) : null}
 
+      {combinedPayrollRowCount > 1 ? (
+        <div
+          style={{
+            padding: "12px 16px",
+            marginTop: 12,
+            borderRadius: 8,
+            background: "rgba(15,60,133,0.08)",
+            color: "var(--wf-blue)",
+            fontWeight: 700,
+          }}
+        >
+          This payslip combines {combinedPayrollRowCount} contract rows for this employee in the selected run.
+        </div>
+      ) : null}
+
       <div style={S.sheet}>
         <div style={S.header}>
           <div style={S.companyBlock}>
@@ -798,7 +989,7 @@ export default function PayslipPage() {
           </div>
 
           <div style={S.payslipTitle}>
-            Payslip
+            Combined payslip
             <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.65)" }}>
               {periodText}. Pay date {payDateText}
             </div>
@@ -853,6 +1044,120 @@ export default function PayslipPage() {
           </div>
         </div>
 
+        {contractCards.length > 0 ? (
+          <>
+            <div style={S.sectionTitle}>Contract sections</div>
+            <div style={S.contractGrid}>
+              {contractCards.map((card, index) => (
+                <div key={card.key} style={S.contractCard}>
+                  <div style={S.contractHeaderTitle}>{card.title || `Contract ${String(index + 1).padStart(2, "0")}`}</div>
+
+                  <div style={S.chipRow}>
+                    {card.jobTitle ? <span style={S.chip}>{card.jobTitle}</span> : null}
+                    {card.status ? <span style={S.chip}>{card.status}</span> : null}
+                    {card.startDate ? <span style={S.chip}>Start {formatUkDate(card.startDate)}</span> : null}
+                    {card.leaveDate ? <span style={S.chip}>Leave {formatUkDate(card.leaveDate)}</span> : null}
+                    {card.payAfterLeaving ? <span style={S.chipWarn}>Pay after leaving</span> : null}
+                  </div>
+
+                  <div style={S.subSectionTitle}>Earnings</div>
+                  {Math.abs(card.salarySacrifice) > 0.004 ? (
+                    <>
+                      <div style={S.breakdownRow}>
+                        <div style={S.breakdownLabelWrap}>
+                          <div>Gross pay before salary sacrifice</div>
+                          <div style={S.breakdownMeta}>
+                            Derived from the corrected contract gross plus the matched salary sacrifice pension amount for this contract.
+                          </div>
+                        </div>
+                        <div className="wf-num" style={{ fontWeight: 900 }}>
+                          {gbp(card.grossBeforeSalarySacrifice)}
+                        </div>
+                      </div>
+
+                      <div style={S.breakdownRow}>
+                        <div style={S.breakdownLabelWrap}>
+                          <div>Sal Sac Pen</div>
+                          <div style={S.breakdownMeta}>
+                            {card.salarySacrificeMeta || "Shown as a gross deduction before PAYE and employee NI."}
+                          </div>
+                        </div>
+                        <div className="wf-num" style={amountStyle(-card.salarySacrifice)}>
+                          {gbp(-card.salarySacrifice)}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  <div style={S.breakdownRow}>
+                    <div style={S.breakdownLabelWrap}>
+                      <div>Gross pay for this contract</div>
+                      <div style={S.breakdownMeta}>
+                        Gross after any salary sacrifice pension reduction and before payroll deductions for this contract row.
+                      </div>
+                    </div>
+                    <div className="wf-num" style={{ fontWeight: 900 }}>
+                      {gbp(card.gross)}
+                    </div>
+                  </div>
+
+                  <div style={S.subSectionTitle}>Deductions</div>
+                  {Math.abs(card.tax) > 0.004 ? (
+                    <div style={S.breakdownRow}>
+                      <div>PAYE income tax</div>
+                      <div className="wf-num" style={{ fontWeight: 900 }}>
+                        {gbp(card.tax)}
+                      </div>
+                    </div>
+                  ) : null}
+                  {Math.abs(card.employeeNi) > 0.004 ? (
+                    <div style={S.breakdownRow}>
+                      <div>National Insurance (employee)</div>
+                      <div className="wf-num" style={{ fontWeight: 900 }}>
+                        {gbp(card.employeeNi)}
+                      </div>
+                    </div>
+                  ) : null}
+                  {Math.abs(card.tax) <= 0.004 && Math.abs(card.employeeNi) <= 0.004 ? (
+                    <div style={S.breakdownRow}>
+                      <div>No employee deductions recorded for this contract row</div>
+                      <div className="wf-num" style={{ fontWeight: 900 }}>
+                        {gbp(0)}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {Math.abs(card.employerNi) > 0.004 ? (
+                    <>
+                      <div style={S.subSectionTitle}>Employer-paid item</div>
+                      <div style={S.breakdownRow}>
+                        <div style={S.breakdownLabelWrap}>
+                          <div>Employer NI</div>
+                          <div style={S.breakdownMeta}>Shown for transparency only. Not deducted from employee net pay.</div>
+                        </div>
+                        <div className="wf-num" style={{ fontWeight: 900 }}>
+                          {gbp(card.employerNi)}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  <div style={S.breakdownRow}>
+                    <div style={{ fontWeight: 900 }}>Contract subtotal net pay</div>
+                    <div className="wf-num" style={{ fontWeight: 900 }}>
+                      {gbp(card.net)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={S.hint}>
+              Contract sections above use corrected contract-row totals from the payroll run detail loader. Salary sacrifice pension is shown inside the relevant contract earnings section when it can be matched from the returned combined pay elements. Other detailed lines such as Basic pay, SSP, or sickness reduction are still returned at combined employee level by the payslip API, so those lines stay in the combined breakdown below rather than being guessed into a contract section.
+            </div>
+          </>
+        ) : null}
+
         <div style={S.totalsRow}>
           <div style={S.block}>
             <div style={S.label}>Gross pay</div>
@@ -876,11 +1181,11 @@ export default function PayslipPage() {
           </div>
         </div>
 
-        <div style={S.sectionTitle}>Breakdown and what it means</div>
+        <div style={S.sectionTitle}>Combined employee breakdown</div>
 
         <div style={S.twoCol}>
           <div style={S.block}>
-            <div style={{ fontWeight: 900, marginBottom: 8 }}>This payslip breakdown</div>
+            <div style={{ fontWeight: 900, marginBottom: 8 }}>Combined detailed lines</div>
 
             <div style={S.subSectionTitle}>Earnings</div>
 
@@ -911,7 +1216,7 @@ export default function PayslipPage() {
                   <div>{item.title}</div>
                   {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
                 </div>
-                <div className="wf-num" style={amountStyle(item.amount)}>
+                <div className="wf-num" style={{ fontWeight: 900 }}>
                   {gbp(item.amount)}
                 </div>
               </div>
@@ -933,16 +1238,14 @@ export default function PayslipPage() {
 
             {displayedEmployerInfoLines.length > 0 ? (
               <>
-                <div style={S.subSectionTitle}>Employer-paid items</div>
+                <div style={S.subSectionTitle}>Employer-paid items shown for transparency</div>
                 {displayedEmployerInfoLines.map((item) => (
                   <div key={item.key} style={S.breakdownRow}>
                     <div style={S.breakdownLabelWrap}>
                       <div>{item.title}</div>
-                      <div style={S.breakdownMeta}>
-                        {item.meta || "Shown for transparency only. Not deducted from employee net pay."}
-                      </div>
+                      {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
                     </div>
-                    <div className="wf-num" style={amountStyle(item.amount)}>
+                    <div className="wf-num" style={{ fontWeight: 900 }}>
                       {gbp(item.amount)}
                     </div>
                   </div>
@@ -953,79 +1256,45 @@ export default function PayslipPage() {
 
           <div style={S.block}>
             <div style={{ fontWeight: 900, marginBottom: 8 }}>What these items mean</div>
-
-            <div style={S.small}>
-              1. Gross pay. Your total pay for the period before deductions. WageFlow itemises the earnings lines that make
-              up gross pay whenever those pay elements exist on the payroll run.
-            </div>
-            <div style={{ height: 8 }} />
-
-            <div style={S.small}>
-              2. PAYE income tax. Income Tax withheld under Pay As You Earn. The amount depends on your tax code, taxable
-              pay, and whether HMRC applies cumulative rules or Week 1 / Month 1 rules.
-            </div>
-            <div style={{ height: 8 }} />
-
-            <div style={S.small}>
-              3. National Insurance. Employee NI is deducted from pay. Employer NI is a separate employer cost and is not
-              taken from employee net pay.
-            </div>
-            <div style={{ height: 8 }} />
-
-            <div style={S.small}>
-              4. Sickness adjustments. Where sickness affects normal pay, WageFlow should show the reduction separately from
-              SSP so the visible earnings lines reconcile to Gross pay.
-            </div>
-            <div style={{ height: 8 }} />
-
-            <div style={S.small}>
-              5. Salary sacrifice pension. Where pension is handled by salary sacrifice, the reduction should be shown in the
-              earnings section before deductions, because it reduces pay before PAYE and employee NI are applied.
-            </div>
-            <div style={{ height: 8 }} />
-
-            <div style={S.small}>
-              6. Net pay. Gross pay minus total deductions should equal the final net pay shown on the payslip.
+            <div style={{ fontSize: 13, lineHeight: 1.45, color: "rgba(0,0,0,0.78)" }}>
+              <div style={{ marginBottom: 10 }}>
+                1. Combined payslip. This payslip combines all contract rows for this employee in the selected payroll run.
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                2. Contract sections. Each contract card above shows trusted contract-row totals and labels from the API. No raw UUIDs should appear unless the API itself has no contract metadata.
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                3. Combined detailed lines. Basic pay, SSP, sickness reduction, and other returned pay elements are shown in the combined employee section because the current payslip API returns them as employee-level lines rather than contract-tagged lines.
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                4. PAYE income tax. Income Tax withheld under Pay As You Earn. The amount depends on your tax code, taxable pay, and whether HMRC applies cumulative rules or Week 1 / Month 1 rules.
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                5. National Insurance. Employee NI is deducted from pay. Employer NI is a separate employer cost and is not taken from employee net pay.
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                6. Sickness adjustments. Where sickness affects normal pay, WageFlow should show the reduction separately from SSP so the visible earnings lines reconcile to Gross pay.
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                7. Salary sacrifice pension. Where pension is handled by salary sacrifice, the reduction should be shown in the earnings section before deductions, because it reduces pay before PAYE and employee NI are applied.
+              </div>
+              <div>
+                8. Net pay. Gross pay minus total deductions should equal the final net pay shown on the payslip.
+              </div>
             </div>
 
-            <div style={{ height: 14 }} />
+            <div style={S.sectionTitle}>Tax code example</div>
+            <div style={{ fontSize: 13, lineHeight: 1.45, color: "rgba(0,0,0,0.78)" }}>{taxCodeExampleText}</div>
 
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>Tax code example</div>
-            <div style={S.small}>{taxCodeExampleText}</div>
-
-            <div style={{ height: 12 }} />
-
-            <div style={{ fontWeight: 900, marginBottom: 6 }}>Tax basis</div>
-            <div style={S.small}>{taxBasisExplanationText}</div>
-
-            <div style={{ height: 12 }} />
+            <div style={S.sectionTitle}>Tax basis</div>
+            <div style={{ fontSize: 13, lineHeight: 1.45, color: "rgba(0,0,0,0.78)" }}>{taxBasisExplanationText}</div>
 
             <div style={S.hint}>
-              This explanation is a plain-English guide. It is not tax advice. HMRC rules, thresholds, and your personal
-              circumstances decide the actual calculation.
+              This explanation is a plain-English guide. It is not tax advice. HMRC rules, thresholds, and your personal circumstances decide the actual calculation.
             </div>
           </div>
         </div>
-
-        <div style={S.printBar} className="wf-no-print">
-          <Button variant="primary" onClick={() => window.print()}>
-            Print
-          </Button>
-        </div>
       </div>
-
-      <style>
-        {`
-          @media print {
-            .wf-no-print { display: none !important; }
-            body, html { background: #fff !important; }
-          }
-
-          @media (max-width: 900px) {
-            .wf-no-print { }
-          }
-        `}
-      </style>
     </PageShell>
   );
 }

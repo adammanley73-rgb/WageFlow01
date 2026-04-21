@@ -307,7 +307,7 @@ export default function BereavedPartnersPaternityWizardPage() {
           <div className="mt-2 flex justify-end gap-3">
             <button
               type="button"
-              onClick={() => router.push("/dashboard/absence")}
+              onClick={() => router.push("/dashboard/absence/new")}
               className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
             >
               Cancel

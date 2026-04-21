@@ -1,5 +1,4 @@
 // C:\Projects\wageflow01\app\dashboard\payroll\[id]\PayItemsModal.tsx
-
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -9,6 +8,8 @@ type EmployeeRowLite = {
   employeeId: string;
   employeeName: string;
   employeeNumber: string;
+  contractNumber?: string;
+  contractJobTitle?: string;
 };
 
 type PayItem = {
@@ -63,7 +64,8 @@ type EditableDraftItem = {
 type Props = {
   runId: string;
   rows: EmployeeRowLite[];
-  initialEmployeeId: string | null;
+  initialPayrollRunEmployeeId?: string | null;
+  initialEmployeeId?: string | null;
   isOpen: boolean;
   canEditRun: boolean;
   onClose: () => void;
@@ -101,9 +103,23 @@ function emptyDraftItem(defaultCode = ""): EditableDraftItem {
 }
 
 export default function PayItemsModal(props: Props) {
-  const { runId, rows, initialEmployeeId, isOpen, canEditRun, onClose, onSaved } = props;
+  const {
+    runId,
+    rows,
+    initialPayrollRunEmployeeId,
+    initialEmployeeId,
+    isOpen,
+    canEditRun,
+    onClose,
+    onSaved,
+  } = props;
 
-  const [activeEmployeeId, setActiveEmployeeId] = useState<string | null>(initialEmployeeId);
+  const resolvedInitialPayrollRunEmployeeId =
+    initialPayrollRunEmployeeId ?? initialEmployeeId ?? null;
+
+  const [activePayrollRunEmployeeId, setActivePayrollRunEmployeeId] = useState<string | null>(
+    resolvedInitialPayrollRunEmployeeId
+  );
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -117,29 +133,35 @@ export default function PayItemsModal(props: Props) {
 
   useEffect(() => {
     if (!isOpen) return;
-    setActiveEmployeeId(initialEmployeeId);
-  }, [isOpen, initialEmployeeId]);
+    setActivePayrollRunEmployeeId(resolvedInitialPayrollRunEmployeeId);
+  }, [isOpen, resolvedInitialPayrollRunEmployeeId]);
 
-  const employeeIndex = useMemo(() => {
-    if (!activeEmployeeId) return -1;
-    return rows.findIndex((row) => row.employeeId === activeEmployeeId);
-  }, [rows, activeEmployeeId]);
+  const rowIndex = useMemo(() => {
+    if (!activePayrollRunEmployeeId) return -1;
+    return rows.findIndex((row) => row.id === activePayrollRunEmployeeId);
+  }, [rows, activePayrollRunEmployeeId]);
 
-  const hasPrev = employeeIndex > 0;
-  const hasNext = employeeIndex >= 0 && employeeIndex < rows.length - 1;
+  const hasPrev = rowIndex > 0;
+  const hasNext = rowIndex >= 0 && rowIndex < rows.length - 1;
+  const activeRow = rowIndex >= 0 ? rows[rowIndex] : null;
 
-  const activeRow = employeeIndex >= 0 ? rows[employeeIndex] : null;
+  const displayEmployeeName = employeeName || activeRow?.employeeName || MISSING;
+  const displayEmployeeNumber = employeeNumber || activeRow?.employeeNumber || MISSING;
+  const displayContractNumber = String(activeRow?.contractNumber ?? "").trim() || MISSING;
+  const displayContractJobTitle = String(activeRow?.contractJobTitle ?? "").trim() || MISSING;
 
-  async function loadEmployee(employeeId: string) {
+  async function loadRow(payrollRunEmployeeId: string) {
     setLoading(true);
     setErr(null);
 
     try {
-      const res = await fetch(`/api/payroll/${runId}/elements/${employeeId}`, {
+      const res = await fetch(`/api/payroll/${runId}/elements/${payrollRunEmployeeId}`, {
         cache: "no-store",
       });
 
-      const json: LoadResponse = await res.json().catch(() => ({ ok: false, error: "Failed to load pay items" }));
+      const json: LoadResponse = await res
+        .json()
+        .catch(() => ({ ok: false, error: "Failed to load pay items" }));
 
       if (!res.ok || !json.ok) {
         throw new Error(json.error || `Failed to load pay items (${res.status})`);
@@ -151,7 +173,9 @@ export default function PayItemsModal(props: Props) {
       const editableDraft = buildEditableDraft(items);
 
       setEmployeeName(String(json.employee?.employeeName ?? activeRow?.employeeName ?? MISSING));
-      setEmployeeNumber(String(json.employee?.employeeNumber ?? activeRow?.employeeNumber ?? MISSING));
+      setEmployeeNumber(
+        String(json.employee?.employeeNumber ?? activeRow?.employeeNumber ?? MISSING)
+      );
       setAvailableTypes(types);
       setBasicItems(basic);
       setDraftItems(editableDraft);
@@ -167,9 +191,9 @@ export default function PayItemsModal(props: Props) {
   }
 
   useEffect(() => {
-    if (!isOpen || !activeEmployeeId) return;
-    loadEmployee(activeEmployeeId);
-  }, [isOpen, activeEmployeeId, runId]);
+    if (!isOpen || !activePayrollRunEmployeeId) return;
+    loadRow(activePayrollRunEmployeeId);
+  }, [isOpen, activePayrollRunEmployeeId, runId]);
 
   function updateDraftItem(index: number, patch: Partial<EditableDraftItem>) {
     setDraftItems((prev) =>
@@ -192,8 +216,8 @@ export default function PayItemsModal(props: Props) {
     setDirty(true);
   }
 
-  async function saveCurrentEmployee() {
-    if (!activeEmployeeId) return false;
+  async function saveCurrentRow() {
+    if (!activePayrollRunEmployeeId) return false;
 
     setSaving(true);
     setErr(null);
@@ -230,13 +254,15 @@ export default function PayItemsModal(props: Props) {
         })),
       };
 
-      const res = await fetch(`/api/payroll/${runId}/elements/${activeEmployeeId}`, {
+      const res = await fetch(`/api/payroll/${runId}/elements/${activePayrollRunEmployeeId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const json = await res.json().catch(() => ({ ok: false, error: "Failed to save pay items" }));
+      const json = await res
+        .json()
+        .catch(() => ({ ok: false, error: "Failed to save pay items" }));
 
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || `Failed to save pay items (${res.status})`);
@@ -247,7 +273,7 @@ export default function PayItemsModal(props: Props) {
       }
 
       setDirty(false);
-      await loadEmployee(activeEmployeeId);
+      await loadRow(activePayrollRunEmployeeId);
       return true;
     } catch (error: any) {
       setErr(error?.message || "Failed to save pay items");
@@ -257,57 +283,68 @@ export default function PayItemsModal(props: Props) {
     }
   }
 
-  async function moveToEmployee(direction: -1 | 1, saveFirst: boolean) {
-    const targetIndex = employeeIndex + direction;
+  async function moveToRow(direction: -1 | 1, saveFirst: boolean) {
+    const targetIndex = rowIndex + direction;
     if (targetIndex < 0 || targetIndex >= rows.length) return;
 
     if (dirty && !saveFirst) {
-      const proceed = window.confirm("You have unsaved pay item changes. Continue without saving?");
+      const proceed = window.confirm(
+        "You have unsaved pay item changes. Continue without saving?"
+      );
       if (!proceed) return;
     }
 
     if (saveFirst) {
-      const ok = await saveCurrentEmployee();
+      const ok = await saveCurrentRow();
       if (!ok) return;
     }
 
-    setActiveEmployeeId(rows[targetIndex].employeeId);
+    setActivePayrollRunEmployeeId(rows[targetIndex].id);
   }
 
   async function handleClose() {
     if (dirty) {
-      const proceed = window.confirm("You have unsaved pay item changes. Close without saving?");
+      const proceed = window.confirm(
+        "You have unsaved pay item changes. Close without saving?"
+      );
       if (!proceed) return;
     }
     onClose();
   }
 
-  if (!isOpen || !activeEmployeeId) return null;
+  if (!isOpen || !activePayrollRunEmployeeId) return null;
 
   return (
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center p-4"
       style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
     >
-      <div className="w-full max-w-4xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
+      <div className="w-full max-w-5xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden">
         <div className="border-b border-neutral-200 px-5 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="text-base font-extrabold text-slate-900">
-                Edit pay items: {employeeName}
+                Edit pay items: {displayEmployeeName}
               </div>
               <div className="mt-1 text-sm text-slate-700">
-                Employee number: {employeeNumber || MISSING}
+                Employee number: {displayEmployeeNumber}
               </div>
-              <div className="mt-1 text-xs font-semibold text-slate-600">
-                Basic pay is shown read-only. Save pay items, then run calculation on the payroll page.
+              <div className="mt-1 text-sm text-slate-700">
+                Contract number: {displayContractNumber}
+              </div>
+              <div className="mt-1 text-sm text-slate-700">
+                Job title: {displayContractJobTitle}
+              </div>
+              <div className="mt-2 text-xs font-semibold text-slate-600">
+                BASIC pay is shown read-only. Save pay items, then run calculation on the payroll
+                page.
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => moveToEmployee(-1, false)}
+                onClick={() => moveToRow(-1, false)}
                 disabled={!hasPrev || saving || loading}
                 className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                 style={{
@@ -316,12 +353,12 @@ export default function PayItemsModal(props: Props) {
                   cursor: !hasPrev || saving || loading ? "not-allowed" : "pointer",
                 }}
               >
-                Previous employee
+                Previous contract
               </button>
 
               <button
                 type="button"
-                onClick={() => moveToEmployee(1, false)}
+                onClick={() => moveToRow(1, false)}
                 disabled={!hasNext || saving || loading}
                 className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                 style={{
@@ -330,7 +367,7 @@ export default function PayItemsModal(props: Props) {
                   cursor: !hasNext || saving || loading ? "not-allowed" : "pointer",
                 }}
               >
-                Next employee
+                Next contract
               </button>
 
               <button
@@ -359,7 +396,8 @@ export default function PayItemsModal(props: Props) {
 
           {!canEditRun ? (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
-              This run is not editable. Pay items can only be changed while the run is Draft or Processing.
+              This run is not editable. Pay items can only be changed while the run is Draft or
+              Processing.
             </div>
           ) : null}
 
@@ -375,7 +413,9 @@ export default function PayItemsModal(props: Props) {
                 </div>
                 <div className="p-4">
                   {basicItems.length === 0 ? (
-                    <div className="text-sm text-slate-700">No BASIC item found for this employee in this run.</div>
+                    <div className="text-sm text-slate-700">
+                      No BASIC item found for this contract row in this run.
+                    </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-3">
                       {basicItems.map((item) => (
@@ -384,18 +424,30 @@ export default function PayItemsModal(props: Props) {
                           className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-3 md:grid-cols-[1.2fr_0.8fr_1fr]"
                         >
                           <div>
-                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Type</div>
-                            <div className="mt-1 text-sm font-semibold text-slate-900">{item.name}</div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                              Type
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900">
+                              {item.name}
+                            </div>
                           </div>
 
                           <div>
-                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Amount</div>
-                            <div className="mt-1 text-sm font-semibold text-slate-900">£{item.amount.toFixed(2)}</div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                              Amount
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900">
+                              £{item.amount.toFixed(2)}
+                            </div>
                           </div>
 
                           <div>
-                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Description</div>
-                            <div className="mt-1 text-sm text-slate-700">{item.description_override || "Read-only"}</div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                              Description
+                            </div>
+                            <div className="mt-1 text-sm text-slate-700">
+                              {item.description_override || "Read-only"}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -415,8 +467,12 @@ export default function PayItemsModal(props: Props) {
                     className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
                     style={{
                       backgroundColor: WF_GREEN,
-                      opacity: !canEditRun || saving || availableTypes.length === 0 ? 0.6 : 1,
-                      cursor: !canEditRun || saving || availableTypes.length === 0 ? "not-allowed" : "pointer",
+                      opacity:
+                        !canEditRun || saving || availableTypes.length === 0 ? 0.6 : 1,
+                      cursor:
+                        !canEditRun || saving || availableTypes.length === 0
+                          ? "not-allowed"
+                          : "pointer",
                     }}
                   >
                     Add item
@@ -424,22 +480,32 @@ export default function PayItemsModal(props: Props) {
                 </div>
 
                 <div className="p-4">
-                  {draftItems.length === 0 ? (
-                    <div className="text-sm text-slate-700">No extra pay items entered yet.</div>
+                  {availableTypes.length === 0 ? (
+                    <div className="text-sm text-slate-700">
+                      No editable extra pay item types are available for this company.
+                    </div>
+                  ) : draftItems.length === 0 ? (
+                    <div className="text-sm text-slate-700">
+                      No extra pay items added for this contract row.
+                    </div>
                   ) : (
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="flex flex-col gap-3">
                       {draftItems.map((item, index) => (
                         <div
-                          key={`${item.code || "blank"}-${index}`}
-                          className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-3 md:grid-cols-[1.1fr_0.8fr_1.2fr_auto]"
+                          key={`draft-${index}`}
+                          className="grid grid-cols-1 gap-3 rounded-xl border border-neutral-200 bg-white p-3 lg:grid-cols-[1.2fr_0.8fr_1.5fr_auto]"
                         >
                           <div>
-                            <label className="block text-sm text-neutral-800">Type</label>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                              Type
+                            </div>
                             <select
                               value={item.code}
-                              onChange={(e) => updateDraftItem(index, { code: e.target.value })}
+                              onChange={(e) =>
+                                updateDraftItem(index, { code: e.target.value })
+                              }
                               disabled={!canEditRun || saving}
-                              className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                              className="mt-1 h-10 w-full rounded-xl border border-slate-300 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-offset-1"
                             >
                               <option value="">Select pay item</option>
                               {availableTypes.map((type) => (
@@ -451,27 +517,37 @@ export default function PayItemsModal(props: Props) {
                           </div>
 
                           <div>
-                            <label className="block text-sm text-neutral-800">Amount</label>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                              Amount
+                            </div>
                             <input
+                              type="number"
+                              step="0.01"
                               value={item.amount}
-                              onChange={(e) => updateDraftItem(index, { amount: e.target.value })}
+                              onChange={(e) =>
+                                updateDraftItem(index, { amount: e.target.value })
+                              }
                               disabled={!canEditRun || saving}
-                              className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                              inputMode="decimal"
+                              className="mt-1 h-10 w-full rounded-xl border border-slate-300 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-offset-1"
                               placeholder="0.00"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-sm text-neutral-800">Description override (optional)</label>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                              Description override
+                            </div>
                             <input
+                              type="text"
                               value={item.description_override}
                               onChange={(e) =>
-                                updateDraftItem(index, { description_override: e.target.value })
+                                updateDraftItem(index, {
+                                  description_override: e.target.value,
+                                })
                               }
                               disabled={!canEditRun || saving}
-                              className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                              placeholder="Optional description"
+                              className="mt-1 h-10 w-full rounded-xl border border-slate-300 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-offset-1"
+                              placeholder="Optional"
                             />
                           </div>
 
@@ -484,7 +560,8 @@ export default function PayItemsModal(props: Props) {
                               style={{
                                 backgroundColor: "#991b1b",
                                 opacity: !canEditRun || saving ? 0.6 : 1,
-                                cursor: !canEditRun || saving ? "not-allowed" : "pointer",
+                                cursor:
+                                  !canEditRun || saving ? "not-allowed" : "pointer",
                               }}
                             >
                               Remove
@@ -494,52 +571,65 @@ export default function PayItemsModal(props: Props) {
                       ))}
                     </div>
                   )}
-
-                  <div className="mt-4 text-xs font-semibold text-slate-600">
-                    Save the items here, then use Run calculation on the payroll run page to refresh gross, PAYE, NI, pension, and net.
-                  </div>
                 </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={saveCurrentRow}
+                  disabled={!canEditRun || saving || loading || !dirty}
+                  className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{
+                    backgroundColor: WF_GREEN,
+                    opacity: !canEditRun || saving || loading || !dirty ? 0.6 : 1,
+                    cursor:
+                      !canEditRun || saving || loading || !dirty
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {saving ? "Saving..." : "Save pay items"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => moveToRow(-1, true)}
+                  disabled={!canEditRun || saving || loading || !hasPrev}
+                  className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{
+                    backgroundColor: WF_BLUE,
+                    opacity:
+                      !canEditRun || saving || loading || !hasPrev ? 0.6 : 1,
+                    cursor:
+                      !canEditRun || saving || loading || !hasPrev
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  Save and previous
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => moveToRow(1, true)}
+                  disabled={!canEditRun || saving || loading || !hasNext}
+                  className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition hover:opacity-95"
+                  style={{
+                    backgroundColor: WF_BLUE,
+                    opacity:
+                      !canEditRun || saving || loading || !hasNext ? 0.6 : 1,
+                    cursor:
+                      !canEditRun || saving || loading || !hasNext
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  Save and next
+                </button>
               </div>
             </div>
           )}
-        </div>
-
-        <div className="border-t border-neutral-200 px-5 py-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-xs font-semibold text-slate-600">
-              {dirty ? "Unsaved changes" : "No unsaved changes"}
-            </div>
-
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <button
-                type="button"
-                onClick={() => saveCurrentEmployee()}
-                disabled={!canEditRun || saving || loading}
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{
-                  backgroundColor: WF_BLUE,
-                  opacity: !canEditRun || saving || loading ? 0.6 : 1,
-                  cursor: !canEditRun || saving || loading ? "not-allowed" : "pointer",
-                }}
-              >
-                {saving ? "Saving..." : "Save"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => moveToEmployee(1, true)}
-                disabled={!canEditRun || saving || loading || !hasNext}
-                className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95"
-                style={{
-                  backgroundColor: WF_GREEN,
-                  opacity: !canEditRun || saving || loading || !hasNext ? 0.6 : 1,
-                  cursor: !canEditRun || saving || loading || !hasNext ? "not-allowed" : "pointer",
-                }}
-              >
-                Save & Next
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
