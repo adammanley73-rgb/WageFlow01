@@ -166,13 +166,6 @@ export default function AbsenceDetailPage() {
             >
               Back to list
             </Link>
-            <Link
-              href="/dashboard/absence/new"
-              className="rounded-full px-4 py-2 text-sm font-semibold text-white"
-              style={{ backgroundColor: "var(--wf-blue)" }}
-            >
-              New absence
-            </Link>
           </div>
 
           {absenceId ? (

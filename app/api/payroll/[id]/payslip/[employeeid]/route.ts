@@ -1,9 +1,10 @@
-﻿// C:\Projects\wageflow01\app\api\payroll\[id]\payslip\[employeeId]\route.ts
+// C:\Projects\wageflow01\app\api\payroll\[id]\payslip\[employeeId]\route.ts
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getSspAmountsForRun } from "@/lib/services/absenceService";
 import { calculatePay } from "@/lib/payroll/calculatePay";
+import { getPayrollRunDetail } from "@/lib/payroll/getPayrollRunDetail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,6 +62,37 @@ type PayElementTypeRow = {
   is_salary_sacrifice_type: boolean | null;
 };
 
+type CorrectedRunDetailRow = {
+  id?: string | null;
+  payroll_run_employee_id?: string | null;
+  employee_id?: string | null;
+  employeeId?: string | null;
+  contract_id?: string | null;
+  contractId?: string | null;
+  contract_number?: string | null;
+  contractNumber?: string | null;
+  contract_job_title?: string | null;
+  contractJobTitle?: string | null;
+  contract_status?: string | null;
+  contractStatus?: string | null;
+  contract_start_date?: string | null;
+  contractStartDate?: string | null;
+  contract_leave_date?: string | null;
+  contractLeaveDate?: string | null;
+  contract_pay_after_leaving?: boolean | null;
+  contractPayAfterLeaving?: boolean | null;
+  gross?: number | null;
+  gross_pay?: number | null;
+  tax?: number | null;
+  ni?: number | null;
+  ni_employee?: number | null;
+  employee_ni?: number | null;
+  ni_employer?: number | null;
+  employer_ni?: number | null;
+  net?: number | null;
+  net_pay?: number | null;
+};
+
 function isUuid(v: unknown): boolean {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
     String(v ?? "").trim()
@@ -74,6 +106,42 @@ function normaliseSide(value: unknown): "earning" | "deduction" {
 
 function round2(n: number): number {
   return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function firstFiniteNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function getRowKey(row: CorrectedRunDetailRow): string {
+  return String(row?.payroll_run_employee_id ?? row?.id ?? "").trim();
+}
+
+function getRowEmployeeId(row: CorrectedRunDetailRow): string {
+  return String(row?.employee_id ?? row?.employeeId ?? "").trim();
+}
+
+function getCorrectedRowGross(row: CorrectedRunDetailRow): number {
+  return round2(firstFiniteNumber(row?.gross_pay, row?.gross, 0) ?? 0);
+}
+
+function getCorrectedRowTax(row: CorrectedRunDetailRow): number {
+  return round2(firstFiniteNumber(row?.tax, 0) ?? 0);
+}
+
+function getCorrectedRowEmployeeNi(row: CorrectedRunDetailRow): number {
+  return round2(firstFiniteNumber(row?.ni_employee, row?.employee_ni, row?.ni, 0) ?? 0);
+}
+
+function getCorrectedRowEmployerNi(row: CorrectedRunDetailRow): number {
+  return round2(firstFiniteNumber(row?.ni_employer, row?.employer_ni, 0) ?? 0);
+}
+
+function getCorrectedRowNet(row: CorrectedRunDetailRow): number {
+  return round2(firstFiniteNumber(row?.net_pay, row?.net, 0) ?? 0);
 }
 
 function isIsoDate(s: unknown): boolean {
@@ -221,6 +289,57 @@ function toSalarySacrificeEarning(item: NormalisedPayElement): NormalisedPayElem
   };
 }
 
+function makeSyntheticDeductionElement(args: {
+  runId: string;
+  employeeId: string;
+  code: string;
+  name: string;
+  amount: number;
+  description: string;
+}): NormalisedPayElement {
+  return {
+    id: `synthetic:${args.code}:${args.runId}:${args.employeeId}`,
+    typeId: "",
+    code: args.code,
+    name: args.name,
+    side: "deduction",
+    amount: round2(Math.abs(Number(args.amount) || 0)),
+    taxableForPaye: false,
+    nicEarnings: false,
+    pensionable: false,
+    aeQualifying: false,
+    isSalarySacrificeType: false,
+    description: args.description,
+  };
+}
+
+function upsertVisibleDeductionElement(
+  items: NormalisedPayElement[],
+  matcher: (item: NormalisedPayElement) => boolean,
+  factory: () => NormalisedPayElement
+): NormalisedPayElement[] {
+  const existingIndex = items.findIndex(matcher);
+  if (existingIndex >= 0) {
+    const existing = items[existingIndex];
+    const nextAmount = round2(Math.abs(Number(existing.amount) || 0));
+    if (Math.abs(nextAmount) > 0.004) {
+      const cloned = [...items];
+      cloned[existingIndex] = {
+        ...existing,
+        side: "deduction",
+        amount: nextAmount,
+      };
+      return cloned;
+    }
+  }
+
+  const created = factory();
+  if ((Number(created.amount) || 0) > 0) {
+    return [...items, created];
+  }
+
+  return items;
+}
 
 function pickEarliestSicknessStart(sspForEmployee: unknown): string | null {
   const anySsp = sspForEmployee as { absences?: unknown } | null;
@@ -305,7 +424,7 @@ function pickFirst(...values: unknown[]): string | null {
   return null;
 }
 
-async function loadPayslipPayload(supabase: any, runId: string, employeeId: string) {
+async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey: string) {
   const { data: runRowRaw, error: runError } = await supabase
     .from("payroll_runs")
     .select("*")
@@ -346,43 +465,78 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
     } as const;
   }
 
-  const { data: preRowRaw, error: preError } = await supabase
+  const payslipLookupId = String(payslipLookupKey ?? "").trim();
+
+  const { data: preRowByIdRaw, error: preRowByIdError } = await supabase
     .from("payroll_run_employees")
     .select("id, run_id, employee_id, gross_pay, net_pay, tax, ni_employee, ni_employer, pay_after_leaving")
     .eq("run_id", runId)
-    .eq("employee_id", employeeId)
+    .eq("id", payslipLookupId)
     .maybeSingle();
 
-  if (preError || !preRowRaw) {
+  let resolvedEmployeeId = String((preRowByIdRaw as DbRow | null)?.["employee_id"] ?? "").trim();
+  if (!resolvedEmployeeId) {
+    resolvedEmployeeId = payslipLookupId;
+  }
+
+  const { data: preRowsRaw, error: preRowsError } = await supabase
+    .from("payroll_run_employees")
+    .select("id, run_id, employee_id, gross_pay, net_pay, tax, ni_employee, ni_employer, pay_after_leaving")
+    .eq("run_id", runId)
+    .eq("employee_id", resolvedEmployeeId);
+
+  const preRows = (Array.isArray(preRowsRaw) ? preRowsRaw : []) as DbRow[];
+
+  if (preRowsError || preRows.length === 0) {
     return {
       ok: false,
       status: 404,
       body: {
         ok: false,
         error: "PAYROLL_RUN_EMPLOYEE_NOT_FOUND",
-        message: "No payroll record found for this employee in the selected run.",
-        details: preError?.message ?? null,
+        message: "No payroll records found for this employee in the selected run.",
+        details: preRowsError?.message ?? preRowByIdError?.message ?? null,
       },
     } as const;
   }
 
-  const preRow = preRowRaw as DbRow;
-  const preId = String(preRow["id"] ?? "").trim();
-  if (!preId) {
+  let preIds = preRows
+    .map((row) => String(row["id"] ?? "").trim())
+    .filter((id) => id.length > 0);
+
+  if (preIds.length === 0) {
     return {
       ok: false,
       status: 500,
-      body: { ok: false, error: "BAD_PAYROLL_RUN_EMPLOYEE", message: "Payroll row is missing an id.", details: null },
+      body: {
+        ok: false,
+        error: "BAD_PAYROLL_RUN_EMPLOYEE",
+        message: "Payroll rows are missing ids.",
+        details: null,
+      },
     } as const;
   }
 
-  let preIds: string[] = [preId];
+  const preRow = preRows[0] as DbRow;
+  resolvedEmployeeId = String(preRow["employee_id"] ?? "").trim();
+  if (!resolvedEmployeeId || !isUuid(resolvedEmployeeId)) {
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        ok: false,
+        error: "BAD_PAYROLL_RUN_EMPLOYEE",
+        message: "Payroll rows are missing a valid employee_id.",
+        details: null,
+      },
+    } as const;
+  }
 
   const { data: allPreRows, error: allPreError } = await supabase
     .from("payroll_run_employees")
     .select("id")
     .eq("run_id", runId)
-    .eq("employee_id", employeeId);
+    .eq("employee_id", resolvedEmployeeId);
 
   if (!allPreError && Array.isArray(allPreRows) && allPreRows.length > 0) {
     const ids = allPreRows.map((r: any) => r?.id).filter((v: any) => typeof v === "string" && v.length > 0);
@@ -413,7 +567,7 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
   const { data: employeeRowRaw, error: employeeError } = await supabase
     .from("employees")
     .select("*")
-    .eq("id", employeeId)
+    .eq("id", resolvedEmployeeId)
     .maybeSingle();
 
   if (employeeError || !employeeRowRaw) {
@@ -431,12 +585,32 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
 
   const employeeRow = employeeRowRaw as DbRow;
 
+  let correctedEmployeeRows: CorrectedRunDetailRow[] = [];
+  let correctedEmployeeRowMap = new Map<string, CorrectedRunDetailRow>();
+
+  try {
+    const runDetail = await getPayrollRunDetail(supabase, runId, false);
+    if (runDetail.ok) {
+      correctedEmployeeRows = (Array.isArray(runDetail.employees) ? runDetail.employees : [])
+        .filter((row) => getRowEmployeeId(row as CorrectedRunDetailRow) === resolvedEmployeeId)
+        .map((row) => row as CorrectedRunDetailRow);
+
+      correctedEmployeeRowMap = new Map(
+        correctedEmployeeRows
+          .map((row) => [getRowKey(row), row] as const)
+          .filter(([key]) => key.length > 0)
+      );
+    }
+  } catch (err) {
+    console.error("payslip route: getPayrollRunDetail fallback load failed", err);
+  }
+
   let starterTaxCode: string | null = null;
   try {
     const { data: starterRowRaw, error: starterError } = await supabase
       .from("employee_starters")
       .select("p45_provided, p45_present, starter_declaration, p45_tax_code")
-      .eq("employee_id", employeeId)
+      .eq("employee_id", resolvedEmployeeId)
       .maybeSingle();
 
     let row = starterRowRaw as any;
@@ -445,7 +619,7 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
       const { data: legacyRowRaw, error: legacyError } = await supabase
         .from("employee_starter_details")
         .select("p45_provided, p45_present, starter_declaration, p45_tax_code")
-        .eq("employee_id", employeeId)
+        .eq("employee_id", resolvedEmployeeId)
         .maybeSingle();
       if (legacyRowRaw && !legacyError) row = legacyRowRaw as any;
     }
@@ -579,7 +753,7 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
         sspEngineRan = true;
 
         const matchKeys = new Set(
-          [String(employeeId), String(employeeRow?.["employee_id"] || ""), String(employeeRow?.["id"] || "")]
+          [String(resolvedEmployeeId), String(employeeRow?.["employee_id"] || ""), String(employeeRow?.["id"] || "")]
             .map((s) => s.trim())
             .filter((s) => s.length > 0)
         );
@@ -619,7 +793,7 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
 
       if (referenceEnd && companyId) {
         try {
-          const awe = await computeAweWeeklyForSspCap(supabase, companyId, employeeId, referenceEnd);
+          const awe = await computeAweWeeklyForSspCap(supabase, companyId, resolvedEmployeeId, referenceEnd);
           aweInfo = awe;
 
           if (awe.aweWeekly > 0) {
@@ -659,7 +833,7 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
       sspAdjusted = true;
     } else {
       elements.push({
-        id: `ssp:${runId}:${employeeId}`,
+        id: `ssp:${runId}:${resolvedEmployeeId}`,
         typeId: "",
         code: "SSP",
         name: "Statutory Sick Pay",
@@ -718,10 +892,41 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
   const rawTaxCode = String(employeeRow["tax_code"] ?? "").trim();
   const finalTaxCode = rawTaxCode || starterTaxCode || "1257L wk1/mth1";
 
-  const grossStored = Number(preRow["gross_pay"] ?? 0);
-  const netStored = Number(preRow["net_pay"] ?? 0);
-  const storedTax = round2(Number(preRow["tax"] ?? 0));
-  const storedEmployeeNi = round2(Number(preRow["ni_employee"] ?? 0));
+  const grossStored = round2(
+    preRows.reduce((sum, row) => {
+      const rowId = String(row["id"] ?? "").trim();
+      const corrected = correctedEmployeeRowMap.get(rowId);
+      return sum + (corrected ? getCorrectedRowGross(corrected) : Number(row["gross_pay"] ?? 0));
+    }, 0)
+  );
+  const netStored = round2(
+    preRows.reduce((sum, row) => {
+      const rowId = String(row["id"] ?? "").trim();
+      const corrected = correctedEmployeeRowMap.get(rowId);
+      return sum + (corrected ? getCorrectedRowNet(corrected) : Number(row["net_pay"] ?? 0));
+    }, 0)
+  );
+  const storedTax = round2(
+    preRows.reduce((sum, row) => {
+      const rowId = String(row["id"] ?? "").trim();
+      const corrected = correctedEmployeeRowMap.get(rowId);
+      return sum + (corrected ? getCorrectedRowTax(corrected) : Number(row["tax"] ?? 0));
+    }, 0)
+  );
+  const storedEmployeeNi = round2(
+    preRows.reduce((sum, row) => {
+      const rowId = String(row["id"] ?? "").trim();
+      const corrected = correctedEmployeeRowMap.get(rowId);
+      return sum + (corrected ? getCorrectedRowEmployeeNi(corrected) : Number(row["ni_employee"] ?? 0));
+    }, 0)
+  );
+  const storedEmployerNi = round2(
+    preRows.reduce((sum, row) => {
+      const rowId = String(row["id"] ?? "").trim();
+      const corrected = correctedEmployeeRowMap.get(rowId);
+      return sum + (corrected ? getCorrectedRowEmployerNi(corrected) : Number(row["ni_employer"] ?? 0));
+    }, 0)
+  );
 
   const earningsBase = elements.filter((e) => e.side === "earning");
   const deductionsElements = elements.filter((e) => e.side === "deduction");
@@ -803,9 +1008,47 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
       }
     } catch (err) {
       const msg = err && typeof err === "object" && "message" in err ? (err as any).message : err;
-      console.error("payslip route: PAYE auto calc failed", { runId, employeeId, error: String(msg) });
+      console.error("payslip route: PAYE auto calc failed", {
+        runId,
+        employeeId: resolvedEmployeeId,
+        error: String(msg),
+      });
       tax = payeFromElements > 0 ? payeFromElements : storedTax;
     }
+  }
+
+  let visibleDeductions = [...deductionsElements];
+
+  if (tax > 0 && payeElements.length === 0) {
+    visibleDeductions = upsertVisibleDeductionElement(
+      visibleDeductions,
+      (item) => isPayeElement(item),
+      () =>
+        makeSyntheticDeductionElement({
+          runId,
+          employeeId: resolvedEmployeeId,
+          code: "PAYE",
+          name: "PAYE",
+          amount: tax,
+          description: "Synthesised from payroll row tax totals because no PAYE deduction element row was stored.",
+        })
+    );
+  }
+
+  if (ni > 0 && employeeNiElements.length === 0) {
+    visibleDeductions = upsertVisibleDeductionElement(
+      visibleDeductions,
+      (item) => isEmployeeNiElement(item),
+      () =>
+        makeSyntheticDeductionElement({
+          runId,
+          employeeId: resolvedEmployeeId,
+          code: "EE_NI",
+          name: "Employee National Insurance",
+          amount: ni,
+          description: "Synthesised from corrected payroll row NI totals because no employee NI deduction element row was stored.",
+        })
+    );
   }
 
   const deductions = round2(tax + ni + employeePensionTotal + employeeOtherDeductionTotal);
@@ -820,12 +1063,12 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
   };
 
   const employerBreakdown = {
-    employerNi: round2(employerNiFromElements),
+    employerNi: round2(employerNiFromElements > 0 ? employerNiFromElements : storedEmployerNi),
     employerPension: round2(employerPensionTotal),
     employerOnlyTotal: round2(employerOnlyTotal),
   };
 
-  const payAfterLeaving = typeof preRow["pay_after_leaving"] === "boolean" ? (preRow["pay_after_leaving"] as boolean) : false;
+  const payAfterLeaving = preRows.some((row) => row["pay_after_leaving"] === true);
 
   const firstName = String(employeeRow["first_name"] ?? "");
   const lastName = String(employeeRow["last_name"] ?? "");
@@ -883,7 +1126,7 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
 
   const payElementsPayload = {
     earnings,
-    deductions: deductionsElements,
+    deductions: visibleDeductions,
   };
 
   const metaPayload = {
@@ -894,6 +1137,7 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
     finalTaxCode,
     employeeBreakdown,
     employerBreakdown,
+    usedCorrectedRunDetailRows: correctedEmployeeRows.length > 0,
   };
 
   return {
@@ -903,8 +1147,39 @@ async function loadPayslipPayload(supabase: any, runId: string, employeeId: stri
       ok: true,
       payslip: {
         runId,
-        employeeId,
-        payrollRunEmployeeId: preRow["id"],
+        employeeId: resolvedEmployeeId,
+        payrollRunEmployeeId: preIds[0] ?? null,
+        combinedPayrollRunEmployeeIds: preIds,
+        combinedPayrollRowCount: preIds.length,
+        correctedPayrollRows: correctedEmployeeRows.map((row) => {
+          const contractNumber = pickFirst(row?.contract_number, row?.contractNumber, null);
+          const contractJobTitle = pickFirst(row?.contract_job_title, row?.contractJobTitle, null);
+          const contractStatus = pickFirst(row?.contract_status, row?.contractStatus, null);
+          const contractStartDate = pickFirst(row?.contract_start_date, row?.contractStartDate, null);
+          const contractLeaveDate = pickFirst(row?.contract_leave_date, row?.contractLeaveDate, null);
+          const contractPayAfterLeavingRaw = pickFirst(
+            row?.contract_pay_after_leaving,
+            row?.contractPayAfterLeaving,
+            null
+          );
+
+          return {
+            payrollRunEmployeeId: getRowKey(row),
+            contractId: String(row?.contract_id ?? row?.contractId ?? "").trim() || null,
+            contractNumber: contractNumber ? String(contractNumber) : null,
+            contractJobTitle: contractJobTitle ? String(contractJobTitle) : null,
+            contractStatus: contractStatus ? String(contractStatus) : null,
+            contractStartDate: contractStartDate ? String(contractStartDate) : null,
+            contractLeaveDate: contractLeaveDate ? String(contractLeaveDate) : null,
+            contractPayAfterLeaving:
+              contractPayAfterLeavingRaw === null ? null : Boolean(contractPayAfterLeavingRaw),
+            gross: getCorrectedRowGross(row),
+            tax: getCorrectedRowTax(row),
+            employeeNi: getCorrectedRowEmployeeNi(row),
+            employerNi: getCorrectedRowEmployerNi(row),
+            net: getCorrectedRowNet(row),
+          };
+        }),
         company: companyPayload,
         employee: employeePayload,
         run: runPayload,
@@ -933,7 +1208,7 @@ export async function GET(_req: Request, context: RouteContext) {
 
   if (!runId || !employeeId) {
     return NextResponse.json(
-      { ok: false, error: "BAD_REQUEST", message: "Run id and employee id are required in the route." },
+      { ok: false, error: "BAD_REQUEST", message: "Run id and employee or payroll row id are required in the route." },
       { status: 400 }
     );
   }

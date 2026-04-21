@@ -1,8 +1,10 @@
-// C:\Projects\wageflow01\app\api\payroll\[id]\elements\[employeeId]\route.ts
-
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { EXTRA_PAY_DEFINITIONS, EXTRA_PAY_CODES, isExtraPayCode } from "@/lib/payroll/extraPayItems";
+import {
+  EXTRA_PAY_DEFINITIONS,
+  EXTRA_PAY_CODES,
+  isExtraPayCode,
+} from "@/lib/payroll/extraPayItems";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +12,7 @@ export const revalidate = 0;
 
 type ParamsShape = {
   id?: string;
-  employeeId?: string;
+  payrollRunEmployeeId?: string;
 };
 
 type RouteContext = {
@@ -163,7 +165,9 @@ function normaliseElementTypeRow(row: PayElementTypeRow): NormalisedElementType 
   };
 }
 
-function normaliseJoinedType(raw: PayElementTypeRow | PayElementTypeRow[] | null | undefined): NormalisedElementType | null {
+function normaliseJoinedType(
+  raw: PayElementTypeRow | PayElementTypeRow[] | null | undefined
+): NormalisedElementType | null {
   if (!raw) return null;
   const row = Array.isArray(raw) ? raw[0] ?? null : raw;
   if (!row) return null;
@@ -187,16 +191,16 @@ async function resolveRun(supabase: any, runId: string): Promise<PayrollRunRow |
   };
 }
 
-async function resolveRunEmployee(
+async function resolveRunEmployeeById(
   supabase: any,
   runId: string,
-  employeeId: string
+  payrollRunEmployeeId: string
 ): Promise<PayrollRunEmployeeRow | null> {
   const { data, error } = await supabase
     .from("payroll_run_employees")
     .select("id, run_id, company_id, employee_id")
+    .eq("id", payrollRunEmployeeId)
     .eq("run_id", runId)
-    .eq("employee_id", employeeId)
     .maybeSingle();
 
   if (error) throw error;
@@ -339,7 +343,8 @@ function buildItems(itemRows: PayrollRunPayElementJoinedRow[]) {
 
       const isBasic = isBasicCode(type.code);
       const taxable =
-        row.taxable_for_paye_override === null || row.taxable_for_paye_override === undefined
+        row.taxable_for_paye_override === null ||
+        row.taxable_for_paye_override === undefined
           ? type.taxableForPaye
           : row.taxable_for_paye_override === true;
       const nic =
@@ -351,7 +356,8 @@ function buildItems(itemRows: PayrollRunPayElementJoinedRow[]) {
           ? type.pensionable
           : row.pensionable_override === true;
       const aeQualifying =
-        row.ae_qualifying_override === null || row.ae_qualifying_override === undefined
+        row.ae_qualifying_override === null ||
+        row.ae_qualifying_override === undefined
           ? type.aeQualifying
           : row.ae_qualifying_override === true;
 
@@ -378,7 +384,11 @@ function validatePayloadItems(items: unknown) {
     return { ok: false as const, error: "items must be an array" };
   }
 
-  const out: Array<{ code: string; amount: number; description_override: string | null }> = [];
+  const out: Array<{
+    code: string;
+    amount: number;
+    description_override: string | null;
+  }> = [];
   const seen = new Set<string>();
 
   for (const raw of items as EditablePayloadItem[]) {
@@ -387,7 +397,10 @@ function validatePayloadItems(items: unknown) {
     const descriptionOverride = trimOrNull(raw?.description_override);
 
     if (!isExtraPayCode(code)) {
-      return { ok: false as const, error: `unsupported pay item code: ${code || "(blank)"}` };
+      return {
+        ok: false as const,
+        error: `unsupported pay item code: ${code || "(blank)"}`,
+      };
     }
 
     if (!(amount > 0)) {
@@ -415,14 +428,14 @@ export async function GET(_req: Request, { params }: RouteContext) {
     const p = await params;
 
     const runId = String(p?.id ?? "").trim();
-    const employeeId = String(p?.employeeId ?? "").trim();
+    const payrollRunEmployeeId = String(p?.payrollRunEmployeeId ?? "").trim();
 
     if (!isUuid(runId)) {
       return json(400, { ok: false, error: "invalid run id" });
     }
 
-    if (!isUuid(employeeId)) {
-      return json(400, { ok: false, error: "invalid employee id" });
+    if (!isUuid(payrollRunEmployeeId)) {
+      return json(400, { ok: false, error: "invalid payroll run employee id" });
     }
 
     const run = await resolveRun(supabase, runId);
@@ -430,12 +443,15 @@ export async function GET(_req: Request, { params }: RouteContext) {
       return json(404, { ok: false, error: "payroll run not found" });
     }
 
-    const prep = await resolveRunEmployee(supabase, runId, employeeId);
+    const prep = await resolveRunEmployeeById(supabase, runId, payrollRunEmployeeId);
     if (!prep) {
-      return json(404, { ok: false, error: "employee is not attached to this payroll run" });
+      return json(404, {
+        ok: false,
+        error: "payroll run employee row not found for this payroll run",
+      });
     }
 
-    const employee = await resolveEmployeeSummary(supabase, employeeId);
+    const employee = await resolveEmployeeSummary(supabase, prep.employee_id);
     if (!employee) {
       return json(404, { ok: false, error: "employee not found" });
     }
@@ -469,14 +485,14 @@ export async function PUT(req: Request, { params }: RouteContext) {
     const p = await params;
 
     const runId = String(p?.id ?? "").trim();
-    const employeeId = String(p?.employeeId ?? "").trim();
+    const payrollRunEmployeeId = String(p?.payrollRunEmployeeId ?? "").trim();
 
     if (!isUuid(runId)) {
       return json(400, { ok: false, error: "invalid run id" });
     }
 
-    if (!isUuid(employeeId)) {
-      return json(400, { ok: false, error: "invalid employee id" });
+    if (!isUuid(payrollRunEmployeeId)) {
+      return json(400, { ok: false, error: "invalid payroll run employee id" });
     }
 
     const run = await resolveRun(supabase, runId);
@@ -491,9 +507,12 @@ export async function PUT(req: Request, { params }: RouteContext) {
       });
     }
 
-    const prep = await resolveRunEmployee(supabase, runId, employeeId);
+    const prep = await resolveRunEmployeeById(supabase, runId, payrollRunEmployeeId);
     if (!prep) {
-      return json(404, { ok: false, error: "employee is not attached to this payroll run" });
+      return json(404, {
+        ok: false,
+        error: "payroll run employee row not found for this payroll run",
+      });
     }
 
     const body = await req.json().catch(() => null);
@@ -549,9 +568,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
         };
       });
 
-      const insertRes = await supabase
-        .from("payroll_run_pay_elements")
-        .insert(insertPayload);
+      const insertRes = await supabase.from("payroll_run_pay_elements").insert(insertPayload);
 
       if (insertRes.error) throw insertRes.error;
     }

@@ -40,7 +40,6 @@ export default function MaternityWizardPage() {
 
   const trimmedSearch = useMemo(() => searchTerm.trim(), [searchTerm]);
 
-  // Debounced employee search (align with Annual wizard GET behaviour)
   useEffect(() => {
     setSearchError(null);
     setSubmitSuccess(false);
@@ -103,8 +102,9 @@ export default function MaternityWizardPage() {
     if (!selectedEmployee) return "Select an employee.";
     if (!startDate) return "Start date is required.";
     if (!endDate) return "End date is required.";
-    if (startDate && endDate && startDate > endDate)
+    if (startDate && endDate && startDate > endDate) {
       return "End date cannot be before start date.";
+    }
     if (!ewcDate) return "Expected week of childbirth (EWC) date is required.";
     return null;
   }
@@ -162,7 +162,7 @@ export default function MaternityWizardPage() {
       }
 
       setSubmitSuccess(true);
-      router.push("/dashboard/absence");
+      router.push("/dashboard/absence/list");
     } catch (error) {
       console.error("Maternity wizard submit error", error);
       setSubmitError("Unexpected error while saving this maternity absence.");
@@ -190,7 +190,7 @@ export default function MaternityWizardPage() {
 
         {submitSuccess && (
           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            Saved. Redirecting to Absence.
+            Saved. Redirecting to Absence list.
           </div>
         )}
 

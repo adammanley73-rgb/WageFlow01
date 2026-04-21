@@ -189,7 +189,7 @@ export default function AnnualLeaveWizardPage() {
       setForm(initialState);
       setSearchResults([]);
       setSearchError(null);
-      router.push("/dashboard/absence");
+      router.push("/dashboard/absence/list");
     } catch (err) {
       console.error("Annual leave wizard unexpected error", err);
       alert("Something went wrong saving the form.");

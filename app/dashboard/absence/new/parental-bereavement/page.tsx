@@ -220,7 +220,7 @@ export default function ParentalBereavementWizardPage() {
       }
 
       alert("Parental bereavement leave recorded. It now appears in the Absence list.");
-      router.push("/dashboard/absence");
+      router.push("/dashboard/absence/list");
     } catch (err2) {
       console.error("Parental bereavement wizard submit error", err2);
       setFormError("Something went wrong saving the form.");

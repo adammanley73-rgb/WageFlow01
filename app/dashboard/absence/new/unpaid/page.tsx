@@ -174,7 +174,7 @@ export default function UnpaidLeaveWizardPage() {
       }
 
       alert("Unpaid leave recorded. It now appears in the Absence list.");
-      router.push("/dashboard/absence");
+      router.push("/dashboard/absence/list");
     } catch (err) {
       console.error("Unpaid leave wizard error", err);
       alert("Something went wrong saving the form.");
@@ -341,7 +341,7 @@ export default function UnpaidLeaveWizardPage() {
           <div className="mt-2 flex justify-end gap-3">
             <button
               type="button"
-              onClick={() => router.push("/dashboard/absence")}
+              onClick={() => router.push("/dashboard/absence/new")}
               className="rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
             >
               Cancel

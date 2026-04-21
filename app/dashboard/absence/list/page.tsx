@@ -239,17 +239,10 @@ export default function AbsenceListPage() {
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-neutral-700">
-              View and filter saved absences. Use the New absence hub to create records.
+              View and filter saved absences. New absences should be entered through the New Absence Wizard.
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Link
-                href="/dashboard/absence/new"
-                className="inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold text-white"
-                style={{ backgroundColor: "var(--wf-blue)" }}
-              >
-                New absence
-              </Link>
+            <div className="flex justify-start sm:justify-end">
               <button
                 type="button"
                 onClick={() => loadAbsences({ employeeId, status: statusFilter, type: typeFilter })}

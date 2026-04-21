@@ -1,4 +1,4 @@
-// C:\Projects\wageflow01\app\api\payroll\[id]\route.ts
+﻿// C:\Projects\wageflow01\app\api\payroll\[id]\route.ts
 
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -48,14 +48,75 @@ function isIsoDateOnly(s: any): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s ?? "").trim());
 }
 
+
+function toSortableTime(value: any): number {
+  const s = String(value ?? "").trim();
+  if (!s) return Number.MAX_SAFE_INTEGER;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : Number.MAX_SAFE_INTEGER;
+}
+
+function getContractSuffixNumber(value: any): number | null {
+  const s = String(value ?? "").trim();
+  if (!s) return null;
+  const m = s.match(/-(\d+)$/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function sortContractsMainFirst(rows: any[]): any[] {
+  return [...rows].sort((a, b) => {
+    const aSuffix = getContractSuffixNumber(pickFirst(a?.contract_number, a?.contractNumber, ""));
+    const bSuffix = getContractSuffixNumber(pickFirst(b?.contract_number, b?.contractNumber, ""));
+    if (aSuffix !== null && bSuffix !== null && aSuffix !== bSuffix) return aSuffix - bSuffix;
+    if (aSuffix !== null && bSuffix === null) return -1;
+    if (aSuffix === null && bSuffix !== null) return 1;
+
+    const aStart = toSortableTime(pickFirst(a?.start_date, a?.startDate, null));
+    const bStart = toSortableTime(pickFirst(b?.start_date, b?.startDate, null));
+    if (aStart !== bStart) return aStart - bStart;
+
+    const aCreated = toSortableTime(pickFirst(a?.created_at, a?.createdAt, null));
+    const bCreated = toSortableTime(pickFirst(b?.created_at, b?.createdAt, null));
+    if (aCreated !== bCreated) return aCreated - bCreated;
+
+    return String(pickFirst(a?.contract_number, a?.contractNumber, "") || "").localeCompare(
+      String(pickFirst(b?.contract_number, b?.contractNumber, "") || "")
+    );
+  });
+}
+
+function buildPrimaryContractIdByEmployee(contractRows: any[]): Map<string, string> {
+  const byEmployee = new Map<string, any[]>();
+
+  for (const row of contractRows || []) {
+    const employeeId = String(pickFirst(row?.employee_id, row?.employeeId, "") || "").trim();
+    const contractId = String(pickFirst(row?.id, row?.contract_id, row?.contractId, "") || "").trim();
+    if (!employeeId || !contractId) continue;
+    const list = byEmployee.get(employeeId) || [];
+    list.push(row);
+    byEmployee.set(employeeId, list);
+  }
+
+  const result = new Map<string, string>();
+  for (const [employeeId, rows] of byEmployee.entries()) {
+    const sorted = sortContractsMainFirst(rows);
+    const primaryId = String(pickFirst(sorted[0]?.id, sorted[0]?.contract_id, sorted[0]?.contractId, "") || "").trim();
+    if (primaryId) result.set(employeeId, primaryId);
+  }
+
+  return result;
+}
+
 // Returns the ISO date (YYYY-MM-DD) of the Friday that follows isoDate.
-// For a Mon–Sun weekly run period_end is always a Sunday, so the result is
-// always the Friday five days later (e.g. Sun 06-Apr → Fri 11-Apr).
+// For a MonÃ¢â‚¬â€œSun weekly run period_end is always a Sunday, so the result is
+// always the Friday five days later (e.g. Sun 06-Apr Ã¢â€ â€™ Fri 11-Apr).
 // If isoDate itself is a Friday, returns the NEXT Friday (7 days later), so
 // there is no ambiguity between "same day" and "following" interpretations.
 function getNextFriday(isoDate: string): string {
   const d = new Date(isoDate + "T00:00:00Z");
-  const day = d.getUTCDay(); // 0=Sun … 5=Fri … 6=Sat
+  const day = d.getUTCDay(); // 0=Sun Ã¢â‚¬Â¦ 5=Fri Ã¢â‚¬Â¦ 6=Sat
   const daysUntilFriday = day === 5 ? 7 : (5 - day + 7) % 7;
   d.setUTCDate(d.getUTCDate() + daysUntilFriday);
   return d.toISOString().slice(0, 10);
@@ -64,7 +125,7 @@ function getNextFriday(isoDate: string): string {
 // Returns the effective pay date for a run.
 // Priority:
 //   1. Stored pay_date (covers manual overrides and supplementary runs).
-//   2. For weekly runs: the Friday following period_end (Mon–Sun → next Fri).
+//   2. For weekly runs: the Friday following period_end (MonÃ¢â‚¬â€œSun Ã¢â€ â€™ next Fri).
 //   3. null (caller decides what to do).
 function deriveRunPayDate(run: any): string | null {
   const frequency = String(
@@ -152,6 +213,20 @@ function getObjectSafe(value: any): Record<string, any> | null {
   }
 
   return null;
+}
+
+
+function getAttachmentContractId(att: any): string {
+  const meta = getObjectSafe(att?.metadata);
+  return String(
+    pickFirst(
+      att?.contract_id,
+      att?.contractId,
+      meta?.contract_id,
+      meta?.contractId,
+      ""
+    ) || ""
+  ).trim();
 }
 
 function normalizeTaxCodeBasisValue(value: any): "cumulative" | "week1_month1" | null {
@@ -326,69 +401,69 @@ function pickPensionBasisAmount(
   return qualifying;
 }
 
-function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
+function readPensionSettingsFromSource(source: any): EmployeePensionSettings {
   const explicitEnabled = parseBoolStrict(
     pickFirst(
-      emp?.pension_enabled,
-      emp?.pensionEnabled,
-      emp?.pension_enrolled,
-      emp?.pensionEnrolled,
-      emp?.pension_active,
-      emp?.pensionActive,
-      emp?.auto_enrolment_enabled,
-      emp?.autoEnrolmentEnabled,
-      emp?.auto_enrolment_active,
-      emp?.autoEnrolmentActive,
-      emp?.ae_enabled,
-      emp?.aeEnabled,
-      emp?.ae_enrolled,
-      emp?.aeEnrolled,
-      emp?.ae_active,
-      emp?.aeActive,
+      source?.pension_enabled,
+      source?.pensionEnabled,
+      source?.pension_enrolled,
+      source?.pensionEnrolled,
+      source?.pension_active,
+      source?.pensionActive,
+      source?.auto_enrolment_enabled,
+      source?.autoEnrolmentEnabled,
+      source?.auto_enrolment_active,
+      source?.autoEnrolmentActive,
+      source?.ae_enabled,
+      source?.aeEnabled,
+      source?.ae_enrolled,
+      source?.aeEnrolled,
+      source?.ae_active,
+      source?.aeActive,
       null
     )
   );
 
   const employeePercent = normalizePercentMaybe(
     pickFirst(
-      emp?.pension_employee_percent,
-      emp?.pensionEmployeePercent,
-      emp?.employee_pension_percent,
-      emp?.employeePensionPercent,
-      emp?.pension_employee_rate,
-      emp?.pensionEmployeeRate,
-      emp?.employee_pension_rate,
-      emp?.employeePensionRate,
-      emp?.employee_contribution_percent,
-      emp?.employeeContributionPercent,
-      emp?.employee_contribution_rate,
-      emp?.employeeContributionRate,
-      emp?.pension_percent_employee,
-      emp?.pensionPercentEmployee,
-      emp?.pension_pct_employee,
-      emp?.pensionPctEmployee,
+      source?.pension_employee_percent,
+      source?.pensionEmployeePercent,
+      source?.employee_pension_percent,
+      source?.employeePensionPercent,
+      source?.pension_employee_rate,
+      source?.pensionEmployeeRate,
+      source?.employee_pension_rate,
+      source?.employeePensionRate,
+      source?.employee_contribution_percent,
+      source?.employeeContributionPercent,
+      source?.employee_contribution_rate,
+      source?.employeeContributionRate,
+      source?.pension_percent_employee,
+      source?.pensionPercentEmployee,
+      source?.pension_pct_employee,
+      source?.pensionPctEmployee,
       0
     )
   );
 
   const employerPercent = normalizePercentMaybe(
     pickFirst(
-      emp?.pension_employer_percent,
-      emp?.pensionEmployerPercent,
-      emp?.employer_pension_percent,
-      emp?.employerPensionPercent,
-      emp?.pension_employer_rate,
-      emp?.pensionEmployerRate,
-      emp?.employer_pension_rate,
-      emp?.employerPensionRate,
-      emp?.employer_contribution_percent,
-      emp?.employerContributionPercent,
-      emp?.employer_contribution_rate,
-      emp?.employerContributionRate,
-      emp?.pension_percent_employer,
-      emp?.pensionPercentEmployer,
-      emp?.pension_pct_employer,
-      emp?.pensionPctEmployer,
+      source?.pension_employer_percent,
+      source?.pensionEmployerPercent,
+      source?.employer_pension_percent,
+      source?.employerPensionPercent,
+      source?.pension_employer_rate,
+      source?.pensionEmployerRate,
+      source?.employer_pension_rate,
+      source?.employerPensionRate,
+      source?.employer_contribution_percent,
+      source?.employerContributionPercent,
+      source?.employer_contribution_rate,
+      source?.employerContributionRate,
+      source?.pension_percent_employer,
+      source?.pensionPercentEmployer,
+      source?.pension_pct_employer,
+      source?.pensionPctEmployer,
       0
     )
   );
@@ -397,34 +472,34 @@ function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
 
   const basis = normalizePensionBasisValue(
     pickFirst(
-      emp?.pension_basis,
-      emp?.pensionBasis,
-      emp?.pension_basis_type,
-      emp?.pensionBasisType,
-      emp?.pensionable_basis,
-      emp?.pensionableBasis,
-      emp?.pension_earnings_basis,
-      emp?.pensionEarningsBasis,
-      emp?.ae_basis,
-      emp?.aeBasis,
-      emp?.auto_enrolment_basis,
-      emp?.autoEnrolmentBasis,
+      source?.pension_basis,
+      source?.pensionBasis,
+      source?.pension_basis_type,
+      source?.pensionBasisType,
+      source?.pensionable_basis,
+      source?.pensionableBasis,
+      source?.pension_earnings_basis,
+      source?.pensionEarningsBasis,
+      source?.ae_basis,
+      source?.aeBasis,
+      source?.auto_enrolment_basis,
+      source?.autoEnrolmentBasis,
       "qualifying_earnings"
     )
   );
 
   const method = normalizePensionMethodValue(
     pickFirst(
-      emp?.pension_method,
-      emp?.pensionMethod,
-      emp?.pension_contribution_method,
-      emp?.pensionContributionMethod,
-      emp?.pension_tax_treatment,
-      emp?.pensionTaxTreatment,
-      emp?.ae_method,
-      emp?.aeMethod,
-      emp?.auto_enrolment_method,
-      emp?.autoEnrolmentMethod,
+      source?.pension_method,
+      source?.pensionMethod,
+      source?.pension_contribution_method,
+      source?.pensionContributionMethod,
+      source?.pension_tax_treatment,
+      source?.pensionTaxTreatment,
+      source?.ae_method,
+      source?.aeMethod,
+      source?.auto_enrolment_method,
+      source?.autoEnrolmentMethod,
       "net_pay"
     )
   );
@@ -436,6 +511,153 @@ function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
     employeePercent,
     employerPercent,
   };
+}
+
+function readEmployeePensionSettings(emp: any): EmployeePensionSettings {
+  return readPensionSettingsFromSource(emp);
+}
+
+function hasMeaningfulPensionSettings(source: any): boolean {
+  if (!source) return false;
+
+  const explicitEnabled = parseBoolStrict(
+    pickFirst(
+      source?.pension_enabled,
+      source?.pensionEnabled,
+      source?.pension_enrolled,
+      source?.pensionEnrolled,
+      source?.pension_active,
+      source?.pensionActive,
+      source?.auto_enrolment_enabled,
+      source?.autoEnrolmentEnabled,
+      source?.auto_enrolment_active,
+      source?.autoEnrolmentActive,
+      source?.ae_enabled,
+      source?.aeEnabled,
+      source?.ae_enrolled,
+      source?.aeEnrolled,
+      source?.ae_active,
+      source?.aeActive,
+      null
+    )
+  );
+
+  if (explicitEnabled === true) return true;
+
+  const status = String(pickFirst(source?.pension_status, source?.pensionStatus, "") || "")
+    .trim()
+    .toLowerCase();
+  if (status && status !== "not_assessed" && status !== "not_eligible") return true;
+
+  if (
+    normalizePercentMaybe(
+      pickFirst(
+        source?.pension_employee_percent,
+        source?.pensionEmployeePercent,
+        source?.employee_pension_percent,
+        source?.employeePensionPercent,
+        source?.pension_employee_rate,
+        source?.pensionEmployeeRate,
+        source?.employee_pension_rate,
+        source?.employeePensionRate,
+        source?.employee_contribution_percent,
+        source?.employeeContributionPercent,
+        source?.employee_contribution_rate,
+        source?.employeeContributionRate,
+        source?.pension_percent_employee,
+        source?.pensionPercentEmployee,
+        source?.pension_pct_employee,
+        source?.pensionPctEmployee,
+        0
+      )
+    ) > 0
+  ) {
+    return true;
+  }
+
+  if (
+    normalizePercentMaybe(
+      pickFirst(
+        source?.pension_employer_percent,
+        source?.pensionEmployerPercent,
+        source?.employer_pension_percent,
+        source?.employerPensionPercent,
+        source?.pension_employer_rate,
+        source?.pensionEmployerRate,
+        source?.employer_pension_rate,
+        source?.employerPensionRate,
+        source?.employer_contribution_percent,
+        source?.employerContributionPercent,
+        source?.employer_contribution_rate,
+        source?.employerContributionRate,
+        source?.pension_percent_employer,
+        source?.pensionPercentEmployer,
+        source?.pension_pct_employer,
+        source?.pensionPctEmployer,
+        0
+      )
+    ) > 0
+  ) {
+    return true;
+  }
+
+  const hasText = Boolean(
+    pickFirst(
+      source?.pension_scheme_name,
+      source?.pensionSchemeName,
+      source?.pension_reference,
+      source?.pensionReference,
+      source?.pension_contribution_method,
+      source?.pensionContributionMethod,
+      source?.pension_earnings_basis,
+      source?.pensionEarningsBasis,
+      source?.pension_basis,
+      source?.pensionBasis,
+      source?.pension_basis_type,
+      source?.pensionBasisType,
+      source?.pension_worker_category,
+      source?.pensionWorkerCategory,
+      source?.pension_enrolment_date,
+      source?.pensionEnrolmentDate,
+      source?.pension_opt_in_date,
+      source?.pensionOptInDate,
+      source?.pension_opt_out_date,
+      source?.pensionOptOutDate,
+      source?.pension_postponement_date,
+      source?.pensionPostponementDate,
+      null
+    )
+  );
+
+  return hasText;
+}
+
+function resolvePensionSettingsForRow(args: {
+  contract: any;
+  emp: any;
+  isPrimaryContract: boolean;
+}): { settings: EmployeePensionSettings; source: "contract" | "employee" | "none" } {
+  const hasContract = Boolean(args.contract);
+  const contractMeaningful = hasMeaningfulPensionSettings(args.contract);
+  const employeeMeaningful = hasMeaningfulPensionSettings(args.emp);
+
+  if (hasContract && contractMeaningful) {
+    return { settings: readPensionSettingsFromSource(args.contract), source: "contract" };
+  }
+
+  if (hasContract && args.isPrimaryContract && employeeMeaningful) {
+    return { settings: readPensionSettingsFromSource(args.emp), source: "employee" };
+  }
+
+  if (!hasContract && employeeMeaningful) {
+    return { settings: readPensionSettingsFromSource(args.emp), source: "employee" };
+  }
+
+  if (hasContract) {
+    return { settings: readPensionSettingsFromSource(args.contract), source: "none" };
+  }
+
+  return { settings: readPensionSettingsFromSource(args.emp), source: "none" };
 }
 
 function getAeQualifyingEarningsBounds(payFrequency: any): { lower: number; upper: number } {
@@ -622,23 +844,23 @@ function getNiThresholds(taxYear?: number): NiThresholds {
   // e.g. 2025 = 2025/26, 2024 = 2024/25.
   // All figures are monthly.
   if (!taxYear || taxYear >= 2025) {
-    // 2025/26: employer rate raised to 15%, ST dropped to £5,000/yr (£417/month),
+    // 2025/26: employer rate raised to 15%, ST dropped to Ã‚Â£5,000/yr (Ã‚Â£417/month),
     // employee rate 8%/2% (unchanged from 2024/25).
     return { PT: 1048, UEL: 4189, ST: 417, employeeMain: 0.08, employeeUpper: 0.02, employerRate: 0.15 };
   }
   if (taxYear === 2024) {
-    // 2024/25: employer rate 13.8%, ST £9,100/yr (£758/month), employee 8%/2%
+    // 2024/25: employer rate 13.8%, ST Ã‚Â£9,100/yr (Ã‚Â£758/month), employee 8%/2%
     // (reduced from 10% in Jan 2024; 8% from Apr 2024).
     return { PT: 1048, UEL: 4189, ST: 758, employeeMain: 0.08, employeeUpper: 0.02, employerRate: 0.138 };
   }
   if (taxYear === 2023) {
-    // 2023/24: employer rate 13.8%, ST £9,100/yr (£758/month).
+    // 2023/24: employer rate 13.8%, ST Ã‚Â£9,100/yr (Ã‚Â£758/month).
     // Employee rate was 12% until Jan 2024 then 10%; approximate with 10%.
     return { PT: 1048, UEL: 4189, ST: 758, employeeMain: 0.10, employeeUpper: 0.02, employerRate: 0.138 };
   }
   if (taxYear === 2022) {
-    // 2022/23: employer rate 13.8%, ST £9,100/yr (£758/month), employee 13.25%/3.25%
-    // (temporary 1.25pp health and social care levy in force Apr–Nov 2022).
+    // 2022/23: employer rate 13.8%, ST Ã‚Â£9,100/yr (Ã‚Â£758/month), employee 13.25%/3.25%
+    // (temporary 1.25pp health and social care levy in force AprÃ¢â‚¬â€œNov 2022).
     return { PT: 1048, UEL: 4189, ST: 758, employeeMain: 0.1325, employeeUpper: 0.0325, employerRate: 0.1485 };
   }
   // Fallback to latest known rates.
@@ -948,10 +1170,11 @@ async function loadAttachments(supabase: any, runId: string, companyId: string) 
   return { ok: false as const, tableUsed: null, whereColumn: null, rows: [], attempts };
 }
 
-function buildEmployeeRow(att: any, emp: any, run: any) {
+function buildEmployeeRow(att: any, emp: any, contract: any, run: any, isPrimaryContract: boolean) {
   const meta = getObjectSafe(att?.metadata);
 
   const employeeId = String(pickFirst(att?.employee_id, att?.employeeId, "") || "");
+  const contractId = getAttachmentContractId(att);
 
   const employeeName = String(
     pickFirst(
@@ -1043,12 +1266,25 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
       : String(niCategoryUsedRaw).trim().toUpperCase() || null;
 
   const runFrequency = String(
-    pickFirst(run?.frequency, run?.pay_frequency, run?.payFrequency, att?.pay_frequency_used, "") || ""
+    pickFirst(
+      run?.frequency,
+      run?.pay_frequency,
+      run?.payFrequency,
+      att?.pay_frequency_used,
+      contract?.pay_frequency,
+      contract?.payFrequency,
+      ""
+    ) || ""
   )
     .trim()
     .toLowerCase();
 
-  const pensionSettings = readEmployeePensionSettings(emp);
+  const resolvedPension = resolvePensionSettingsForRow({
+    contract,
+    emp,
+    isPrimaryContract,
+  });
+  const pensionSettings = resolvedPension.settings;
   const taxReductionFromPension =
     pensionSettings.method === "salary_sacrifice" || pensionSettings.method === "net_pay"
       ? pensionEmployee
@@ -1144,6 +1380,21 @@ function buildEmployeeRow(att: any, emp: any, run: any) {
 
     employee_id: employeeId,
     employeeId: employeeId,
+    contract_id: contractId || pickFirst(att?.contract_id, att?.contractId, contract?.id, null),
+    contractId: contractId || pickFirst(att?.contract_id, att?.contractId, contract?.id, null),
+    contract_number: pickFirst(att?.contract_number, att?.contractNumber, contract?.contract_number, contract?.contractNumber, null),
+    contractNumber: pickFirst(att?.contract_number, att?.contractNumber, contract?.contract_number, contract?.contractNumber, null),
+    contract_job_title: pickFirst(att?.contract_job_title, att?.contractJobTitle, contract?.job_title, contract?.jobTitle, null),
+    contractJobTitle: pickFirst(att?.contract_job_title, att?.contractJobTitle, contract?.job_title, contract?.jobTitle, null),
+    contract_status: pickFirst(att?.contract_status, att?.contractStatus, contract?.status, null),
+    contractStatus: pickFirst(att?.contract_status, att?.contractStatus, contract?.status, null),
+    contract_start_date: pickFirst(att?.contract_start_date, att?.contractStartDate, contract?.start_date, contract?.startDate, null),
+    contractStartDate: pickFirst(att?.contract_start_date, att?.contractStartDate, contract?.start_date, contract?.startDate, null),
+    contract_leave_date: pickFirst(att?.contract_leave_date, att?.contractLeaveDate, contract?.leave_date, contract?.leaveDate, null),
+    contractLeaveDate: pickFirst(att?.contract_leave_date, att?.contractLeaveDate, contract?.leave_date, contract?.leaveDate, null),
+    contract_pay_after_leaving: pickFirst(att?.contract_pay_after_leaving, att?.contractPayAfterLeaving, contract?.pay_after_leaving, contract?.payAfterLeaving, null),
+    contractPayAfterLeaving: pickFirst(att?.contract_pay_after_leaving, att?.contractPayAfterLeaving, contract?.pay_after_leaving, contract?.payAfterLeaving, null),
+    pension_settings_source: resolvedPension.source,
 
     employee_name: employeeName,
     employeeName: employeeName,
@@ -1280,14 +1531,14 @@ function deriveSeededMode(run: any, attachments: any[]): boolean {
     const anyNotFull = attachments.some(
       (r: any) => String(pickFirst(r?.calc_mode, "uncomputed")) !== "full"
     );
-    // All rows explicitly written as "full" → computation is complete.
+    // All rows explicitly written as "full" Ã¢â€ â€™ computation is complete.
     // Do NOT fall through to the zero-tax heuristic; a legitimately zero-tax
     // weekly low-earner run would be falsely flagged as seeded otherwise.
     if (!anyNotFull) return false;
     return true;
   }
 
-  // No calc_mode column present yet — fall back to heuristic.
+  // No calc_mode column present yet Ã¢â‚¬â€ fall back to heuristic.
   const runTax = toNumberSafe(pickFirst(run?.total_tax, 0));
   const runNi = toNumberSafe(pickFirst(run?.total_ni, 0));
 
@@ -1484,148 +1735,26 @@ async function upsertRtiLogForRun(
 }
 
 async function getRunAndEmployees(supabase: any, runId: string, includeDebug: boolean) {
-  const debug: any = { runId, stage: {} };
+  const result = await getPayrollRunDetail(supabase, runId, includeDebug);
 
-  const runRes = await loadRun(supabase, runId);
-  if (!runRes.ok) {
-    debug.stage.runFetch = { ok: false, error: runRes.error };
+  if (!result.ok) {
     return {
       ok: false as const,
-      status: runRes.status,
-      error: runRes.error,
-      debug: includeDebug ? debug : undefined,
+      status: result.status,
+      error: result.error,
+      debug: includeDebug ? result.debug : undefined,
     };
   }
-
-  const run = runRes.run;
-  debug.stage.runFetch = { ok: true };
-
-  const companyId = String(run?.company_id || "").trim();
-  if (!companyId || !isUuid(companyId)) {
-    return {
-      ok: false as const,
-      status: 500,
-      error: "Payroll run is missing a valid company_id.",
-      debug: includeDebug ? { ...debug, companyId } : undefined,
-    };
-  }
-
-  const attachTry = await loadAttachments(supabase, runId, companyId);
-  if (!attachTry.ok) {
-    return {
-      ok: false as const,
-      status: 500,
-      error: "Failed to load attached employees for payroll run.",
-      debug: includeDebug ? { ...debug, attempts: attachTry.attempts } : undefined,
-    };
-  }
-
-  const attachments = attachTry.rows || [];
-  debug.stage.attachments = { ok: true, count: attachments.length };
-
-  const employeeIds = Array.from(
-    new Set(
-      attachments
-        .map((r: any) => String(pickFirst(r?.employee_id, "") || "").trim())
-        .filter(Boolean)
-    )
-  );
-
-  let empRows: any[] = [];
-
-  if (employeeIds.length > 0) {
-    const { data: emps, error: empErr } = await supabase
-      .from("employees")
-      .select("*")
-      .in("id", employeeIds)
-      .eq("company_id", companyId);
-
-    if (empErr) {
-      return {
-        ok: false as const,
-        status: 500,
-        error: "Failed to load employees for payroll run.",
-        debug: includeDebug ? { ...debug, empErr: empErr.message } : undefined,
-      };
-    }
-
-    empRows = Array.isArray(emps) ? emps : [];
-  }
-
-  debug.stage.employeeFetch = { ok: true, requested: employeeIds.length, found: empRows.length };
-
-  const empById = new Map<string, any>();
-  for (const e of empRows) {
-    const id = String((e as any)?.id || "").trim();
-    if (id) empById.set(id, e);
-  }
-
-  const employees = attachments.map((att: any) => {
-    const employeeId = String(pickFirst(att?.employee_id, "") || "").trim();
-    const emp = employeeId ? empById.get(employeeId) : null;
-    return buildEmployeeRow(att, emp, run);
-  });
-
-  const storedTotalGross = round2(toNumberSafe(pickFirst(run?.total_gross_pay, 0)));
-  const storedTotalTax = round2(toNumberSafe(pickFirst(run?.total_tax, 0)));
-  const storedTotalNi = round2(toNumberSafe(pickFirst(run?.total_ni, 0)));
-  const storedTotalNet = round2(toNumberSafe(pickFirst(run?.total_net_pay, 0)));
-
-  const rowTotals = summariseEmployeeRows(employees);
-  const storedDerivedDeductions = round2(storedTotalGross - storedTotalNet);
-
-  const storedTotalsLookStale =
-    employees.length > 0 &&
-    ((rowTotals.tax > 0 && storedTotalTax === 0) ||
-      (rowTotals.ni > 0 && storedTotalNi === 0) ||
-      (rowTotals.net > 0 &&
-        Math.abs(storedTotalNet - rowTotals.net) > 0.01 &&
-        (storedTotalTax === 0 || storedTotalNi === 0)) ||
-      (rowTotals.deductions > 0 &&
-        Math.abs(storedDerivedDeductions - rowTotals.deductions) > 0.01 &&
-        (storedTotalTax === 0 || storedTotalNi === 0)));
-
-  const totalGross = storedTotalsLookStale && rowTotals.gross > 0 ? rowTotals.gross : storedTotalGross;
-  const totalTax = storedTotalsLookStale ? rowTotals.tax : storedTotalTax;
-  const totalNi = storedTotalsLookStale ? rowTotals.ni : storedTotalNi;
-  const totalNet = storedTotalsLookStale && rowTotals.net > 0 ? rowTotals.net : storedTotalNet;
-  const totalDeductions = storedTotalsLookStale
-    ? rowTotals.deductions
-    : rowTotals.deductions > 0
-      ? rowTotals.deductions
-      : storedDerivedDeductions;
-
-  const totals = {
-    gross: totalGross,
-    total_gross: totalGross,
-    tax: totalTax,
-    total_tax: totalTax,
-    ni: totalNi,
-    total_ni: totalNi,
-    deductions: totalDeductions,
-    total_deductions: totalDeductions,
-    net: totalNet,
-    total_net: totalNet,
-  };
-
-  const seededMode = deriveSeededMode(run, attachments);
-  const exceptions = computeExceptions(attachments, empById);
-
-  const effectivePayDate = deriveRunPayDate(run);
 
   return {
     ok: true as const,
-    run: {
-      ...(run as any),
-      company_id: companyId,
-      ...(effectivePayDate !== null ? { pay_date: effectivePayDate } : {}),
-    },
-    employees,
-    totals,
-    seededMode,
-    exceptions,
-    attachmentsMeta: { tableUsed: attachTry.tableUsed, whereColumn: attachTry.whereColumn },
-    debug: includeDebug ? debug : undefined,
+    run: result.run,
+    employees: result.employees,
+    totals: result.totals,
+    seededMode: result.seededMode,
+    exceptions: result.exceptions,
+    attachmentsMeta: result.attachmentsMeta,
+    debug: includeDebug ? result.debug : undefined,
   };
 }
 
@@ -1985,7 +2114,31 @@ async function upsertGeneratedPayElement(
   return { ok: true as const };
 }
 
-async function localComputeFullFromElements(supabase: any, runId: string, companyId: string, run: any) {
+
+async function loadContracts(
+  supabase: any,
+  companyId: string,
+  contractIds: string[]
+) {
+  if (!Array.isArray(contractIds) || contractIds.length === 0) {
+    return { ok: true as const, rows: [] as any[] };
+  }
+
+  const { data, error } = await supabase
+    .from("employee_contracts")
+    .select("*")
+    .eq("company_id", companyId)
+    .in("id", contractIds);
+
+  if (error) {
+    return { ok: false as const, error: error.message };
+  }
+
+  return {
+    ok: true as const,
+    rows: Array.isArray(data) ? data : [],
+  };
+}async function localComputeFullFromElements(supabase: any, runId: string, companyId: string, run: any) {
   const attachTry = await loadAttachments(supabase, runId, companyId);
   if (!attachTry.ok) {
     return {
@@ -2013,6 +2166,14 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     )
   );
 
+  const contractIds = Array.from(
+    new Set(
+      attachments
+        .map((r: any) => String(pickFirst(r?.contract_id, r?.contractId, "") || "").trim())
+        .filter((id: string) => Boolean(id) && isUuid(id))
+    )
+  );
+
   const empById = new Map<string, any>();
   if (employeeIds.length > 0) {
     const { data: empRowsRaw, error: empErr } = await supabase
@@ -2035,11 +2196,31 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     }
   }
 
+  const contractById = new Map<string, any>();
+  if (contractIds.length > 0) {
+    const contractRes = await loadContracts(supabase, companyId, contractIds);
+
+    if (!contractRes.ok) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: `Failed to load contracts for local full compute: ${contractRes.error}`,
+      };
+    }
+
+    for (const contract of contractRes.rows) {
+      const contractId = String((contract as any)?.id || "").trim();
+      if (contractId) contractById.set(contractId, contract);
+    }
+  }
+
+  const sortedContracts = sortContractsMainFirst(Array.from(contractById.values()));
+  const primaryContractId = String(sortedContracts[0]?.id || "").trim();
+
   const { data: elementRowsRaw, error: elementErr } = await supabase
     .from("payroll_run_pay_elements")
     .select("*")
-    .in("payroll_run_employee_id", preIds)
-    .eq("company_id", companyId);
+    .in("payroll_run_employee_id", preIds);
 
   if (elementErr) {
     return { ok: false as const, status: 500, error: `Failed to load pay elements: ${elementErr.message}` };
@@ -2106,7 +2287,6 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     byPreId.get(preId)!.push(normalised);
   }
 
-  const runFrequency = String(pickFirst(run?.frequency, "") || "").trim().toLowerCase();
   const taxYear = (() => {
     const src = String(pickFirst(run?.period_start, run?.pay_period_start, "") || "");
     const yr = parseInt(src.slice(0, 4), 10);
@@ -2119,6 +2299,25 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
 
     const employeeId = String(pickFirst(att?.employee_id, att?.employeeId, "") || "").trim();
     const emp = employeeId ? empById.get(employeeId) : null;
+
+    const contractId = String(
+      pickFirst(att?.contract_id, att?.contractId, "") || ""
+    ).trim();
+    const contract = contractId ? contractById.get(contractId) : null;
+
+    const rowPayFrequency = String(
+      pickFirst(
+        att?.pay_frequency_used,
+        contract?.pay_frequency,
+        emp?.pay_frequency,
+        emp?.frequency,
+        run?.frequency,
+        run?.pay_frequency,
+        ""
+      ) || ""
+    )
+      .trim()
+      .toLowerCase();
 
     const rows = byPreId.get(preId) || [];
 
@@ -2170,10 +2369,31 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     aeQualifyingSourcePay = round2(aeQualifyingSourcePay > 0 ? aeQualifyingSourcePay : nonSspGross);
     employeeElementDeductions = round2(employeeElementDeductions);
 
-    const pensionSettings = readEmployeePensionSettings(emp);
+    const resolvedPension = resolvePensionSettingsForRow({
+      contract,
+      emp,
+      isPrimaryContract: Boolean(contractId) && contractId === primaryContractId,
+    });
+    const pensionSettings = resolvedPension.settings;
 
-    const rawTaxCode = pickFirst(att?.tax_code_used, null);
-    const rawTaxBasis = pickFirst(att?.tax_code_basis_used, null);
+    const rawTaxCode = pickFirst(
+      att?.tax_code_used,
+      att?.taxCodeUsed,
+      emp?.tax_code,
+      emp?.taxCode,
+      emp?.taxcode,
+      null
+    );
+    const rawTaxBasis = normalizeTaxCodeBasisValue(
+      pickFirst(
+        att?.tax_code_basis_used,
+        att?.taxCodeBasisUsed,
+        emp?.tax_code_basis,
+        emp?.tax_basis,
+        emp?.taxBasis,
+        null
+      )
+    );
     const niCategory = String(pickFirst(att?.ni_category_used, "A") || "A")
       .trim()
       .toUpperCase();
@@ -2183,7 +2403,7 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
       basicPay,
       pensionablePay,
       aeQualifyingSourcePay,
-      payFrequency: runFrequency,
+      payFrequency: rowPayFrequency,
       taxYear,
       taxCode: rawTaxCode,
       taxBasis: rawTaxBasis,
@@ -3011,14 +3231,20 @@ export async function PATCH(req: Request, { params }: Ctx) {
     // Attempt the DB-side RPC first. If no matching function exists (ok: false,
     // status: 501) we fall through to the local TypeScript compute below.
     // Any other RPC error (wrong schema, runtime exception, etc.) is still
-    // surfaced immediately — those need the developer to fix, not a silent
+    // surfaced immediately Ã¢â‚¬â€ those need the developer to fix, not a silent
     // client-side recompute.
-    const rpc: any = await tryComputeFullViaRpc(supabase, id);
+    const rpc: any = {
+      ok: false,
+      status: 501,
+      error: "RPC bypassed to force contract-aware local compute",
+      attempts: [],
+      via: { fn: "bypassed", args: { run_id: id } },
+    };
 
     let localFallback: any = null;
 
     if (rpc?.ok) {
-      // RPC succeeded — refresh totals from what the DB function wrote.
+      // RPC succeeded Ã¢â‚¬â€ refresh totals from what the DB function wrote.
       const totalsRefresh: any = await refreshRunTotalsFromAttachments(supabase, id, companyId);
 
       const flagPost = await fetchRunStatusAndFlag(supabase, id, companyId);
@@ -3097,8 +3323,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
       });
     }
 
-    // RPC not found (501) → fall back to local TypeScript compute.
-    // Any other RPC failure status → surface it; don't silently recompute.
+    // RPC not found (501) Ã¢â€ â€™ fall back to local TypeScript compute.
+    // Any other RPC failure status Ã¢â€ â€™ surface it; don't silently recompute.
     if ((rpc?.status ?? 501) !== 501) {
       return json(rpc?.status || 500, {
         ok: false,
@@ -3392,3 +3618,6 @@ export async function PATCH(req: Request, { params }: Ctx) {
     updateResults: results,
   });
 }
+
+
+

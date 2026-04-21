@@ -16,8 +16,14 @@ type AbsenceRow = {
   employee: string;
   startDate: string;
   endDate: string;
+  endExpectedDate?: string | null;
+  endActualDate?: string | null;
   type: string;
-  processedInPayroll: boolean;
+  status?: string | null;
+  statusRaw?: string | null;
+  payrollLinked?: boolean;
+  deleteLocked?: boolean;
+  notes?: string | null;
 };
 
 type Props = {
@@ -26,8 +32,33 @@ type Props = {
   deleteAbsenceAction: (formData: FormData) => Promise<void>;
 };
 
-function norm(s: string) {
-  return String(s || "").trim().toLowerCase();
+function norm(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function shortText(value: string | null | undefined, max = 60) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (text.length <= max) return text;
+  return text.slice(0, max - 1) + "…";
+}
+
+function payrollBadgeClass(payrollLinked: boolean) {
+  return payrollLinked
+    ? "bg-blue-50 text-blue-800 ring-blue-200"
+    : "bg-neutral-100 text-neutral-700 ring-neutral-300";
+}
+
+function payrollLabel(payrollLinked: boolean) {
+  return payrollLinked ? "In payroll" : "Not in payroll";
+}
+
+function deleteLockReason(a: AbsenceRow) {
+  if (a.payrollLinked) return "Delete locked because linked payroll entries already exist";
+  if (norm(a.statusRaw ?? a.status ?? "") === "completed") {
+    return "Delete locked because this absence is marked as completed";
+  }
+  return "";
 }
 
 export default function AbsenceEmployeeFilter({
@@ -49,7 +80,7 @@ export default function AbsenceEmployeeFilter({
     if (!q) return [];
     return employees
       .filter((e) => {
-        const hay = norm(e.label + " " + (e.employeeNumber || ""));
+        const hay = norm(`${e.label} ${e.employeeNumber || ""}`);
         return hay.includes(q);
       })
       .slice(0, 20);
@@ -167,16 +198,22 @@ export default function AbsenceEmployeeFilter({
             <col className="w-[22rem]" />
             <col className="w-[10rem]" />
             <col className="w-[10rem]" />
+            <col className="w-[10rem]" />
             <col className="w-[12rem]" />
-            <col className="w-[12rem]" />
+            <col className="w-[10rem]" />
+            <col className="w-[10rem]" />
+            <col className="w-[14rem]" />
           </colgroup>
 
           <thead className="bg-neutral-100">
             <tr className="border-b-2 border-neutral-300">
               <th className="text-left px-4 py-3 sticky left-0 bg-neutral-100">Employee</th>
               <th className="text-left px-4 py-3">Start Date</th>
-              <th className="text-left px-4 py-3">End Date</th>
+              <th className="text-left px-4 py-3">End Expected</th>
+              <th className="text-left px-4 py-3">End Actual</th>
               <th className="text-left px-4 py-3">Type</th>
+              <th className="text-left px-4 py-3">Status</th>
+              <th className="text-left px-4 py-3">Payroll</th>
               <th className="text-right px-4 py-3">Actions</th>
             </tr>
           </thead>
@@ -184,7 +221,7 @@ export default function AbsenceEmployeeFilter({
           <tbody>
             {filteredAbsences.length === 0 ? (
               <tr className="border-b-2 border-neutral-300">
-                <td className="px-4 py-6 sticky left-0 bg-white" colSpan={4}>
+                <td className="px-4 py-6 sticky left-0 bg-white" colSpan={7}>
                   <div className="text-neutral-800">No absences found.</div>
                   <div className="text-neutral-700 text-xs">
                     Try clearing the search, or pick a different employee.
@@ -193,40 +230,71 @@ export default function AbsenceEmployeeFilter({
                 <td className="px-4 py-6 text-right bg-white" />
               </tr>
             ) : (
-              filteredAbsences.map((a) => (
-                <tr key={a.id} className="border-b-2 border-neutral-300">
-                  <td className="px-4 py-3 sticky left-0 bg-white">{a.employee}</td>
-                  <td className="px-4 py-3">{a.startDate}</td>
-                  <td className="px-4 py-3">{a.endDate}</td>
-                  <td className="px-4 py-3">{a.type}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-2 items-center justify-end">
-                      <Link
-                        href={`/dashboard/absence/${a.id}/edit`}
-                        className="rounded-xl px-5 py-2 font-semibold text-white bg-emerald-600 hover:bg-emerald-700"
-                      >
-                        Edit
-                      </Link>
+              filteredAbsences.map((a) => {
+                const payrollLinked = Boolean(a.payrollLinked);
+                const deleteLocked = Boolean(a.deleteLocked);
+                const reason = deleteLockReason(a);
 
-                      <form action={deleteAbsenceAction}>
-                        <input type="hidden" name="absenceId" value={a.id} />
-                        <button
-                          type="submit"
-                          disabled={a.processedInPayroll}
-                          className={
-                            "rounded-xl px-5 py-2 font-semibold text-white " +
-                            (a.processedInPayroll
-                              ? "bg-blue-400 opacity-50 cursor-not-allowed"
-                              : "bg-blue-600 hover:bg-blue-700")
-                          }
-                        >
-                          Delete
-                        </button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                return (
+                  <tr key={a.id} className="border-b-2 border-neutral-300 align-top">
+                    <td className="px-4 py-3 sticky left-0 bg-white">{a.employee}</td>
+                    <td className="px-4 py-3">{a.startDate || ""}</td>
+                    <td className="px-4 py-3">{a.endExpectedDate || a.endDate || ""}</td>
+                    <td className="px-4 py-3">{a.endActualDate || ""}</td>
+                    <td className="px-4 py-3">{a.type}</td>
+                    <td className="px-4 py-3">{a.status || ""}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={
+                          "inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1 " +
+                          payrollBadgeClass(payrollLinked)
+                        }
+                      >
+                        {payrollLabel(payrollLinked)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex flex-col gap-2 items-end justify-end">
+                        <div className="inline-flex gap-2 items-center justify-end">
+                          <Link
+                            href={`/dashboard/absence/${a.id}/edit`}
+                            className="rounded-xl px-5 py-2 font-semibold text-white bg-emerald-600 hover:bg-emerald-700"
+                          >
+                            Edit
+                          </Link>
+
+                          <form action={deleteAbsenceAction}>
+                            <input type="hidden" name="absenceId" value={a.id} />
+                            <button
+                              type="submit"
+                              disabled={deleteLocked}
+                              title={reason || "Delete absence"}
+                              className={
+                                "rounded-xl px-5 py-2 font-semibold text-white " +
+                                (deleteLocked
+                                  ? "bg-blue-400 opacity-50 cursor-not-allowed"
+                                  : "bg-blue-600 hover:bg-blue-700")
+                              }
+                            >
+                              Delete
+                            </button>
+                          </form>
+                        </div>
+
+                        {deleteLocked ? (
+                          <div className="max-w-[16rem] text-right text-[11px] text-neutral-600">
+                            {reason}
+                          </div>
+                        ) : a.notes ? (
+                          <div className="max-w-[16rem] text-right text-[11px] text-neutral-600">
+                            {shortText(a.notes)}
+                          </div>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

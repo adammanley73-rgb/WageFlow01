@@ -31,6 +31,10 @@ type EmployeeRow = {
   employee_number?: string | null;
 };
 
+type PayrollElementLinkRow = {
+  absence_id: string | null;
+};
+
 type SearchParamsRecord = Record<string, string | string[] | undefined>;
 type Props = { searchParams?: Promise<SearchParamsRecord> };
 
@@ -49,8 +53,12 @@ async function getActiveCompanyId(): Promise<string> {
   return String(v || "").trim();
 }
 
+function cleanText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
 function typeLabel(v: unknown) {
-  const s = String(v ?? "").trim().toLowerCase();
+  const s = cleanText(v).toLowerCase();
   if (!s) return "Unknown";
   switch (s) {
     case "annual":
@@ -73,6 +81,25 @@ function typeLabel(v: unknown) {
     case "unpaid_leave":
     case "unpaid_other":
       return "Unpaid leave";
+    default:
+      return s.replaceAll("_", " ");
+  }
+}
+
+function statusLabel(v: unknown) {
+  const s = cleanText(v).toLowerCase();
+  if (!s) return "Unknown";
+  switch (s) {
+    case "draft":
+      return "Draft";
+    case "scheduled":
+      return "Scheduled";
+    case "active":
+      return "Active";
+    case "completed":
+      return "Completed";
+    case "cancelled":
+      return "Cancelled";
     default:
       return s.replaceAll("_", " ");
   }
@@ -107,6 +134,10 @@ function isStaffRole(role: string) {
   );
 }
 
+function isCompletedStatus(status: unknown) {
+  return cleanText(status).toLowerCase() === "completed";
+}
+
 export default async function AbsencePage({ searchParams }: Props) {
   const sp: SearchParamsRecord | undefined = searchParams ? await searchParams : undefined;
 
@@ -122,7 +153,9 @@ export default async function AbsencePage({ searchParams }: Props) {
           <ActiveCompanyBanner />
           <div className="rounded-xl bg-white ring-1 ring-neutral-300 p-6">
             <div className="text-sm font-semibold text-neutral-900">No active company selected</div>
-            <div className="mt-1 text-sm text-neutral-700">Select a company on the Dashboard, then come back here.</div>
+            <div className="mt-1 text-sm text-neutral-700">
+              Select a company on the Dashboard, then come back here.
+            </div>
           </div>
         </div>
       </PageTemplate>
@@ -235,17 +268,32 @@ export default async function AbsencePage({ searchParams }: Props) {
       );
     }
 
-    const st = String((checkRow as any).status || "").trim().toLowerCase();
-    const processedInPayroll =
-      st === "processed" ||
-      st === "approved" ||
-      st === "rti_submitted" ||
-      st === "completed";
+    const rawStatus = cleanText((checkRow as any).status).toLowerCase();
 
-    if (processedInPayroll) {
+    if (rawStatus === "completed") {
       redirect(
         "/dashboard/absence?deleteError=" +
-          encodeURIComponent("This absence is locked because it has been processed in payroll")
+          encodeURIComponent("This absence is locked because it is marked as completed")
+      );
+    }
+
+    const { data: linkedPayrollRows, error: linkedPayrollErr } = await supabaseInner
+      .from("payroll_run_pay_elements")
+      .select("id")
+      .eq("absence_id", absenceId)
+      .limit(1);
+
+    if (linkedPayrollErr) {
+      redirect(
+        "/dashboard/absence?deleteError=" +
+          encodeURIComponent("Could not verify linked payroll records for this absence")
+      );
+    }
+
+    if (Array.isArray(linkedPayrollRows) && linkedPayrollRows.length > 0) {
+      redirect(
+        "/dashboard/absence?deleteError=" +
+          encodeURIComponent("This absence is locked because linked payroll entries already exist")
       );
     }
 
@@ -269,6 +317,7 @@ export default async function AbsencePage({ searchParams }: Props) {
     }
 
     revalidatePath("/dashboard/absence");
+    revalidatePath("/dashboard/absence/list");
     redirect("/dashboard/absence?deleted=1");
   }
 
@@ -304,6 +353,14 @@ export default async function AbsencePage({ searchParams }: Props) {
     )
   );
 
+  const absenceIds = Array.from(
+    new Set(
+      absenceRows
+        .map((r) => (typeof r.id === "string" ? r.id.trim() : ""))
+        .filter(Boolean)
+    )
+  );
+
   const employeesById = new Map<string, EmployeeRow>();
 
   if (employeeIds.length > 0) {
@@ -331,28 +388,67 @@ export default async function AbsencePage({ searchParams }: Props) {
     }
   }
 
+  const linkedPayrollAbsenceIds = new Set<string>();
+
+  if (absenceIds.length > 0) {
+    try {
+      const { data: linkedRows, error: linkedError } = await supabase
+        .from("payroll_run_pay_elements")
+        .select("absence_id")
+        .in("absence_id", absenceIds);
+
+      if (linkedError) {
+        loadError = loadError
+          ? `${loadError} | Failed to load linked payroll absence references: ${linkedError.message}`
+          : `Failed to load linked payroll absence references: ${linkedError.message}`;
+      } else if (Array.isArray(linkedRows)) {
+        for (const row of linkedRows as PayrollElementLinkRow[]) {
+          const absenceId = cleanText(row?.absence_id);
+          if (absenceId) linkedPayrollAbsenceIds.add(absenceId);
+        }
+      }
+    } catch (e: any) {
+      const msg = e?.message ?? "Failed to load linked payroll absence references";
+      loadError = loadError ? `${loadError} | ${msg}` : msg;
+    }
+  }
+
   const absences = absenceRows.map((r) => {
-    const employeeId = typeof r.employee_id === "string" ? r.employee_id.trim() : "";
+    const absenceId = cleanText(r.id);
+    const employeeId = cleanText(r.employee_id);
     const emp = employeeId ? employeesById.get(employeeId) ?? null : null;
 
     const start = formatUkDate(r.first_day);
-    const end = formatUkDate(r.last_day_actual ?? r.last_day_expected);
+    const endExpected = formatUkDate(r.last_day_expected);
+    const endActual = formatUkDate(r.last_day_actual);
+    const endDisplay = formatUkDate(r.last_day_actual ?? r.last_day_expected);
 
-    const status = String(r.status ?? "").trim().toLowerCase();
-    const processedInPayroll =
-      status === "processed" ||
-      status === "approved" ||
-      status === "rti_submitted" ||
-      status === "completed";
+    const rawStatus = cleanText(r.status).toLowerCase();
+    const hasLinkedPayroll = linkedPayrollAbsenceIds.has(absenceId);
+    const deleteLocked = hasLinkedPayroll || isCompletedStatus(rawStatus);
 
     return {
-      id: String(r.id),
+      id: absenceId,
       employeeId: employeeId || "",
       employee: employeeLabel(emp, employeeId || "Unknown employee"),
       startDate: start,
-      endDate: end,
+      endDate: endDisplay,
+      endExpectedDate: endExpected,
+      endActualDate: endActual,
+      firstDay: r.first_day || null,
+      lastDayExpected: r.last_day_expected || null,
+      lastDayActual: r.last_day_actual || null,
       type: typeLabel(r.type),
-      processedInPayroll,
+      typeRaw: cleanText(r.type) || null,
+      status: statusLabel(rawStatus),
+      statusRaw: rawStatus || null,
+      notes: cleanText(r.reference_notes) || null,
+      payrollLinked: hasLinkedPayroll,
+      deleteLocked,
+      // Keep this legacy prop name because the current AbsenceEmployeeFilter
+      // disables Delete from it. The meaning is now "locked from delete",
+      // not "absence status is a payroll workflow status".
+      processedInPayroll: deleteLocked,
     };
   });
 
