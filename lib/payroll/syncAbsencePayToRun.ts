@@ -35,6 +35,12 @@ type PayElementTypeRow = {
   code: string;
 };
 
+type AbsenceContractTargetRow = {
+  absence_id: string | null;
+  contract_id: string | null;
+  employee_id?: string | null;
+};
+
 function logWarn(message: string, extra?: unknown) {
   console.warn("[syncAbsencePayToRun]", message, extra ?? "");
 }
@@ -313,11 +319,20 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
     }
 
     const preByEmployeeId: Record<string, any[]> = {};
+    const preByEmployeeContractKey: Record<string, any[]> = {};
     for (const pre of payrollRunEmployees) {
       const empId: string | null = pre.employee_id ?? null;
       if (!empId) continue;
+
       if (!preByEmployeeId[empId]) preByEmployeeId[empId] = [];
       preByEmployeeId[empId].push(pre);
+
+      const contractId = String(pre?.contract_id || "").trim();
+      if (!contractId) continue;
+
+      const key = `${String(empId).trim()}::${contractId}`;
+      if (!preByEmployeeContractKey[key]) preByEmployeeContractKey[key] = [];
+      preByEmployeeContractKey[key].push(pre);
     }
 
     const preIds = payrollRunEmployees
@@ -406,6 +421,117 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
         logError("SSP sync skipped: failed to calculate SSP amounts", e?.message ?? e);
       }
 
+      const plannedAbsenceIds = Array.from(
+        new Set(
+          Object.values(sspAmountsByEmployee)
+            .flatMap((row: any) => (Array.isArray(row?.absences) ? row.absences : []))
+            .map((absence: any) => String(absence?.absenceId || "").trim())
+            .filter(Boolean)
+        )
+      );
+
+      const targetContractIdsByAbsenceId: Record<string, string[]> = {};
+      if (plannedAbsenceIds.length > 0) {
+        const { data: targetRows, error: targetRowsError } = await supabase
+          .from("absence_contract_targets")
+          .select("absence_id, contract_id, employee_id")
+          .eq("company_id", companyId)
+          .in("absence_id", plannedAbsenceIds);
+
+        if (targetRowsError) {
+          handlePgError("Failed to load absence_contract_targets for sickness sync", targetRowsError);
+        } else {
+          for (const row of Array.isArray(targetRows) ? (targetRows as AbsenceContractTargetRow[]) : []) {
+            const absenceId = String(row?.absence_id || "").trim();
+            const contractId = String(row?.contract_id || "").trim();
+            if (!absenceId || !contractId) continue;
+            if (!targetContractIdsByAbsenceId[absenceId]) targetContractIdsByAbsenceId[absenceId] = [];
+            if (!targetContractIdsByAbsenceId[absenceId].includes(contractId)) {
+              targetContractIdsByAbsenceId[absenceId].push(contractId);
+            }
+          }
+        }
+      }
+
+      const targetResolutionStats = {
+        resolved: 0,
+        skippedNoTarget: 0,
+        skippedTargetNotInRun: 0,
+        skippedAmbiguousTarget: 0,
+        skippedAmbiguousRunRow: 0,
+      };
+
+      function resolvePayrollRunEmployeeIdForAbsence(empId: string, absenceId: string): string | null {
+        const targetedContractIds = targetContractIdsByAbsenceId[absenceId] ?? [];
+        if (targetedContractIds.length === 0) {
+          targetResolutionStats.skippedNoTarget += 1;
+          logWarn("Skipping sickness absence sync because no contract targets were found for absence.", {
+            runId,
+            employeeId: empId,
+            absenceId,
+          });
+          return null;
+        }
+
+        const matchingContractIds = targetedContractIds.filter((contractId) => {
+          const key = `${empId}::${contractId}`;
+          return Array.isArray(preByEmployeeContractKey[key]) && preByEmployeeContractKey[key].length > 0;
+        });
+
+        if (matchingContractIds.length === 0) {
+          targetResolutionStats.skippedTargetNotInRun += 1;
+          logWarn("Skipping sickness absence sync because targeted contract is not attached to this run.", {
+            runId,
+            employeeId: empId,
+            absenceId,
+            targetedContractIds,
+          });
+          return null;
+        }
+
+        if (matchingContractIds.length > 1) {
+          targetResolutionStats.skippedAmbiguousTarget += 1;
+          logWarn("Skipping sickness absence sync because absence targets multiple attached contracts in this run.", {
+            runId,
+            employeeId: empId,
+            absenceId,
+            matchingContractIds,
+          });
+          return null;
+        }
+
+        const matchedContractId = matchingContractIds[0];
+        const key = `${empId}::${matchedContractId}`;
+        const preList = preByEmployeeContractKey[key] ?? [];
+
+        if (preList.length !== 1) {
+          targetResolutionStats.skippedAmbiguousRunRow += 1;
+          logWarn("Skipping sickness absence sync because payroll run row match was ambiguous for the targeted contract.", {
+            runId,
+            employeeId: empId,
+            absenceId,
+            matchedContractId,
+            payrollRunEmployeeIds: preList.map((row: any) => String(row?.id || "").trim()).filter(Boolean),
+          });
+          return null;
+        }
+
+        const preId = String(preList[0]?.id || "").trim();
+        if (!preId) {
+          targetResolutionStats.skippedAmbiguousRunRow += 1;
+          logWarn("Skipping sickness absence sync because the targeted payroll row had no id.", {
+            runId,
+            employeeId: empId,
+            absenceId,
+            matchedContractId,
+          });
+          return null;
+        }
+
+        targetResolutionStats.resolved += 1;
+        return preId;
+      }
+
       const computedSicknessItems: Array<{
         absenceId: string;
         employeeId: string;
@@ -432,10 +558,6 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
         const preList = preByEmployeeId[empId];
         if (!preList || preList.length === 0) continue;
 
-        const preRow = preList[0];
-        const preId = String(preRow?.id || "").trim();
-        if (!preId) continue;
-
         const employeePlan = sspAmountsByEmployee[empId];
         const absences = Array.isArray(employeePlan?.absences) ? employeePlan.absences : [];
 
@@ -450,10 +572,13 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
 
           if (!absenceId || qualifyingDaysInRun <= 0) continue;
 
+          const payrollRunEmployeeId = resolvePayrollRunEmployeeIdForAbsence(empId, absenceId);
+          if (!payrollRunEmployeeId) continue;
+
           computedSicknessItems.push({
             absenceId,
             employeeId: empId,
-            payrollRunEmployeeId: preId,
+            payrollRunEmployeeId,
             sicknessStart,
             sicknessEnd,
             qualifyingDaysInRun,
@@ -471,7 +596,7 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
             computedSspItems.push({
               absenceId,
               employeeId: empId,
-              payrollRunEmployeeId: preId,
+              payrollRunEmployeeId,
               sicknessStart,
               sicknessEnd,
               qualifyingDaysInRun,
@@ -655,6 +780,7 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
           inserted: inserts.length,
           updated: updates.length,
           deleted: staleIds.length,
+          targetResolutionStats,
         });
       }
 
@@ -765,6 +891,7 @@ export async function syncAbsencePayToRun(args: SyncAbsencePayToRunArgs): Promis
           inserted: inserts.length,
           updated: updates.length,
           deleted: staleIds.length,
+          targetResolutionStats,
         });
       } else if (sickBasicReductionType && !basicType) {
         logWarn("Sickness reduction sync skipped: BASIC pay element type was not found.", {
