@@ -25,6 +25,7 @@ type DbRow = Record<string, unknown>;
 
 type NormalisedPayElement = {
   id: string;
+  payrollRunEmployeeId?: string | null;
   typeId: string;
   code: string;
   name: string;
@@ -339,6 +340,12 @@ function upsertVisibleDeductionElement(
   }
 
   return items;
+}
+
+function elementsForPayrollRow(items: NormalisedPayElement[], payrollRunEmployeeId: string): NormalisedPayElement[] {
+  const key = String(payrollRunEmployeeId ?? "").trim();
+  if (!key) return [];
+  return items.filter((item) => String(item.payrollRunEmployeeId ?? "").trim() === key);
 }
 
 function pickEarliestSicknessStart(sspForEmployee: unknown): string | null {
@@ -701,6 +708,7 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
 
     elements.push({
       id: String(row.id),
+      payrollRunEmployeeId: String(row.payroll_run_employee_id ?? "").trim() || null,
       typeId: String(master?.id ?? ""),
       code: String(master?.code ?? ""),
       name: String(master?.name ?? ""),
@@ -768,7 +776,7 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
   let sspAdjusted = false;
   let sspDetails: any = null;
 
-  if (sspForEmployee && Number(sspForEmployee.totalPayableDays || 0) > 0) {
+  if (!elements.some((e) => isSspLike(e)) && sspForEmployee && Number(sspForEmployee.totalPayableDays || 0) > 0) {
     const packMeta = sspForEmployee.packMeta ?? null;
 
     const payable = Number(sspForEmployee.totalPayableDays || 0);
@@ -824,7 +832,7 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
     const descBase = `Statutory Sick Pay for ${payable} day${payable === 1 ? "" : "s"} sickness (${qualifying} qualifying day${qualifying === 1 ? "" : "s"} in this period)`;
     const descCap = lowCapEnabled ? (capApplied ? `, low-earner cap applied` : `, low-earner cap checked`) : "";
     const descRate =
-      Number.isFinite(effectiveDailyRate) && effectiveDailyRate > 0 ? `, daily rate £${effectiveDailyRate.toFixed(2)}` : "";
+      Number.isFinite(effectiveDailyRate) && effectiveDailyRate > 0 ? `, daily rate GBP ${effectiveDailyRate.toFixed(2)}` : "";
 
     if (sspElem) {
       sspElem.amount = effectiveAmount;
@@ -867,8 +875,8 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
   if (!sspDetails && sspElemStored) {
     const amt = round2(Number(sspElemStored.amount ?? 0));
     const existingDesc = String(sspElemStored.description || "");
-    if (!existingDesc.includes("£")) {
-      const suffix = `amount £${amt.toFixed(2)}`;
+    if (!existingDesc.includes("GBP")) {
+      const suffix = `amount GBP ${amt.toFixed(2)}`;
       sspElemStored.description = existingDesc ? `${existingDesc}, ${suffix}` : suffix;
     }
 
@@ -1138,6 +1146,7 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
     employeeBreakdown,
     employerBreakdown,
     usedCorrectedRunDetailRows: correctedEmployeeRows.length > 0,
+    contractPayElementsTagged: true,
   };
 
   return {
@@ -1163,8 +1172,17 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
             null
           );
 
+          const rowKey = getRowKey(row);
+          const rowEarningsBase = elementsForPayrollRow(earningsBase, rowKey);
+          const rowSalarySacrificeElements = elementsForPayrollRow(salarySacrificeElements, rowKey);
+          const rowEarnings = [
+            ...rowEarningsBase,
+            ...rowSalarySacrificeElements.map((item) => toSalarySacrificeEarning(item)),
+          ];
+          const rowDeductions = elementsForPayrollRow(visibleDeductions, rowKey);
+
           return {
-            payrollRunEmployeeId: getRowKey(row),
+            payrollRunEmployeeId: rowKey,
             contractId: String(row?.contract_id ?? row?.contractId ?? "").trim() || null,
             contractNumber: contractNumber ? String(contractNumber) : null,
             contractJobTitle: contractJobTitle ? String(contractJobTitle) : null,
@@ -1178,6 +1196,10 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
             employeeNi: getCorrectedRowEmployeeNi(row),
             employerNi: getCorrectedRowEmployerNi(row),
             net: getCorrectedRowNet(row),
+            payElements: {
+              earnings: rowEarnings,
+              deductions: rowDeductions,
+            },
           };
         }),
         company: companyPayload,
