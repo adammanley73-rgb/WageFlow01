@@ -1,4 +1,4 @@
-﻿// C:\Projects\wageflow01\app\api\payroll\[id]\route.ts
+// C:\Projects\wageflow01\app\api\payroll\[id]\route.ts
 
 import { NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase/server";
@@ -259,6 +259,7 @@ type LocalNormalisedPayElement = {
   code: string;
   side: "earning" | "deduction";
   amount: number;
+  effectiveTaxableForPaye: boolean;
   effectivePensionable: boolean;
   effectiveAeQualifying: boolean;
   effectiveSalarySacrifice: boolean;
@@ -709,6 +710,27 @@ function normaliseLocalPayElement(row: any, type: any): LocalNormalisedPayElemen
   const side = normalisePayElementSide(pickFirst(type?.side, row?.side, null));
   const amount = round2(toNumberSafe(pickFirst(row?.amount, 0)));
 
+  const effectiveTaxableForPaye = resolveBooleanOverride(
+    pickFirst(
+      row?.taxable_for_paye_override,
+      row?.taxableForPayeOverride,
+      row?.taxable_for_paye,
+      row?.taxableForPaye,
+      row?.is_taxable_for_paye,
+      row?.isTaxableForPaye,
+      row?.taxable,
+      null
+    ),
+    pickFirst(
+      type?.taxable_for_paye,
+      type?.taxableForPaye,
+      type?.is_taxable_for_paye_default,
+      type?.isTaxableForPayeDefault,
+      type?.taxable,
+      null
+    )
+  );
+
   const effectivePensionable = resolveBooleanOverride(
     pickFirst(
       row?.pensionable_override,
@@ -777,6 +799,7 @@ function normaliseLocalPayElement(row: any, type: any): LocalNormalisedPayElemen
     code,
     side,
     amount,
+    effectiveTaxableForPaye,
     effectivePensionable,
     effectiveAeQualifying,
     effectiveSalarySacrifice,
@@ -2323,6 +2346,7 @@ async function loadContracts(
 
     let gross = 0;
     let basicPay = 0;
+    let taxablePay = 0;
     let pensionablePay = 0;
     let aeQualifyingSourcePay = 0;
     let employeeElementDeductions = 0;
@@ -2339,6 +2363,10 @@ async function loadContracts(
 
         if (code === "BASIC" || isSicknessReduction) {
           basicPay += amount;
+        }
+
+        if (row.effectiveTaxableForPaye) {
+          taxablePay += amount;
         }
 
         if (!isSsp) {
@@ -2365,6 +2393,7 @@ async function loadContracts(
 
     gross = round2(gross);
     basicPay = round2(Math.max(0, basicPay));
+    taxablePay = round2(Math.max(0, taxablePay));
     pensionablePay = round2(pensionablePay > 0 ? pensionablePay : nonSspGross);
     aeQualifyingSourcePay = round2(aeQualifyingSourcePay > 0 ? aeQualifyingSourcePay : nonSspGross);
     employeeElementDeductions = round2(employeeElementDeductions);
@@ -2421,6 +2450,8 @@ async function loadContracts(
 
     const patch: any = {
       gross_pay: gross,
+      basic_pay: basicPay,
+      taxable_pay: taxablePay,
       tax: paye,
       ni_employee: employeeNi,
       ni_employer: employerNi,
