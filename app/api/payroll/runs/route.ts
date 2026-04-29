@@ -261,6 +261,29 @@ function getUkTaxYearBounds(taxYearStartParam?: string | null) {
   };
 }
 
+function getUkTaxYearBoundsForReferenceDate(referenceDateIso: string | null) {
+  if (!referenceDateIso || !isIsoDateOnly(referenceDateIso)) {
+    return getUkTaxYearBounds(null);
+  }
+
+  const referenceUtc = parseIsoDateOnlyToUtc(referenceDateIso);
+  const year = referenceUtc.getUTCFullYear();
+  const candidateStart = new Date(Date.UTC(year, 3, 6));
+  const start =
+    referenceUtc >= candidateStart
+      ? candidateStart
+      : new Date(Date.UTC(year - 1, 3, 6));
+
+  const end = new Date(start);
+  end.setUTCFullYear(end.getUTCFullYear() + 1);
+  end.setUTCDate(end.getUTCDate() - 1);
+
+  return {
+    taxYearStartIso: start.toISOString().slice(0, 10),
+    taxYearEndIso: end.toISOString().slice(0, 10),
+  };
+}
+
 function makeRunNumberForDate(
   frequency: string,
   payDateIso: string | null,
@@ -1424,9 +1447,9 @@ export async function POST(req: Request) {
       });
     }
 
-    const { taxYearStartIso } = getUkTaxYearBounds(null);
     const runNumberReferenceDateIso =
-      derivedFrequency === "monthly" ? pay_date_input : period.endIso;
+      derivedFrequency === "monthly" ? pay_date_input : period.startIso;
+    const { taxYearStartIso } = getUkTaxYearBoundsForReferenceDate(runNumberReferenceDateIso);
     const computedRunNumber = makeRunNumberForDate(
       derivedFrequency,
       runNumberReferenceDateIso,
