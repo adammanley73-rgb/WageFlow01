@@ -298,6 +298,30 @@ export async function POST(req: Request) {
     const hours_per_week = numOrNull(body?.hours_per_week);
     const pay_basis = derivePayBasis(body, annual_salary, hourly_rate);
 
+    if (hours_per_week === null || hours_per_week <= 0) {
+      return json(400, {
+        ok: false,
+        code: "BAD_HOURS",
+        error: "hours_per_week must be greater than 0.",
+      });
+    }
+
+    if (pay_basis === "salary" && (annual_salary === null || annual_salary <= 0)) {
+      return json(400, {
+        ok: false,
+        code: "BAD_ANNUAL_SALARY",
+        error: "annual_salary must be greater than 0 for a salary contract.",
+      });
+    }
+
+    if (pay_basis === "hourly" && (hourly_rate === null || hourly_rate <= 0)) {
+      return json(400, {
+        ok: false,
+        code: "BAD_HOURLY_RATE",
+        error: "hourly_rate must be greater than 0 for an hourly contract.",
+      });
+    }
+
     const employee_id = strOrNull(body?.employee_id) ?? randomUUID();
     const employee_number = strOrNull(body?.employee_number);
 
