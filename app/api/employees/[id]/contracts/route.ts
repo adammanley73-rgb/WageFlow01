@@ -39,6 +39,7 @@ type EmployeeLookupRow = {
   first_name?: string | null;
   last_name?: string | null;
   email?: string | null;
+  employment_type?: string | null;
 };
 
 type ExistingContractRow = {
@@ -262,7 +263,7 @@ async function fetchEmployeeByRouteId(
   routeId: string
 ): Promise<{ employee: EmployeeLookupRow | null; error: any | null }> {
   const selectCols =
-    "id, employee_id, employee_number, first_name, last_name, email";
+    "id, employee_id, employee_number, first_name, last_name, email, employment_type";
 
   async function fetchBy(
     col: "id" | "employee_id" | "employee_number",
@@ -485,6 +486,8 @@ export async function POST(req: Request, { params }: RouteContext) {
     const annual_salary = numOrNull(body?.annual_salary);
     const hourly_rate = numOrNull(body?.hourly_rate);
     const hours_per_week = numOrNull(body?.hours_per_week);
+    const isCasualEmployment =
+      String(employee?.employment_type || "").trim().toLowerCase() === "casual";
     const pay_after_leaving = Boolean(body?.pay_after_leaving ?? false);
 
     const pension_enabled = Boolean(body?.pension_enabled ?? false);
@@ -561,11 +564,19 @@ export async function POST(req: Request, { params }: RouteContext) {
       });
     }
 
-    if (hours_per_week === null || hours_per_week <= 0) {
+    if (hours_per_week !== null && hours_per_week < 0) {
       return json(400, {
         ok: false,
         code: "BAD_HOURS",
-        error: "hours_per_week must be greater than 0.",
+        error: "hours_per_week cannot be negative.",
+      });
+    }
+
+    if (!isCasualEmployment && (hours_per_week === null || hours_per_week <= 0)) {
+      return json(400, {
+        ok: false,
+        code: "BAD_HOURS",
+        error: "hours_per_week must be greater than 0 unless the employee is casual.",
       });
     }
 
