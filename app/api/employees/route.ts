@@ -297,12 +297,22 @@ export async function POST(req: Request) {
     const hourly_rate = numOrNull(body?.hourly_rate);
     const hours_per_week = numOrNull(body?.hours_per_week);
     const pay_basis = derivePayBasis(body, annual_salary, hourly_rate);
+    const employment_type = strOrNull(body?.employment_type) ?? "full_time";
+    const isCasualEmployment = employment_type.toLowerCase() === "casual";
 
-    if (hours_per_week === null || hours_per_week <= 0) {
+    if (hours_per_week !== null && hours_per_week < 0) {
       return json(400, {
         ok: false,
         code: "BAD_HOURS",
-        error: "hours_per_week must be greater than 0.",
+        error: "hours_per_week cannot be negative.",
+      });
+    }
+
+    if (!isCasualEmployment && (hours_per_week === null || hours_per_week <= 0)) {
+      return json(400, {
+        ok: false,
+        code: "BAD_HOURS",
+        error: "hours_per_week must be greater than 0 unless employment_type is casual.",
       });
     }
 
@@ -343,7 +353,7 @@ export async function POST(req: Request) {
 
       date_of_birth: strOrNull(body?.date_of_birth),
 
-      employment_type: strOrNull(body?.employment_type) ?? "full_time",
+      employment_type,
 
       annual_salary,
       hourly_rate,
