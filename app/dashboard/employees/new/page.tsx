@@ -521,19 +521,36 @@ export default function NewEmployeePage() {
     const hours = toNumberOrNull(form.hours_per_week);
     const salary = toNumberOrNull(form.salary);
     const hourly = toNumberOrNull(form.hourly_rate);
+    const isCasualEmployment = form.employment_type === "casual";
 
-    if (!hours || hours <= 0) {
-      setErr("Hours per week is required.");
+    if (hours !== null && hours < 0) {
+      setErr("Hours per week cannot be negative.");
       return;
     }
 
-    if (salary === null || salary <= 0) {
-      setErr("Annual salary is required.");
+    if (!isCasualEmployment && (hours === null || hours <= 0)) {
+      setErr("Hours per week is required unless employment type is Casual.");
       return;
     }
 
-    if (hourly === null || hourly <= 0) {
-      setErr("Hourly rate is required.");
+    const inferredPayBasis =
+      paySource ??
+      (hourly !== null && hourly > 0 && (salary === null || salary <= 0)
+        ? "hourly"
+        : "salary");
+
+    if (inferredPayBasis === "salary" && (salary === null || salary <= 0)) {
+      setErr("Annual salary is required for a salary employee.");
+      return;
+    }
+
+    if (inferredPayBasis === "hourly" && (hourly === null || hourly <= 0)) {
+      setErr("Hourly rate is required for an hourly employee.");
+      return;
+    }
+
+    if (salary === null && hourly === null) {
+      setErr("Enter either annual salary or hourly rate.");
       return;
     }
 
@@ -587,6 +604,8 @@ export default function NewEmployeePage() {
       annual_salary: salary !== null ? moneyRound(salary) : null,
       hourly_rate: hourly !== null ? moneyRound(hourly) : null,
       hours_per_week: hours !== null ? moneyRound(hours) : null,
+      pay_basis: inferredPayBasis,
+      pay_type: inferredPayBasis,
 
       address,
 
