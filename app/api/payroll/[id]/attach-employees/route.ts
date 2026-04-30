@@ -356,7 +356,10 @@ function computeInitialBasicAmount(row: ContractEmployeeRow, frequency: string):
     .trim()
     .toLowerCase();
 
-  if (payBasis !== "salary" && payBasis !== "salaried") return 0;
+  const isSalary = payBasis === "salary" || payBasis === "salaried";
+  const isHourly = payBasis === "hourly";
+
+  if (!isSalary && !isHourly) return 0;
 
   const annualSalary = getNumber(row.contract_annual_salary);
   const hourlyRate = getNumber(row.contract_hourly_rate);
@@ -364,7 +367,7 @@ function computeInitialBasicAmount(row: ContractEmployeeRow, frequency: string):
 
   let weeklyAmount = 0;
 
-  if (annualSalary !== null && annualSalary > 0) {
+  if (isSalary && annualSalary !== null && annualSalary > 0) {
     weeklyAmount = annualSalary / WEEKS_PER_YEAR;
   } else if (hourlyRate !== null && hourlyRate > 0 && hoursPerWeek !== null && hoursPerWeek > 0) {
     weeklyAmount = hourlyRate * hoursPerWeek;
@@ -378,7 +381,7 @@ function computeInitialBasicAmount(row: ContractEmployeeRow, frequency: string):
   if (freq === "fortnightly") return round2(weeklyAmount * 2);
   if (freq === "four_weekly") return round2(weeklyAmount * 4);
   if (freq === "monthly") {
-    if (annualSalary !== null && annualSalary > 0) return round2(annualSalary / 12);
+    if (isSalary && annualSalary !== null && annualSalary > 0) return round2(annualSalary / 12);
     return round2((weeklyAmount * WEEKS_PER_YEAR) / 12);
   }
 
