@@ -363,6 +363,7 @@ export async function POST(req: Request) {
       national_insurance_number: ni,
 
       pay_frequency: normalisedPayFrequency,
+      frequency: normalisedPayFrequency,
       pay_basis,
       pay_type: pay_basis,
 
