@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { randomUUID } from "crypto";
 import { getAdmin } from "@lib/admin";
 import { syncAbsencePayToRun } from "@lib/payroll/syncAbsencePayToRun";
+import { labelForRun, type Frequency } from "@lib/payroll/naming";
 
 export const dynamic = "force-dynamic";
 
@@ -118,9 +119,6 @@ function parseIsoDateOnlyToUtc(iso: string) {
   return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
 }
 
-function diffDaysUtc(a: Date, b: Date) {
-  return Math.round((a.getTime() - b.getTime()) / 86400000);
-}
 
 function addDaysUtc(d: Date, days: number) {
   const out = new Date(d.getTime());
@@ -284,45 +282,43 @@ function getUkTaxYearBoundsForReferenceDate(referenceDateIso: string | null) {
   };
 }
 
+function normalizeFrequencyForRunLabel(frequency: string): Frequency | null {
+  const f = String(frequency || "").trim().toLowerCase();
+
+  if (
+    f === "weekly" ||
+    f === "fortnightly" ||
+    f === "fourweekly" ||
+    f === "four_weekly" ||
+    f === "monthly"
+  ) {
+    return f;
+  }
+
+  return null;
+}
+
 function makeRunNumberForDate(
   frequency: string,
   payDateIso: string | null,
   taxYearStartIso: string
 ) {
   if (!payDateIso || !isIsoDateOnly(payDateIso)) return null;
+  if (!taxYearStartIso || !isIsoDateOnly(taxYearStartIso)) return null;
 
-  const f = String(frequency || "").trim();
-  const payUtc = parseIsoDateOnlyToUtc(payDateIso);
-  const startUtc = parseIsoDateOnlyToUtc(taxYearStartIso);
+  const normalizedFrequency = normalizeFrequencyForRunLabel(frequency);
+  if (!normalizedFrequency) return null;
 
-  const diff = diffDaysUtc(payUtc, startUtc);
-  if (diff < 0) return null;
-
-  if (f === "monthly") {
-    const m = payUtc.getUTCMonth();
-    const mth = m >= 3 ? m - 3 + 1 : m + 9 + 1;
-    return `Mth ${mth}`;
+  try {
+    return labelForRun({
+      frequency: normalizedFrequency,
+      periodStart: payDateIso,
+      taxYearStart: taxYearStartIso,
+    });
+  } catch {
+    return null;
   }
-
-  const period =
-    f === "weekly"
-      ? 7
-      : f === "fortnightly"
-      ? 14
-      : f === "four_weekly"
-      ? 28
-      : null;
-  if (!period) return null;
-
-  const n = Math.floor(diff / period) + 1;
-
-  if (f === "weekly") return `wk ${n}`;
-  if (f === "fortnightly") return `fn ${n}`;
-  if (f === "four_weekly") return `4wk ${n}`;
-
-  return null;
 }
-
 function defaultRunNameFromPayDate(frequency: string, payDateIso: string | null) {
   const pay = payDateIso ? isoToUkDate(payDateIso) : "unscheduled";
   return frequencyLabel(frequency) + " payroll (pay date " + pay + ")";
