@@ -815,6 +815,15 @@ export default function TheBusinessConsortiumLanding(_: Props) {
                 </div>
               ))}
             </div>
+
+            <div className="mt-8 text-center">
+              <a
+                href="/uk-payroll-software.html"
+                className="inline-flex items-center justify-center rounded-lg border-2 border-[#0f3c85] px-6 py-3 font-semibold text-[#0f3c85] transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
+              >
+                Learn more about UK payroll software
+              </a>
+            </div>
           </div>
         </section>
 
