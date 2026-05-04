@@ -2,7 +2,7 @@
 
 const siteUrl = "https://www.thebusinessconsortiumltd.co.uk";
 const pageUrl = `${siteUrl}/uk-payroll-software.html`;
-const title = "UK Payroll Software | WageFlow";
+const title = "UK Payroll Software";
 const description =
   "WageFlow is UK payroll software for SMEs, payroll professionals and bureaux that want exception-led payroll review, PAYE and NI checks, RTI workflow support and clearer approval before payday.";
 
@@ -387,3 +387,4 @@ export default function UKPayrollSoftwarePage() {
     </main>
   );
 }
+
