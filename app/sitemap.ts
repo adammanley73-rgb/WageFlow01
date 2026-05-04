@@ -13,6 +13,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1,
     },
     {
+      url: `${siteUrl}/uk-payroll-software.html`,
+      lastModified,
+      changeFrequency: "weekly",
+      priority: 0.9,
+    },
+    {
       url: `${siteUrl}/privacy`,
       lastModified,
       changeFrequency: "yearly",
