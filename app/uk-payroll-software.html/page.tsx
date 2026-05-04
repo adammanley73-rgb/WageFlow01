@@ -7,7 +7,9 @@ const description =
   "WageFlow is UK payroll software for SMEs, payroll professionals and bureaux that want exception-led payroll review, PAYE and NI checks, RTI workflow support and clearer approval before payday.";
 
 export const metadata: Metadata = {
-  title,
+  title: {
+    absolute: "UK Payroll Software | WageFlow",
+  },
   description,
   alternates: {
     canonical: pageUrl,
@@ -387,4 +389,5 @@ export default function UKPayrollSoftwarePage() {
     </main>
   );
 }
+
 
