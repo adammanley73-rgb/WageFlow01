@@ -216,6 +216,33 @@ export default function TheBusinessConsortiumLanding(_: Props) {
     []
   );
 
+  const seoPages = useMemo(
+    () => [
+      {
+        href: "/uk-payroll-software.html",
+        title: "UK payroll software",
+        description:
+          "A broader overview of WageFlow for UK payroll teams that want cleaner PAYE, NI, RTI and approval workflow.",
+        cta: "Learn more about UK payroll software",
+      },
+      {
+        href: "/payroll-software-for-small-business.html",
+        title: "Payroll software for small business",
+        description:
+          "A focused page for small UK employers that need simple payroll review, clear pricing and fewer payday surprises.",
+        cta: "View small business payroll software",
+      },
+      {
+        href: "/payroll-software-for-bureaus.html",
+        title: "Payroll software for payroll bureaus",
+        description:
+          "A focused page for bureaux, accountants and multi-client payroll teams that need repeatable review and approval control.",
+        cta: "View bureau payroll software",
+      },
+    ],
+    []
+  );
+
   const faqs: FAQ[] = useMemo(
     () => [
       {
@@ -816,13 +843,40 @@ export default function TheBusinessConsortiumLanding(_: Props) {
               ))}
             </div>
 
-            <div className="mt-8 text-center">
-              <a
-                href="/uk-payroll-software.html"
-                className="inline-flex items-center justify-center rounded-lg border-2 border-[#0f3c85] px-6 py-3 font-semibold text-[#0f3c85] transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
-              >
-                Learn more about UK payroll software
-              </a>
+            <div className="mt-10 rounded-3xl border border-blue-100 bg-white p-6 shadow-sm md:p-8">
+              <div className="max-w-3xl">
+                <p className="text-sm font-semibold uppercase tracking-wide text-[#0f3c85]">
+                  Explore WageFlow payroll software
+                </p>
+                <h3 className="mt-2 text-2xl font-bold text-gray-900">
+                  Choose the page that matches how you run payroll
+                </h3>
+                <p className="mt-3 text-gray-700">
+                  These pages give visitors and search engines clear routes into the right WageFlow use case, with dedicated pages for UK payroll teams, small businesses and bureaus.
+                </p>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-3">
+                {seoPages.map((page) => (
+                  <a
+                    key={page.href}
+                    href={page.href}
+                    className="group flex h-full flex-col rounded-2xl border border-gray-200 bg-gray-50 p-5 transition hover:border-blue-200 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-[#0f3c85]"
+                  >
+                    <span className="text-lg font-bold text-gray-900">{page.title}</span>
+                    <span className="mt-2 flex-1 text-sm leading-6 text-gray-700">
+                      {page.description}
+                    </span>
+                    <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#0f3c85]">
+                      {page.cta}
+                      <ArrowRight
+                        className="h-4 w-4 transition group-hover:translate-x-1"
+                        aria-hidden="true"
+                      />
+                    </span>
+                  </a>
+                ))}
+              </div>
             </div>
           </div>
         </section>
