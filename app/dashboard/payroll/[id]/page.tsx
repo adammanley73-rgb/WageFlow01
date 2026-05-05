@@ -353,6 +353,17 @@ function calcBadgeStyles(mode: string) {
   return { borderColor: "#94a3b8", backgroundColor: "rgba(148,163,184,0.14)", color: "#334155" };
 }
 
+function calcBadgeLabel(mode: string) {
+  const m = String(mode || "").trim().toLowerCase();
+
+  if (m === "full" || m === "elements") return "Calculated";
+  if (m === "gross_only" || m === "gross-only" || m === "gross only") return "Gross only";
+  if (!m || m === "uncomputed" || m === "seeded") return "Not calculated";
+
+  return m
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
 function severityChip(sev: string) {
   const s = String(sev || "").toLowerCase();
   if (s === "block") {
@@ -1201,7 +1212,7 @@ export default function PayrollRunDetailPage() {
                   const badge = calcBadgeStyles(r.calcMode);
                   const canOpenPayItems = canEditRun && !dirty && !saving && Boolean(r.employeeId);
                   return <tr key={r.id} className="bg-white">
-                    <td className="sticky left-0 z-0 bg-white px-3 py-3 text-sm text-slate-900 border-b border-neutral-200"><div className="flex flex-col gap-2"><span className="block truncate">{r.employeeName || MISSING}</span><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold" style={badge} title="Calculation state for this employee in this run">{String(r.calcMode || "uncomputed")}</span><button type="button" onClick={() => openPayItemsModal(r.employeeId)} disabled={!canOpenPayItems} className="inline-flex h-8 items-center justify-center rounded-xl px-3 text-xs font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE, opacity: !canOpenPayItems ? 0.6 : 1, cursor: !canOpenPayItems ? "not-allowed" : "pointer" }} title={dirty ? "Save or discard row edits before editing pay items." : !canEditRun ? "Pay items can only be edited while the run is Draft or Processing." : "Edit extra pay items for this employee"}>Edit pay items</button></div></div></td>
+                    <td className="sticky left-0 z-0 bg-white px-3 py-3 text-sm text-slate-900 border-b border-neutral-200"><div className="flex flex-col gap-2"><span className="block truncate">{r.employeeName || MISSING}</span><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold" style={badge} title="Calculation state for this employee in this run">{calcBadgeLabel(r.calcMode)}</span><button type="button" onClick={() => openPayItemsModal(r.employeeId)} disabled={!canOpenPayItems} className="inline-flex h-8 items-center justify-center rounded-xl px-3 text-xs font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE, opacity: !canOpenPayItems ? 0.6 : 1, cursor: !canOpenPayItems ? "not-allowed" : "pointer" }} title={dirty ? "Save or discard row edits before editing pay items." : !canEditRun ? "Pay items can only be edited while the run is Draft or Processing." : "Edit extra pay items for this employee"}>Edit pay items</button></div></div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><span className="block truncate">{r.employeeNumber || MISSING}</span></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[8.5rem]"><input disabled={!canEditRun} className={`${inter.className} h-10 w-full min-w-0 rounded-xl border border-slate-300 px-2 text-right text-[13px] font-extrabold outline-none focus:ring-2 focus:ring-offset-1`} style={{ color: WF_BLUE, opacity: !canEditRun ? 0.6 : 1, cursor: !canEditRun ? "not-allowed" : "text" }} type="text" inputMode="decimal" value={formatMoneyInput(r.gross)} onChange={(e) => onChangeCell(r.id, "gross", e.target.value)} /></div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="PAYE for this employee in this run">{gbp(r.tax)}</div></td>
