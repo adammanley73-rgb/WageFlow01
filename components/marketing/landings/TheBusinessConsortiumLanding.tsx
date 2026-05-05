@@ -239,6 +239,41 @@ export default function TheBusinessConsortiumLanding(_: Props) {
           "A focused page for bureaux, accountants and multi-client payroll teams that need repeatable review and approval control.",
         cta: "View bureau payroll software",
       },
+      {
+        href: "/paye-payroll-software.html",
+        title: "PAYE payroll software",
+        description:
+          "A focused page for PAYE payroll review, National Insurance visibility and cleaner approval workflow.",
+        cta: "View PAYE payroll software",
+      },
+      {
+        href: "/payroll-exception-reporting.html",
+        title: "Payroll exception reporting",
+        description:
+          "A focused page for teams that want clearer exception-led payroll review before payday.",
+        cta: "View payroll exception reporting",
+      },
+      {
+        href: "/payroll-audit-trail-software.html",
+        title: "Payroll audit trail software",
+        description:
+          "A focused page for payroll change records, approval visibility and audit trail control.",
+        cta: "View payroll audit trail software",
+      },
+      {
+        href: "/rti-payroll-software.html",
+        title: "RTI payroll software",
+        description:
+          "A focused page for RTI payroll workflow, FPS and EPS preparation, and reporting visibility.",
+        cta: "View RTI payroll software",
+      },
+      {
+        href: "/payroll-anomaly-detection.html",
+        title: "Payroll anomaly detection",
+        description:
+          "A focused page for unusual pay movement checks, anomaly review and payroll approval control.",
+        cta: "View payroll anomaly detection",
+      },
     ],
     []
   );
@@ -852,11 +887,11 @@ export default function TheBusinessConsortiumLanding(_: Props) {
                   Choose the page that matches how you run payroll
                 </h3>
                 <p className="mt-3 text-gray-700">
-                  These pages give visitors and search engines clear routes into the right WageFlow use case, with dedicated pages for UK payroll teams, small businesses and bureaus.
+                  These pages give visitors and search engines clear routes into the right WageFlow use case, with dedicated pages for UK payroll teams, small businesses, bureaus, PAYE, RTI, exception reporting, audit trails and anomaly detection.
                 </p>
               </div>
 
-              <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 {seoPages.map((page) => (
                   <a
                     key={page.href}
