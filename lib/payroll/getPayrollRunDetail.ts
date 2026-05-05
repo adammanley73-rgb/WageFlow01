@@ -1,4 +1,4 @@
-﻿// C:\Projects\wageflow01\lib\payroll\getPayrollRunDetail.ts
+// C:\Projects\wageflow01\lib\payroll\getPayrollRunDetail.ts
 
 import { calculatePay } from "@/lib/payroll/calculatePay";
 
@@ -1998,7 +1998,35 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
 
     const codes: string[] = [];
 
-    if (gross <= 0) codes.push("GROSS_ZERO");
+    const payBasisUsed = String(
+      pickFirst(
+        att?.pay_basis_used,
+        att?.payBasisUsed,
+        att?.pay_basis,
+        att?.payBasis,
+        ""
+      ) || ""
+    ).trim().toLowerCase();
+
+    const hoursPerWeekUsedRaw = pickFirst(
+      att?.hours_per_week_used,
+      att?.hoursPerWeekUsed,
+      att?.hours_per_week,
+      att?.hoursPerWeek,
+      null
+    );
+
+    const hoursPerWeekUsed =
+      hoursPerWeekUsedRaw === null || hoursPerWeekUsedRaw === undefined || String(hoursPerWeekUsedRaw).trim() === ""
+        ? null
+        : toNumberSafe(hoursPerWeekUsedRaw);
+
+    const isValidZeroHoursRow =
+      gross <= 0 &&
+      payBasisUsed === "hourly" &&
+      (hoursPerWeekUsed === null || hoursPerWeekUsed <= 0);
+
+    if (gross <= 0 && !isValidZeroHoursRow) codes.push("GROSS_ZERO");
 
     const taxCode = pickFirst(
       att?.tax_code_used,
@@ -2353,4 +2381,3 @@ export async function getPayrollRunDetail(
     debug: includeDebug ? debug : undefined,
   };
 }
-
