@@ -13,10 +13,8 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <main className="h-dvh w-full overflow-x-hidden overflow-y-hidden bg-gradient-to-b from-[#0fb96b] to-[#1f5fff]">
-      {/* Full-viewport grid to eliminate scroll and center content */}
       <section className="h-full w-full grid place-items-center px-4">
         <div className="w-full max-w-3xl rounded-2xl bg-white p-6 md:p-8 shadow-xl">
-          {/* Logo only. No adjacent text. Sizes chosen to prevent overflow on small screens */}
           <div className="flex items-center justify-center">
             <Image
               src="/wageflow-logo.png"
@@ -35,7 +33,7 @@ export default function HomePage() {
             compliance, and UK tax features.
           </p>
           <div className="mt-6 flex justify-center md:mt-8">
-            
+            <a
               href="/dashboard"
               className="rounded-full bg-[#1f5fff] px-6 py-3 text-sm font-semibold text-white shadow hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2"
             >
