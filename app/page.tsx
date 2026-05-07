@@ -1,5 +1,14 @@
 // app/page.tsx
+import type { Metadata } from "next";
 import Image from "next/image";
+
+export const metadata: Metadata = {
+  title: "WageFlow | UK Payroll Software by The Business Consortium Ltd",
+  description: "WageFlow is a professional UK payroll management system with employee management, auto-enrollment compliance, and full UK tax features.",
+  alternates: {
+    canonical: "https://www.thebusinessconsortiumltd.co.uk/",
+  },
+};
 
 export default function HomePage() {
   return (
@@ -18,18 +27,15 @@ export default function HomePage() {
               className="h-28 w-auto md:h-40 lg:h-48"
             />
           </div>
-
           <h1 className="mt-6 text-center text-2xl font-extrabold tracking-tight text-neutral-900 md:mt-8 md:text-4xl">
             UK Payroll Management Demo
           </h1>
-
           <p className="mx-auto mt-3 max-w-2xl text-center text-sm text-neutral-600 md:mt-4 md:text-base">
             Professional payroll system with employee management, auto-enrollment
             compliance, and UK tax features.
           </p>
-
           <div className="mt-6 flex justify-center md:mt-8">
-            <a
+            
               href="/dashboard"
               className="rounded-full bg-[#1f5fff] px-6 py-3 text-sm font-semibold text-white shadow hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2"
             >
