@@ -1,18 +1,16 @@
-// C:\Users\adamm\Projects\wageflow01\next.config.js
+// next.config.js
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: false,
   trailingSlash: false,
   async redirects() {
     return [
-      // Force canonical www domain
       {
         source: "/:path*",
         has: [{ type: "host", value: "thebusinessconsortiumltd.co.uk" }],
         destination: "https://www.thebusinessconsortiumltd.co.uk/:path*",
         permanent: true,
       },
-      // Hide company preview route if someone stumbles on it
       {
         source: "/preview/tbc",
         destination: "/",
@@ -23,8 +21,6 @@ const nextConfig = {
         destination: "/",
         permanent: true,
       },
-      // Hide WageFlow marketing preview route
-      // Company hosts -> send to the real marketing page
       {
         source: "/preview/wageflow-v2",
         has: [{ type: "host", value: "www.thebusinessconsortiumltd.co.uk" }],
@@ -37,7 +33,6 @@ const nextConfig = {
         destination: "/wageflow",
         permanent: true,
       },
-      // WageFlow subdomain -> send to the demo app root
       {
         source: "/preview/wageflow-v2",
         has: [{ type: "host", value: "wageflow.thebusinessconsortiumltd.co.uk" }],
