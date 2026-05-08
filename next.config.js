@@ -3,9 +3,15 @@
 const nextConfig = {
   reactStrictMode: false,
   trailingSlash: false,
-
   async redirects() {
     return [
+      // Force canonical www domain
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "thebusinessconsortiumltd.co.uk" }],
+        destination: "https://www.thebusinessconsortiumltd.co.uk/:path*",
+        permanent: true,
+      },
       // Hide company preview route if someone stumbles on it
       {
         source: "/preview/tbc",
@@ -17,7 +23,6 @@ const nextConfig = {
         destination: "/",
         permanent: true,
       },
-
       // Hide WageFlow marketing preview route
       // Company hosts -> send to the real marketing page
       {
@@ -32,7 +37,6 @@ const nextConfig = {
         destination: "/wageflow",
         permanent: true,
       },
-
       // WageFlow subdomain -> send to the demo app root
       {
         source: "/preview/wageflow-v2",
@@ -48,10 +52,8 @@ const nextConfig = {
       },
     ];
   },
-
   async rewrites() {
     return [];
   },
 };
-
 module.exports = nextConfig;
