@@ -24,7 +24,7 @@ export default function PrivacyPage() {
             </p>
             <p className="text-gray-700">
               This Privacy Policy explains what personal data we collect, why we collect it, how we use it, and your rights.
-              Organisations must provide this type of information under UK GDPR transparency requirements. 
+              Organisations must provide this type of information under UK GDPR transparency requirements.
             </p>
           </section>
 
@@ -35,7 +35,7 @@ export default function PrivacyPage() {
             </p>
             <p className="text-gray-700">
               WageFlow payroll data. For payroll and employee data uploaded into WageFlow by a business customer, the customer typically acts as the data controller,
-              and we act as a data processor processing that data on the customer’s instructions to provide the service.
+              and we act as a data processor processing that data on the customer's instructions to provide the service.
             </p>
           </section>
 
@@ -80,8 +80,8 @@ export default function PrivacyPage() {
           <section className="space-y-3">
             <h2 className="text-2xl font-bold">4. Why we use personal data and lawful bases</h2>
             <p className="text-gray-700">
-              UK GDPR requires us to explain purposes and lawful bases. The exact lawful basis depends on the context. 
-              Typical lawful bases include contract, legal obligation, and legitimate interests. 
+              UK GDPR requires us to explain purposes and lawful bases. The exact lawful basis depends on the context.
+              Typical lawful bases include contract, legal obligation, and legitimate interests.
             </p>
 
             <div className="grid gap-4">
@@ -97,7 +97,7 @@ export default function PrivacyPage() {
                 <p className="font-semibold">Providing the service</p>
                 <p className="text-gray-700 mt-1">
                   Purpose: provide payroll software functionality and customer support.
-                  Lawful basis: contract where you are the customer. For payroll data processed for customers, we act as processor on the customer’s instructions.
+                  Lawful basis: contract where you are the customer. For payroll data processed for customers, we act as processor on the customer's instructions.
                 </p>
               </div>
 
@@ -143,7 +143,7 @@ export default function PrivacyPage() {
             <h2 className="text-2xl font-bold">7. Data retention</h2>
             <p className="text-gray-700">
               We keep personal data only as long as needed for the purposes set out in this policy. Payroll records often need to be retained for statutory and operational reasons.
-              Where we act as processor, retention may be controlled by the customer’s instructions, subject to legal requirements.
+              Where we act as processor, retention may be controlled by the customer's instructions, subject to legal requirements.
             </p>
             <p className="text-gray-700">
               Where appropriate, we may retain information longer for security, audit, and dispute resolution.
@@ -157,7 +157,7 @@ export default function PrivacyPage() {
               If we process payroll data as processor, we will assist the customer (controller) with requests where required.
             </p>
             <p className="text-gray-700">
-              You also have the right to complain to the Information Commissioner’s Office (ICO). ICO expects privacy notices to explain rights and how to complain.
+              You also have the right to complain to the Information Commissioner's Office (ICO). ICO expects privacy notices to explain rights and how to complain.
             </p>
           </section>
 
@@ -186,7 +186,7 @@ export default function PrivacyPage() {
 
         <div className="mt-12 pt-8 border-t border-gray-200">
           <a href="/" className="text-blue-600 hover:text-blue-700 font-semibold">
-            ← Back to Home
+            Back to Home
           </a>
         </div>
       </div>
