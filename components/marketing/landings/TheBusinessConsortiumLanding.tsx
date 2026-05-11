@@ -108,7 +108,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
     "Pay frequencies (weekly/fortnightly/4-weekly/monthly):";
 
   const HERO_SCREENSHOT_SRC = "/wageflow-screenshot.png";
-  const FOUNDER_IMAGE_SRC = "/MeWageFlowWebsitePicDeepNavyBlueMAIN.png";
+  const FOUNDER_IMAGE_SRC = "/AdamManleyFounderWageFlow2026.png";
   const HMRC_GATE_LOGO_SRC = "/hmrc-gate.png";
 
   useEffect(() => {
@@ -298,7 +298,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
       },
       {
         q: "How do extra employees work?",
-        a: "Each plan includes a set number of employees. Employees above that are charged at £1 per employee per month.",
+        a: "Each plan includes a set number of employees. Employees above that are charged at Â£1 per employee per month.",
       },
       {
         q: "Can I choose annual or monthly billing?",
@@ -1334,7 +1334,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
 
           <div className="border-t border-gray-800 pt-8">
             <p className="text-sm text-gray-400 text-center">
-              © {new Date().getFullYear()} The Business Consortium Ltd. All rights reserved.
+              Â© {new Date().getFullYear()} The Business Consortium Ltd. All rights reserved.
             </p>
           </div>
         </div>
