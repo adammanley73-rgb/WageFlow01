@@ -1,47 +1,155 @@
-// app/page.tsx
 import type { Metadata } from "next";
-import Image from "next/image";
+import TheBusinessConsortiumLanding from "@/components/marketing/landings/TheBusinessConsortiumLanding";
+
+const siteUrl = "https://www.thebusinessconsortiumltd.co.uk";
+const title = "UK Payroll Software | WageFlow by The Business Consortium Ltd";
+const description =
+  "WageFlow is UK payroll software for SMEs, payroll professionals, HR teams and payroll bureaus that need exception-led payroll review, PAYE and NI visibility, RTI workflow support and clearer approval before payday.";
 
 export const metadata: Metadata = {
-  title: "WageFlow | UK Payroll Software by The Business Consortium Ltd",
-  description: "WageFlow is a professional UK payroll management system with employee management, auto-enrollment compliance, and full UK tax features.",
-  alternates: {
-    canonical: "https://www.thebusinessconsortiumltd.co.uk/",
+  title: {
+    absolute: title,
   },
+  description,
+  alternates: {
+    canonical: siteUrl,
+  },
+  openGraph: {
+    title,
+    description,
+    url: siteUrl,
+    siteName: "WageFlow by The Business Consortium Ltd",
+    locale: "en_GB",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+  },
+};
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": siteUrl + "/#organization",
+      name: "The Business Consortium Ltd",
+      legalName: "The Business Consortium Ltd",
+      url: siteUrl,
+      email: "enquiries@thebusinessconsortiumltd.co.uk",
+      logo: siteUrl + "/WageFlowLogo.png",
+      address: {
+        "@type": "PostalAddress",
+        streetAddress: "86-90 Paul Street",
+        addressLocality: "London",
+        postalCode: "EC2A 4NE",
+        addressCountry: "GB",
+      },
+      founder: {
+        "@id": siteUrl + "/#founder",
+      },
+      brand: {
+        "@id": siteUrl + "/#wageflow",
+      },
+    },
+    {
+      "@type": "Person",
+      "@id": siteUrl + "/#founder",
+      name: "Adam Manley",
+      jobTitle: "Founder",
+      worksFor: {
+        "@id": siteUrl + "/#organization",
+      },
+      description:
+        "Founder of The Business Consortium Ltd and WageFlow, with 27 years of Payroll, HR and Pensions experience.",
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": siteUrl + "/#wageflow",
+      name: "WageFlow",
+      applicationCategory: "BusinessApplication",
+      applicationSubCategory: "Payroll software",
+      operatingSystem: "Web",
+      url: siteUrl,
+      image: siteUrl + "/wageflow-screenshot.png",
+      description:
+        "WageFlow is UK payroll software that helps SMEs, payroll professionals, HR teams and payroll bureaus review payroll exceptions, PAYE, NI, RTI workflow and approval before payday.",
+      provider: {
+        "@id": siteUrl + "/#organization",
+      },
+      audience: [
+        {
+          "@type": "Audience",
+          audienceType: "UK SMEs",
+        },
+        {
+          "@type": "Audience",
+          audienceType: "Payroll professionals",
+        },
+        {
+          "@type": "Audience",
+          audienceType: "HR professionals",
+        },
+        {
+          "@type": "Audience",
+          audienceType: "Payroll bureaus",
+        },
+        {
+          "@type": "Audience",
+          audienceType: "Accountants and bookkeepers",
+        }
+      ],
+      featureList: [
+        "UK payroll software",
+        "PAYE and National Insurance payroll workflow",
+        "RTI payroll workflow support",
+        "Payroll exception review",
+        "Payroll audit trail",
+        "Starter and leaver tracking",
+        "Absence and holiday tracking",
+        "Payroll reports and exports"
+      ],
+      offers: {
+        "@id": siteUrl + "/#wageflow-offers",
+      },
+    },
+    {
+      "@type": "AggregateOffer",
+      "@id": siteUrl + "/#wageflow-offers",
+      url: siteUrl,
+      priceCurrency: "GBP",
+      lowPrice: "150",
+      highPrice: "300",
+      offerCount: "2",
+      availability: "https://schema.org/InStock",
+      seller: {
+        "@id": siteUrl + "/#organization",
+      },
+    },
+    {
+      "@type": "WebSite",
+      "@id": siteUrl + "/#website",
+      url: siteUrl,
+      name: "WageFlow by The Business Consortium Ltd",
+      publisher: {
+        "@id": siteUrl + "/#organization",
+      },
+    }
+  ],
 };
 
 export default function HomePage() {
   return (
-    <main className="h-dvh w-full overflow-x-hidden overflow-y-hidden bg-gradient-to-b from-[#0fb96b] to-[#1f5fff]">
-      <section className="h-full w-full grid place-items-center px-4">
-        <div className="w-full max-w-3xl rounded-2xl bg-white p-6 md:p-8 shadow-xl">
-          <div className="flex items-center justify-center">
-            <Image
-              src="/wageflow-logo.png"
-              alt="WageFlow"
-              priority
-              width={960}
-              height={320}
-              className="h-28 w-auto md:h-40 lg:h-48"
-            />
-          </div>
-          <h1 className="mt-6 text-center text-2xl font-extrabold tracking-tight text-neutral-900 md:mt-8 md:text-4xl">
-            UK Payroll Management Demo
-          </h1>
-          <p className="mx-auto mt-3 max-w-2xl text-center text-sm text-neutral-600 md:mt-4 md:text-base">
-            Professional payroll system with employee management, auto-enrollment
-            compliance, and UK tax features.
-          </p>
-          <div className="mt-6 flex justify-center md:mt-8">
-            <a
-              href="/dashboard"
-              className="rounded-full bg-[#1f5fff] px-6 py-3 text-sm font-semibold text-white shadow hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2"
-            >
-              View Live Demo System
-            </a>
-          </div>
-        </div>
-      </section>
-    </main>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+        }}
+      />
+      <TheBusinessConsortiumLanding />
+    </>
   );
 }
