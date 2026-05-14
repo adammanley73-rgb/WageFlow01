@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import PageTemplate from "@/components/layout/PageTemplate";
+import { formatMoney } from "@/lib/formatMoney";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -111,15 +112,6 @@ function fmtDate(d: any) {
     month: "long",
     year: "numeric",
   }).format(dt);
-}
-
-function fmtMoney(n: any) {
-  const num = Number(n);
-  if (!Number.isFinite(num)) return "-";
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-  }).format(num);
 }
 
 function pillClass(base: string) {
@@ -663,9 +655,9 @@ export default async function EmployeePayrollHistoryPage({
                       <td className="px-4 py-3">
                         <span className={statusPill(row.status)}>{safeStr(row.status || "draft")}</span>
                       </td>
-                      <td className="px-4 py-3 text-right text-neutral-900">{fmtMoney(row.gross)}</td>
-                      <td className="px-4 py-3 text-right text-neutral-900">{fmtMoney(row.deductions)}</td>
-                      <td className="px-4 py-3 text-right text-neutral-900">{fmtMoney(row.net)}</td>
+                      <td className="px-4 py-3 text-right text-neutral-900">{formatMoney(row.gross)}</td>
+                      <td className="px-4 py-3 text-right text-neutral-900">{formatMoney(row.deductions)}</td>
+                      <td className="px-4 py-3 text-right text-neutral-900">{formatMoney(row.net)}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex gap-2 justify-end">
                           <Link

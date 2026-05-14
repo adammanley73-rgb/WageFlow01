@@ -7,6 +7,7 @@ import type { CSSProperties } from "react";
 import { useParams } from "next/navigation";
 
 import { formatUkDate } from "@/lib/formatUkDate";
+import { formatMoney } from "@/lib/formatMoney";
 import { PageShell, Header, Button, LinkButton } from "@/components/ui/wf-ui";
 
 type NormalisedPayElement = {
@@ -324,11 +325,6 @@ function toNumberSafe(v: unknown): number {
 
 function round2(n: number): number {
   return Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
-}
-
-function gbp(n: unknown): string {
-  const safe = toNumberSafe(n);
-  return safe.toLocaleString("en-GB", { style: "currency", currency: "GBP" });
 }
 
 function pickFirst(...vals: unknown[]) {
@@ -1051,7 +1047,7 @@ export default function PayslipPage() {
                           {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
                         </div>
                         <div className="wf-num" style={amountStyle(item.amount)}>
-                          {gbp(item.amount)}
+                          {formatMoney(item.amount)}
                         </div>
                       </div>
                     ))
@@ -1064,7 +1060,7 @@ export default function PayslipPage() {
                         </div>
                       </div>
                       <div className="wf-num" style={{ fontWeight: 900 }}>
-                        {gbp(card.gross)}
+                        {formatMoney(card.gross)}
                       </div>
                     </div>
                   )}
@@ -1072,7 +1068,7 @@ export default function PayslipPage() {
                   <div style={S.breakdownRow}>
                     <div style={{ fontWeight: 900 }}>Gross pay subtotal</div>
                     <div className="wf-num" style={{ fontWeight: 900 }}>
-                      {gbp(card.gross)}
+                      {formatMoney(card.gross)}
                     </div>
                   </div>
 
@@ -1086,7 +1082,7 @@ export default function PayslipPage() {
                           {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
                         </div>
                         <div className="wf-num" style={{ fontWeight: 900 }}>
-                          {gbp(item.amount)}
+                          {formatMoney(item.amount)}
                         </div>
                       </div>
                     ))
@@ -1094,7 +1090,7 @@ export default function PayslipPage() {
                     <div style={S.breakdownRow}>
                       <div>No employee deductions recorded for this contract row</div>
                       <div className="wf-num" style={{ fontWeight: 900 }}>
-                        {gbp(0)}
+                        {formatMoney(0)}
                       </div>
                     </div>
                   )}
@@ -1111,7 +1107,7 @@ export default function PayslipPage() {
                             </div>
                           </div>
                           <div className="wf-num" style={{ fontWeight: 900 }}>
-                            {gbp(item.amount)}
+                            {formatMoney(item.amount)}
                           </div>
                         </div>
                       ))}
@@ -1121,7 +1117,7 @@ export default function PayslipPage() {
                   <div style={S.breakdownRow}>
                     <div style={{ fontWeight: 900 }}>Contract subtotal net pay</div>
                     <div className="wf-num" style={{ fontWeight: 900 }}>
-                      {gbp(card.net)}
+                      {formatMoney(card.net)}
                     </div>
                   </div>
                 </div>
@@ -1138,21 +1134,21 @@ export default function PayslipPage() {
           <div style={S.block}>
             <div style={S.label}>Gross pay</div>
             <div className="wf-num" style={S.num}>
-              {gbp(gross)}
+              {formatMoney(gross)}
             </div>
           </div>
 
           <div style={S.block}>
             <div style={S.label}>Total deductions</div>
             <div className="wf-num" style={S.num}>
-              {gbp(totalDeductions)}
+              {formatMoney(totalDeductions)}
             </div>
           </div>
 
           <div style={S.block}>
             <div style={S.label}>Net pay</div>
             <div className="wf-num" style={S.num}>
-              {gbp(net)}
+              {formatMoney(net)}
             </div>
           </div>
         </div>
@@ -1172,7 +1168,7 @@ export default function PayslipPage() {
                   {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
                 </div>
                 <div className="wf-num" style={amountStyle(item.amount)}>
-                  {gbp(item.amount)}
+                  {formatMoney(item.amount)}
                 </div>
               </div>
             ))}
@@ -1180,7 +1176,7 @@ export default function PayslipPage() {
             <div style={S.breakdownRow}>
               <div style={{ fontWeight: 900 }}>Gross pay</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {gbp(gross)}
+                {formatMoney(gross)}
               </div>
             </div>
 
@@ -1193,7 +1189,7 @@ export default function PayslipPage() {
                   {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
                 </div>
                 <div className="wf-num" style={{ fontWeight: 900 }}>
-                  {gbp(item.amount)}
+                  {formatMoney(item.amount)}
                 </div>
               </div>
             ))}
@@ -1201,14 +1197,14 @@ export default function PayslipPage() {
             <div style={S.breakdownRow}>
               <div style={{ fontWeight: 900 }}>Total deductions</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {gbp(totalDeductions)}
+                {formatMoney(totalDeductions)}
               </div>
             </div>
 
             <div style={S.breakdownRow}>
               <div style={{ fontWeight: 900 }}>Net pay</div>
               <div className="wf-num" style={{ fontWeight: 900 }}>
-                {gbp(net)}
+                {formatMoney(net)}
               </div>
             </div>
 
@@ -1222,7 +1218,7 @@ export default function PayslipPage() {
                       {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
                     </div>
                     <div className="wf-num" style={{ fontWeight: 900 }}>
-                      {gbp(item.amount)}
+                      {formatMoney(item.amount)}
                     </div>
                   </div>
                 ))}

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { unstable_noStore as noStore } from "next/cache";
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
+import { formatMoney } from "@/lib/formatMoney";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -46,15 +47,6 @@ function fmtDate(d: any) {
   }).format(dt);
 }
 
-function fmtMoney(n: any) {
-  const num = Number(n);
-  if (!Number.isFinite(num)) return MISSING;
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-  }).format(num);
-}
-
 function fmtPercent(n: any) {
   const num = Number(n);
   if (!Number.isFinite(num)) return MISSING;
@@ -89,7 +81,7 @@ function aeStatus(dobISO: any, annualSalary: any) {
   if (age >= 22 && age < 75 && sal >= 10000) {
     return {
       label: "Eligible for auto-enrolment",
-      sub: `Age ${age}, salary ${fmtMoney(sal)}`,
+      sub: `Age ${age}, salary ${formatMoney(sal)}`,
       className: "border-emerald-300 bg-emerald-100 text-emerald-800",
     };
   }
@@ -97,14 +89,14 @@ function aeStatus(dobISO: any, annualSalary: any) {
   if (age >= 16 && age < 75 && sal >= 6240) {
     return {
       label: "Entitled to opt-in",
-      sub: `Age ${age}, salary ${fmtMoney(sal)}`,
+      sub: `Age ${age}, salary ${formatMoney(sal)}`,
       className: "border-amber-300 bg-amber-100 text-amber-900",
     };
   }
 
   return {
     label: "Not eligible",
-    sub: `Age ${age}, salary ${fmtMoney(sal)}`,
+    sub: `Age ${age}, salary ${formatMoney(sal)}`,
     className: "border-neutral-300 bg-neutral-100 text-neutral-800",
   };
 }
@@ -769,8 +761,8 @@ export default async function EmployeeDetailsPage({
                         {cardBox("Leave date", fmtDate(contract.leave_date))}
                         {cardBox("Pay frequency", formatPayFrequency(contract.pay_frequency))}
                         {cardBox("Pay basis", formatPayBasis(contract.pay_basis))}
-                        {cardBox("Annual salary", fmtMoney(contract.annual_salary))}
-                        {cardBox("Hourly rate", fmtMoney(contract.hourly_rate))}
+                        {cardBox("Annual salary", formatMoney(contract.annual_salary))}
+                        {cardBox("Hourly rate", formatMoney(contract.hourly_rate))}
                         {cardBox(
                           "Hours per week",
                           contract.hours_per_week !== null && contract.hours_per_week !== undefined
@@ -871,8 +863,8 @@ export default async function EmployeeDetailsPage({
 
           <div className="p-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {cardBox("Annual salary", fmtMoney(employee.annual_salary))}
-              {cardBox("Hourly rate", fmtMoney(employee.hourly_rate))}
+              {cardBox("Annual salary", formatMoney(employee.annual_salary))}
+              {cardBox("Hourly rate", formatMoney(employee.hourly_rate))}
               {cardBox(
                 "Hours per week",
                 employee.hours_per_week !== null &&

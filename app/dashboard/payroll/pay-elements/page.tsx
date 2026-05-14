@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { formatMoney } from "@/lib/formatMoney";
 import { DEMO_EMPLOYEES, type Employee } from "../../../lib/data/employees";
 
 interface PayElement {
@@ -108,15 +109,6 @@ export default function PayElementsPage() {
     setPayElements(demoPayElements);
     setEmployees(DEMO_EMPLOYEES);
   }, []);
-
-  const formatCurrencyUK = (amount: number): string =>
-    new Intl.NumberFormat("en-GB", {
-      style: "currency",
-      currency: "GBP",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-
   const getTypeColor = (type: string) => {
     switch (type) {
       case "earnings":
@@ -394,7 +386,7 @@ export default function PayElementsPage() {
                 {employees.map((emp) => (
                   <option key={emp.id} value={emp.id}>
                     {emp.firstName} {emp.lastName} -{" "}
-                    {formatCurrencyUK(emp.annualSalary)} annually
+                    {formatMoney(emp.annualSalary)} annually
                   </option>
                 ))}
               </select>
@@ -616,7 +608,7 @@ export default function PayElementsPage() {
                         color: "#059669",
                       }}
                     >
-                      {formatCurrencyUK(calculation.grossAmount)}
+                      {formatMoney(calculation.grossAmount)}
                     </span>
                   </div>
                 </div>
@@ -659,7 +651,7 @@ export default function PayElementsPage() {
                       color: "#dc2626",
                     }}
                   >
-                    {formatCurrencyUK(calculation.taxAmount)}
+                    {formatMoney(calculation.taxAmount)}
                   </span>
                 </div>
                 <div
@@ -675,7 +667,7 @@ export default function PayElementsPage() {
                       color: "#dc2626",
                     }}
                   >
-                    {formatCurrencyUK(calculation.niAmount)}
+                    {formatMoney(calculation.niAmount)}
                   </span>
                 </div>
                 <div
@@ -707,7 +699,7 @@ export default function PayElementsPage() {
                         color: "#059669",
                       }}
                     >
-                      {formatCurrencyUK(calculation.netAmount)}
+                      {formatMoney(calculation.netAmount)}
                     </span>
                   </div>
                 </div>
@@ -1189,7 +1181,7 @@ export default function PayElementsPage() {
                         }}
                       >
                         {element.value > 0
-                          ? formatCurrencyUK(element.value)
+                          ? formatMoney(element.value)
                           : "Variable"}
                       </span>
                     </td>

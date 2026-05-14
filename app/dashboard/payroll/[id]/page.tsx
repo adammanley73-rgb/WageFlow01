@@ -9,6 +9,7 @@ import { Inter } from "next/font/google";
 
 import PageTemplate, { StatTile } from "@/components/ui/PageTemplate";
 import { formatUkDate } from "@/lib/formatUkDate";
+import { formatMoney, formatMoneyInput } from "@/lib/formatMoney";
 import PayItemsModal from "./PayItemsModal";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
@@ -126,18 +127,9 @@ function StepButton(props: StepButtonProps) {
   );
 }
 
-function gbp(n: number) {
-  const safe = Number.isFinite(n) ? n : 0;
-  return safe.toLocaleString("en-GB", { style: "currency", currency: "GBP" });
-}
-
 function toNumberSafe(v: string | number): number {
   const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
-}
-
-function formatMoneyInput(v: string | number): string {
-  return toNumberSafe(v).toFixed(2);
 }
 
 function statusLabel(s: string) {
@@ -1152,7 +1144,7 @@ export default function PayrollRunDetailPage() {
                 const chip = severityChip("block");
                 const codes = Array.isArray(g.codes) ? g.codes : [];
                 const gross = toNumberSafe(g.gross);
-                return <div key={`blk-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between gap-2 flex-wrap"><div className="text-sm font-extrabold text-slate-900">{g.name}</div><span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>{chip.label}</span></div><div className="mt-2 text-sm text-slate-700">Gross: <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>{gbp(gross)}</span></div><div className="mt-1 text-xs font-semibold text-slate-700">{codes.length ? `Codes: ${codes.join(", ")}` : "Codes: BLOCK"}</div><div className="mt-3 flex flex-wrap items-center gap-2">{g.employeeId ? <Link href={`/dashboard/employees/${g.employeeId}/edit?focus=tax_ni`} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_GREEN }}>Fix on employee file</Link> : <span className="text-xs font-semibold text-slate-600">Missing employee_id in exception payload.</span>}</div></div>;
+                return <div key={`blk-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between gap-2 flex-wrap"><div className="text-sm font-extrabold text-slate-900">{g.name}</div><span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>{chip.label}</span></div><div className="mt-2 text-sm text-slate-700">Gross: <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>{formatMoney(gross)}</span></div><div className="mt-1 text-xs font-semibold text-slate-700">{codes.length ? `Codes: ${codes.join(", ")}` : "Codes: BLOCK"}</div><div className="mt-3 flex flex-wrap items-center gap-2">{g.employeeId ? <Link href={`/dashboard/employees/${g.employeeId}/edit?focus=tax_ni`} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_GREEN }}>Fix on employee file</Link> : <span className="text-xs font-semibold text-slate-600">Missing employee_id in exception payload.</span>}</div></div>;
               })}</div>}
             </div>
             <div className="flex flex-col gap-3">
@@ -1161,7 +1153,7 @@ export default function PayrollRunDetailPage() {
                 const chip = severityChip("warn");
                 const codes = Array.isArray(g.codes) ? g.codes : [];
                 const gross = toNumberSafe(g.gross);
-                return <div key={`wrn-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between gap-2 flex-wrap"><div className="text-sm font-extrabold text-slate-900">{g.name}</div><span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>{chip.label}</span></div><div className="mt-2 text-sm text-slate-700">Gross: <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>{gbp(gross)}</span></div><div className="mt-1 text-xs font-semibold text-slate-700">{codes.length ? `Codes: ${codes.join(", ")}` : "Codes: WARN"}</div><div className="mt-3 flex flex-wrap items-center gap-2">{g.employeeId ? <Link href={`/dashboard/employees/${g.employeeId}/edit?focus=tax_ni`} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE }}>Open employee file</Link> : null}</div></div>;
+                return <div key={`wrn-${idx}`} className="rounded-2xl border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between gap-2 flex-wrap"><div className="text-sm font-extrabold text-slate-900">{g.name}</div><span className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold" style={chip.style}>{chip.label}</span></div><div className="mt-2 text-sm text-slate-700">Gross: <span className={`${inter.className} font-extrabold`} style={{ color: WF_BLUE }}>{formatMoney(gross)}</span></div><div className="mt-1 text-xs font-semibold text-slate-700">{codes.length ? `Codes: ${codes.join(", ")}` : "Codes: WARN"}</div><div className="mt-3 flex flex-wrap items-center gap-2">{g.employeeId ? <Link href={`/dashboard/employees/${g.employeeId}/edit?focus=tax_ni`} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE }}>Open employee file</Link> : null}</div></div>;
               })}</div>}
             </div>
             {!apiSeededKnown ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">seededMode was not returned by the API. Approval will stay disabled. Run calculation or reload.</div> : null}
@@ -1170,9 +1162,9 @@ export default function PayrollRunDetailPage() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile title="Employees" value={loading ? "..." : String(rows.length)} />
-          <StatTile title="Total Gross" value={gbp(displayTotals.gross)} />
-          <StatTile title="Total Deductions" value={gbp(displayTotals.deductions)} />
-          <StatTile title="Total Net" value={gbp(displayTotals.net)} />
+          <StatTile title="Total Gross" value={formatMoney(displayTotals.gross)} />
+          <StatTile title="Total Deductions" value={formatMoney(displayTotals.deductions)} />
+          <StatTile title="Total Net" value={formatMoney(displayTotals.net)} />
         </div>
 
         <div ref={employeeTableRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
@@ -1215,9 +1207,9 @@ export default function PayrollRunDetailPage() {
                     <td className="sticky left-0 z-0 bg-white px-3 py-3 text-sm text-slate-900 border-b border-neutral-200"><div className="flex flex-col gap-2"><span className="block truncate">{r.employeeName || MISSING}</span><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold" style={badge} title="Calculation state for this employee in this run">{calcBadgeLabel(r.calcMode)}</span><button type="button" onClick={() => openPayItemsModal(r.employeeId)} disabled={!canOpenPayItems} className="inline-flex h-8 items-center justify-center rounded-xl px-3 text-xs font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE, opacity: !canOpenPayItems ? 0.6 : 1, cursor: !canOpenPayItems ? "not-allowed" : "pointer" }} title={dirty ? "Save or discard row edits before editing pay items." : !canEditRun ? "Pay items can only be edited while the run is Draft or Processing." : "Edit extra pay items for this employee"}>Edit pay items</button></div></div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><span className="block truncate">{r.employeeNumber || MISSING}</span></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[8.5rem]"><input disabled={!canEditRun} className={`${inter.className} h-10 w-full min-w-0 rounded-xl border border-slate-300 px-2 text-right text-[13px] font-extrabold outline-none focus:ring-2 focus:ring-offset-1`} style={{ color: WF_BLUE, opacity: !canEditRun ? 0.6 : 1, cursor: !canEditRun ? "not-allowed" : "text" }} type="text" inputMode="decimal" value={formatMoneyInput(r.gross)} onChange={(e) => onChangeCell(r.id, "gross", e.target.value)} /></div></td>
-                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="PAYE for this employee in this run">{gbp(r.tax)}</div></td>
-                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee NI for this employee in this run">{gbp(r.ni)}</div></td>
-                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee pension deduction for this employee in this run">{gbp(r.eePen)}</div></td>
+                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="PAYE for this employee in this run">{formatMoney(r.tax)}</div></td>
+                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee NI for this employee in this run">{formatMoney(r.ni)}</div></td>
+                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee pension deduction for this employee in this run">{formatMoney(r.eePen)}</div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[8.5rem]"><div className="flex flex-col gap-1"><input disabled={!canEditRun} className={`${inter.className} h-10 w-full min-w-0 rounded-xl border border-slate-300 px-2 text-right text-[13px] font-extrabold outline-none focus:ring-2 focus:ring-offset-1`} style={{ color: WF_BLUE, opacity: !canEditRun ? 0.6 : 1, cursor: !canEditRun ? "not-allowed" : "text" }} type="text" inputMode="decimal" value={formatMoneyInput(r.net)} onChange={(e) => onChangeCell(r.id, "net", e.target.value)} />{rowError ? <div className="text-xs font-semibold text-red-700">{rowError}</div> : null}</div></div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[6.5rem]"><Link href={`/dashboard/payroll/${runId}/payslip/${r.employeeId}`} className="inline-flex h-10 w-full min-w-0 items-center justify-center rounded-xl px-2 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE }} title="Open one combined payslip for this employee across all contracts in the run">Open</Link></div></td>
                   </tr>;

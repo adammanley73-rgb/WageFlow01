@@ -5,6 +5,7 @@ import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
 import { getServerSupabase } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
 import { Inter } from "next/font/google";
+import { formatMoney } from "@/lib/formatMoney";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -66,13 +67,6 @@ async function getActiveCompanyId(): Promise<string | null> {
 function toNumberSafe(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
-}
-
-function formatMoney(value: number) {
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-  }).format(toNumberSafe(value));
 }
 
 function formatDate(value: string | null | undefined) {
