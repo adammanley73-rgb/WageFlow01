@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { formatMoney, formatMoneyInput } from "@/lib/formatMoney";
 
 type EmployeeRowLite = {
   id: string;
@@ -89,7 +90,7 @@ function buildEditableDraft(items: PayItem[]): EditableDraftItem[] {
     .filter((item) => !item.is_basic)
     .map((item) => ({
       code: item.code,
-      amount: item.amount > 0 ? item.amount.toFixed(2) : "",
+      amount: item.amount > 0 ? formatMoneyInput(item.amount) : "",
       description_override: item.description_override ?? "",
     }));
 }
@@ -437,7 +438,7 @@ export default function PayItemsModal(props: Props) {
                               Amount
                             </div>
                             <div className="mt-1 text-sm font-semibold text-slate-900">
-                              £{item.amount.toFixed(2)}
+                              {formatMoney(item.amount)}
                             </div>
                           </div>
 

@@ -3,6 +3,7 @@
 
 import type { CSSProperties } from "react";
 import { useState } from "react";
+import { formatMoney } from "@/lib/formatMoney";
 
 type WorkflowStatus = "draft" | "processing" | "approved" | "rti_submitted" | "completed" | "cancelled";
 
@@ -263,7 +264,7 @@ export function BulkOperations({ payrollRuns, onBulkAction, onRefresh }: BulkOpe
               <div style={styles.runInfo}>
                 <strong>{run.runNumber}</strong> - {run.name}
                 <div style={styles.runMeta}>
-                  Status: {run.workflow_status || run.status} • {run.employeeCount} employees • £{run.netPay.toFixed(2)}
+                  Status: {run.workflow_status || run.status} • {run.employeeCount} employees • {formatMoney(run.netPay)}
                 </div>
               </div>
             </label>

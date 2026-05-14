@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { formatMoney } from "@/lib/formatMoney";
 
 type Employee = {
   id: string;
@@ -549,9 +550,7 @@ export default function BatchPayrollPage() {
           } Batch Payroll Created!\n\n📊 Summary:\n• Pay Frequency: ${
             selectedPayFrequency.charAt(0).toUpperCase() +
             selectedPayFrequency.slice(1)
-          }\n• ${selectedEntries.length} employees processed\n• Total Net Pay: £${payrollRun.totals.netPay.toFixed(
-            2
-          )}`
+          }\n• ${selectedEntries.length} employees processed\n• Total Net Pay: ${formatMoney(payrollRun.totals.netPay)}`
         );
         router.push("/dashboard/payroll");
       } else {
@@ -748,21 +747,11 @@ export default function BatchPayrollPage() {
               </div>
             </div>
             <div style={styles.statCardGreen}>
-              <div style={styles.statBigGreen}>
-                £
-                {selectedTotals.grossPay.toLocaleString("en-GB", {
-                  minimumFractionDigits: 2,
-                })}
-              </div>
+              <div style={styles.statBigGreen}>{formatMoney(selectedTotals.grossPay)}</div>
               <div style={styles.statLabel}>Total Gross Pay</div>
             </div>
             <div style={styles.statCardBlue}>
-              <div style={styles.statBigBlue}>
-                £
-                {selectedTotals.netPay.toLocaleString("en-GB", {
-                  minimumFractionDigits: 2,
-                })}
-              </div>
+              <div style={styles.statBigBlue}>{formatMoney(selectedTotals.netPay)}</div>
               <div style={styles.statLabel}>Total Net Pay</div>
             </div>
           </div>
@@ -843,11 +832,7 @@ export default function BatchPayrollPage() {
                             {entry.employee.firstName} {entry.employee.lastName}
                           </div>
                           <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                            {entry.employee.employeeNumber} • £
-                            {entry.employee.annualSalary?.toLocaleString(
-                              "en-GB"
-                            ) || 0}
-                            /year
+                            {entry.employee.employeeNumber} • {formatMoney(entry.employee.annualSalary)}/year
                           </div>
                         </div>
                       </td>
@@ -857,13 +842,13 @@ export default function BatchPayrollPage() {
                         </span>
                       </td>
                       <td style={styles.tdMoneyRightGreen}>
-                        £{entry.grossPay.toFixed(2)}
+                        {formatMoney(entry.grossPay)}
                       </td>
                       <td style={styles.tdMoneyRightRed}>
-                        -£{entry.totalDeductions.toFixed(2)}
+                        {formatMoney(-entry.totalDeductions)}
                       </td>
                       <td style={styles.tdMoneyRightBlue}>
-                        £{entry.netPay.toFixed(2)}
+                        {formatMoney(entry.netPay)}
                       </td>
                     </tr>
                   ))}
@@ -894,8 +879,7 @@ export default function BatchPayrollPage() {
 
             <p style={styles.processHint}>
               This will create a {selectedPayFrequency} payroll run for{" "}
-              {selectedCount} selected employees with total net pay of £
-              {selectedTotals.netPay.toFixed(2)}
+              {selectedCount} selected employees with total net pay of{" "}{formatMoney(selectedTotals.netPay)}
             </p>
           </div>
         )}

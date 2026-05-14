@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import PageTemplate from "@/components/layout/PageTemplate";
+import { formatMoney } from "@/lib/formatMoney";
 import ActiveCompanyBannerClient from "@/components/ui/ActiveCompanyBannerClient";
 import { createClient } from "@/lib/supabase/client";
 
@@ -121,15 +122,6 @@ function rateRound(n: number) {
 
 function percentageRound(n: number) {
   return roundTo(n, 4);
-}
-
-function fmtMoney(n: any) {
-  const num = Number(n);
-  if (!Number.isFinite(num)) return "—";
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-  }).format(num);
 }
 
 function computeEquivalentHourlyRate(annualSalary: number, hoursPerWeek: number) {
@@ -1251,7 +1243,7 @@ export default function EditContractPage() {
               </div>
 
               <div className="mt-4 text-xs text-neutral-600">
-                Salary reference: {fmtMoney(form.annual_salary || null)}. Hourly reference:{" "}
+                Salary reference: {formatMoney(form.annual_salary || null)}. Hourly reference:{" "}
                 {strOrBlank(form.hourly_rate) ? `£${strOrBlank(form.hourly_rate)}` : "—"}.
               </div>
             </>

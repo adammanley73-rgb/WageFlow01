@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ActionButton from "@/components/ui/ActionButton";
 import { formatUkDate } from "@/lib/formatUkDate";
+import { formatMoney } from "@/lib/formatMoney";
 
 type Frequency = "weekly" | "fortnightly" | "four_weekly" | "monthly";
 type FrequencyFilter = "all" | Frequency;
@@ -82,16 +83,6 @@ function pickFirst(...values: any[]): string | null {
 function formatDate(value: string | null | undefined): string {
   if (!value) return "";
   return formatUkDate(value, "");
-}
-
-function formatCurrency(amount: number | null | undefined): string {
-  if (amount == null) return "";
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
 }
 
 function sortKey(isoLike: string | null | undefined): string {
@@ -428,10 +419,10 @@ export default function PayrollRunsTable() {
                       <div className="capitalize">{String(run.status || "").replace(/_/g, " ")}</div>
                     </td>
 
-                    <td className="px-4 py-3 text-right">{formatCurrency(run.totals?.gross)}</td>
-                    <td className="px-4 py-3 text-right">{formatCurrency(run.totals?.tax)}</td>
-                    <td className="px-4 py-3 text-right">{formatCurrency(run.totals?.ni)}</td>
-                    <td className="px-4 py-3 text-right">{formatCurrency(run.totals?.net)}</td>
+                    <td className="px-4 py-3 text-right">{formatMoney(run.totals?.gross)}</td>
+                    <td className="px-4 py-3 text-right">{formatMoney(run.totals?.tax)}</td>
+                    <td className="px-4 py-3 text-right">{formatMoney(run.totals?.ni)}</td>
+                    <td className="px-4 py-3 text-right">{formatMoney(run.totals?.net)}</td>
 
                     <td className="px-4 py-3 text-right">
                       <ActionButton href={`/dashboard/payroll/${run.id}`} variant="primary">

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { formatMoney } from "@/lib/formatMoney";
 import { DEMO_EMPLOYEES, type Employee } from "../../../lib/data/employees";
 
 interface OvertimeRate {
@@ -62,17 +63,7 @@ export default function OvertimeRatesPage() {
     setEmployees(DEMO_EMPLOYEES);
     setSavedRates(defaultOvertimeRates);
   }, []);
-
-  const formatCurrencyUK = (amount: number): string => {
-    return new Intl.NumberFormat("en-GB", {
-      style: "currency",
-      currency: "GBP",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
-
-  const calculateOvertime = () => {
+const calculateOvertime = () => {
     if (!selectedEmployee || !selectedRate || !hours) return;
 
     const employee = employees.find((e) => e.id === selectedEmployee);
@@ -282,7 +273,7 @@ export default function OvertimeRatesPage() {
                 {employees.map((emp) => (
                   <option key={emp.id} value={emp.id}>
                     {emp.firstName} {emp.lastName} -{" "}
-                    {formatCurrencyUK(emp.annualSalary / (52 * 37.5))}/hour
+                    {formatMoney(emp.annualSalary / (52 * 37.5))}/hour
                   </option>
                 ))}
               </select>
@@ -469,13 +460,13 @@ export default function OvertimeRatesPage() {
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "#6b7280" }}>Base Hourly Rate:</span>
                     <span style={{ fontWeight: 500, color: "#1f2937" }}>
-                      {formatCurrencyUK(calculation.baseHourlyRate)}/hour
+                      {formatMoney(calculation.baseHourlyRate)}/hour
                     </span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "#6b7280" }}>Overtime Rate:</span>
                     <span style={{ fontWeight: 600, color: "#10b981" }}>
-                      {formatCurrencyUK(calculation.overtimeRate)}/hour
+                      {formatMoney(calculation.overtimeRate)}/hour
                     </span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -514,13 +505,13 @@ export default function OvertimeRatesPage() {
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "#6b7280" }}>Gross Overtime Pay:</span>
                     <span style={{ fontWeight: 600, color: "#10b981" }}>
-                      {formatCurrencyUK(calculation.grossOvertimePay)}
+                      {formatMoney(calculation.grossOvertimePay)}
                     </span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "#6b7280" }}>Tax Deduction (20%):</span>
                     <span style={{ fontWeight: 500, color: "#dc2626" }}>
-                      {formatCurrencyUK(calculation.taxDeduction)}
+                      {formatMoney(calculation.taxDeduction)}
                     </span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -528,7 +519,7 @@ export default function OvertimeRatesPage() {
                       National Insurance (12%):
                     </span>
                     <span style={{ fontWeight: 500, color: "#dc2626" }}>
-                      {formatCurrencyUK(calculation.niDeduction)}
+                      {formatMoney(calculation.niDeduction)}
                     </span>
                   </div>
                   <div
@@ -549,7 +540,7 @@ export default function OvertimeRatesPage() {
                           color: "#10b981",
                         }}
                       >
-                        {formatCurrencyUK(calculation.netOvertimePay)}
+                        {formatMoney(calculation.netOvertimePay)}
                       </span>
                     </div>
                   </div>
@@ -732,7 +723,7 @@ export default function OvertimeRatesPage() {
                           color: "#10b981",
                         }}
                       >
-                        {formatCurrencyUK(15 * rate.multiplier)}/hour
+                        {formatMoney(15 * rate.multiplier)}/hour
                       </span>
                     </td>
                   </tr>
