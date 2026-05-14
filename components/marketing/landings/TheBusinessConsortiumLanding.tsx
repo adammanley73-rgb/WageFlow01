@@ -159,7 +159,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
         icon: <TrendingUp className="w-6 h-6" aria-hidden="true" />,
         title: "See changes before approval",
         description:
-          "Review movements and totals before payday, not after the damage is done. Humans do love cleaning up preventable mess.",
+          "Review movements and totals before payday, so approval is based on the entries that actually need attention.",
       },
     ],
     []
@@ -298,7 +298,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
       },
       {
         q: "How do extra employees work?",
-        a: "Each plan includes a set number of employees. Employees above that are charged at Â£1 per employee per month.",
+        a: "Each plan includes a set number of employees. Employees above that are charged at Ã‚Â£1 per employee per month.",
       },
       {
         q: "Can I choose annual or monthly billing?",
@@ -306,11 +306,11 @@ export default function TheBusinessConsortiumLanding(_: Props) {
       },
       {
         q: "Can I import employee data?",
-        a: "Yes. WageFlow supports CSV import for employee data so you do not have to key everything in by hand like it is 2004.",
+        a: "Yes. WageFlow supports CSV import for employee data so you do not have to key everything in from scratch.",
       },
       {
         q: "What happens if payroll needs correction later?",
-        a: "You review and approve within WageFlow first. Corrections after approval are handled through the payroll workflow rather than pretending mistakes never happened.",
+        a: "You review and approve within WageFlow first. Corrections after approval are handled through the payroll workflow while keeping the audit trail clear.",
       },
     ],
     []
@@ -540,7 +540,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
                 <p className="text-lg md:text-xl text-gray-700 mt-5 max-w-2xl">
                   WageFlow processes the run, checks the data, and flags what looks wrong.
                   You review the exceptions, then approve with confidence. Less manual work.
-                  Less preventable chaos. Which, frankly, is overdue.
+                  Fewer preventable issues before payday. That is how payroll approval should work.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-4 mt-8">
@@ -737,7 +737,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
                 <p className="font-semibold text-gray-900">Built for cleaner payroll runs</p>
                 <p className="text-gray-700 mt-2">
                   The point is simple. Reduce mistakes. Reduce time. Keep review visible.
-                  Keep approval deliberate. Resist the very human urge to trust a mess because it looks familiar.
+                  Keep approval deliberate. Avoid approving a run just because it looks familiar.
                 </p>
 
                 <div className="mt-5 space-y-3">
@@ -813,7 +813,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
                 </div>
                 <h3 className="font-bold text-gray-900 mb-2">Step 2: Add or import employees</h3>
                 <p className="text-gray-700 mb-3">
-                  Upload by CSV or add people manually, depending on how much suffering you are in the mood for.
+                  Upload by CSV or add employees manually, depending on how you prefer to set up the run.
                 </p>
                 <p className="text-sm text-gray-600">
                   CSV support helps you move faster and avoid rekeying.
@@ -1133,7 +1133,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
               <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 text-left">
                 <p className="font-semibold text-gray-900">Request a WageFlow demo</p>
                 <p className="text-gray-700 mt-2">
-                  No clutter. No fake funnel theatre. Just contact and demo.
+                  No pressure. Request a demo and we will show you how WageFlow handles payroll review.
                 </p>
 
                 <button
@@ -1295,6 +1295,11 @@ export default function TheBusinessConsortiumLanding(_: Props) {
               <h4 className="text-white font-semibold mb-4">Company</h4>
               <ul className="space-y-2 text-sm">
                 <li>
+                  <a href="/tbc-home.html" className="hover:text-gray-900">
+                    About The Business Consortium Ltd
+                  </a>
+                </li>
+                <li>
                   <a href="/privacy" className="hover:text-white transition">
                     Privacy Policy
                   </a>
@@ -1334,7 +1339,7 @@ export default function TheBusinessConsortiumLanding(_: Props) {
 
           <div className="border-t border-gray-800 pt-8">
             <p className="text-sm text-gray-400 text-center">
-              Â© {new Date().getFullYear()} The Business Consortium Ltd. All rights reserved.
+              Ã‚Â© {new Date().getFullYear()} The Business Consortium Ltd. All rights reserved.
             </p>
           </div>
         </div>
