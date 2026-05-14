@@ -1153,78 +1153,80 @@ export default function PayslipPage() {
           </div>
         </div>
 
-        <div style={S.sectionTitle}>Combined employee breakdown</div>
+        <div style={S.sectionTitle}>{contractCards.length === 0 ? "Combined employee breakdown" : "Payslip guide"}</div>
 
         <div style={S.twoCol}>
-          <div style={S.block}>
-            <div style={{ fontWeight: 900, marginBottom: 8 }}>Combined detailed lines</div>
+          {contractCards.length === 0 ? (
+            <div style={S.block}>
+              <div style={{ fontWeight: 900, marginBottom: 8 }}>Combined detailed lines</div>
 
-            <div style={S.subSectionTitle}>Earnings</div>
+              <div style={S.subSectionTitle}>Earnings</div>
 
-            {displayedEarnings.map((item) => (
-              <div key={item.key} style={S.breakdownRow}>
-                <div style={S.breakdownLabelWrap}>
-                  <div>{item.title}</div>
-                  {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
-                </div>
-                <div className="wf-num" style={amountStyle(item.amount)}>
-                  {formatMoney(item.amount)}
-                </div>
-              </div>
-            ))}
-
-            <div style={S.breakdownRow}>
-              <div style={{ fontWeight: 900 }}>Gross pay</div>
-              <div className="wf-num" style={{ fontWeight: 900 }}>
-                {formatMoney(gross)}
-              </div>
-            </div>
-
-            <div style={S.subSectionTitle}>Deductions</div>
-
-            {displayedEmployeeDeductionLines.map((item) => (
-              <div key={item.key} style={S.breakdownRow}>
-                <div style={S.breakdownLabelWrap}>
-                  <div>{item.title}</div>
-                  {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
-                </div>
-                <div className="wf-num" style={{ fontWeight: 900 }}>
-                  {formatMoney(item.amount)}
-                </div>
-              </div>
-            ))}
-
-            <div style={S.breakdownRow}>
-              <div style={{ fontWeight: 900 }}>Total deductions</div>
-              <div className="wf-num" style={{ fontWeight: 900 }}>
-                {formatMoney(totalDeductions)}
-              </div>
-            </div>
-
-            <div style={S.breakdownRow}>
-              <div style={{ fontWeight: 900 }}>Net pay</div>
-              <div className="wf-num" style={{ fontWeight: 900 }}>
-                {formatMoney(net)}
-              </div>
-            </div>
-
-            {displayedEmployerInfoLines.length > 0 ? (
-              <>
-                <div style={S.subSectionTitle}>Employer-paid items shown for transparency</div>
-                {displayedEmployerInfoLines.map((item) => (
-                  <div key={item.key} style={S.breakdownRow}>
-                    <div style={S.breakdownLabelWrap}>
-                      <div>{item.title}</div>
-                      {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
-                    </div>
-                    <div className="wf-num" style={{ fontWeight: 900 }}>
-                      {formatMoney(item.amount)}
-                    </div>
+              {displayedEarnings.map((item) => (
+                <div key={item.key} style={S.breakdownRow}>
+                  <div style={S.breakdownLabelWrap}>
+                    <div>{item.title}</div>
+                    {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
                   </div>
-                ))}
-              </>
-            ) : null}
-          </div>
+                  <div className="wf-num" style={amountStyle(item.amount)}>
+                    {formatMoney(item.amount)}
+                  </div>
+                </div>
+              ))}
+
+              <div style={S.breakdownRow}>
+                <div style={{ fontWeight: 900 }}>Gross pay</div>
+                <div className="wf-num" style={{ fontWeight: 900 }}>
+                  {formatMoney(gross)}
+                </div>
+              </div>
+
+              <div style={S.subSectionTitle}>Deductions</div>
+
+              {displayedEmployeeDeductionLines.map((item) => (
+                <div key={item.key} style={S.breakdownRow}>
+                  <div style={S.breakdownLabelWrap}>
+                    <div>{item.title}</div>
+                    {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
+                  </div>
+                  <div className="wf-num" style={{ fontWeight: 900 }}>
+                    {formatMoney(item.amount)}
+                  </div>
+                </div>
+              ))}
+
+              <div style={S.breakdownRow}>
+                <div style={{ fontWeight: 900 }}>Total deductions</div>
+                <div className="wf-num" style={{ fontWeight: 900 }}>
+                  {formatMoney(totalDeductions)}
+                </div>
+              </div>
+
+              <div style={S.breakdownRow}>
+                <div style={{ fontWeight: 900 }}>Net pay</div>
+                <div className="wf-num" style={{ fontWeight: 900 }}>
+                  {formatMoney(net)}
+                </div>
+              </div>
+
+              {displayedEmployerInfoLines.length > 0 ? (
+                <>
+                  <div style={S.subSectionTitle}>Employer-paid items shown for transparency</div>
+                  {displayedEmployerInfoLines.map((item) => (
+                    <div key={item.key} style={S.breakdownRow}>
+                      <div style={S.breakdownLabelWrap}>
+                        <div>{item.title}</div>
+                        {item.meta ? <div style={S.breakdownMeta}>{item.meta}</div> : null}
+                      </div>
+                      <div className="wf-num" style={{ fontWeight: 900 }}>
+                        {formatMoney(item.amount)}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : null}
+            </div>
+          ) : null}
 
           <div style={S.block}>
             <div style={{ fontWeight: 900, marginBottom: 8 }}>What these items mean</div>
@@ -1236,7 +1238,7 @@ export default function PayslipPage() {
                 2. Contract sections. Each contract card above shows trusted contract-row totals and labels from the API. No raw UUIDs should appear unless the API itself has no contract metadata.
               </div>
               <div style={{ marginBottom: 10 }}>
-                3. Combined detailed lines. The combined employee section is kept as a full reconciliation summary. Contract-specific lines are also shown inside the matching contract card when the payslip API returns them with contract-row metadata.
+                3. Detailed lines. When contract sections are available, earnings and deductions are shown inside the matching contract card. The combined breakdown is only shown as a fallback when contract-row detail is unavailable.
               </div>
               <div style={{ marginBottom: 10 }}>
                 4. PAYE income tax. Income Tax withheld under Pay As You Earn. The amount depends on your tax code, taxable pay, and whether HMRC applies cumulative rules or Week 1 / Month 1 rules.
