@@ -22,6 +22,8 @@ export type ExtraPayBucket =
   | "taxable_allowances"
   | "nontaxable_allowances";
 
+export type ExtraPayCalculationKind = "manual_amount" | "rate_units";
+
 export type ExtraPayDefinition = {
   code: ExtraPayCode;
   label: string;
@@ -30,6 +32,9 @@ export type ExtraPayDefinition = {
   nicEarnings: boolean;
   pensionable: boolean;
   aeQualifying: boolean;
+  calculationKind: ExtraPayCalculationKind;
+  rateMultiplier: number | null;
+  unitLabel: string | null;
 };
 
 export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
@@ -41,6 +46,9 @@ export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
     nicEarnings: true,
     pensionable: true,
     aeQualifying: true,
+    calculationKind: "rate_units",
+    rateMultiplier: 1.25,
+    unitLabel: "hours",
   },
   {
     code: "OT150",
@@ -50,6 +58,9 @@ export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
     nicEarnings: true,
     pensionable: true,
     aeQualifying: true,
+    calculationKind: "rate_units",
+    rateMultiplier: 1.5,
+    unitLabel: "hours",
   },
   {
     code: "OT175",
@@ -59,6 +70,9 @@ export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
     nicEarnings: true,
     pensionable: true,
     aeQualifying: true,
+    calculationKind: "rate_units",
+    rateMultiplier: 1.75,
+    unitLabel: "hours",
   },
   {
     code: "OT200",
@@ -68,6 +82,9 @@ export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
     nicEarnings: true,
     pensionable: true,
     aeQualifying: true,
+    calculationKind: "rate_units",
+    rateMultiplier: 2,
+    unitLabel: "hours",
   },
   {
     code: "BONUS",
@@ -77,6 +94,9 @@ export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
     nicEarnings: true,
     pensionable: true,
     aeQualifying: true,
+    calculationKind: "manual_amount",
+    rateMultiplier: null,
+    unitLabel: null,
   },
   {
     code: "COMM",
@@ -86,6 +106,9 @@ export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
     nicEarnings: true,
     pensionable: true,
     aeQualifying: true,
+    calculationKind: "manual_amount",
+    rateMultiplier: null,
+    unitLabel: null,
   },
   {
     code: "BACKPAY",
@@ -95,6 +118,9 @@ export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
     nicEarnings: true,
     pensionable: true,
     aeQualifying: true,
+    calculationKind: "manual_amount",
+    rateMultiplier: null,
+    unitLabel: null,
   },
   {
     code: "ALLOW_TAX",
@@ -104,6 +130,9 @@ export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
     nicEarnings: true,
     pensionable: true,
     aeQualifying: true,
+    calculationKind: "manual_amount",
+    rateMultiplier: null,
+    unitLabel: null,
   },
   {
     code: "ALLOW_NONTAX",
@@ -113,6 +142,9 @@ export const EXTRA_PAY_DEFINITIONS: ExtraPayDefinition[] = [
     nicEarnings: false,
     pensionable: false,
     aeQualifying: false,
+    calculationKind: "manual_amount",
+    rateMultiplier: null,
+    unitLabel: null,
   },
 ];
 
@@ -138,9 +170,24 @@ export function getExtraPayDefinition(code: unknown): ExtraPayDefinition | null 
   return EXTRA_PAY_DEFINITIONS.find((x) => x.code === upper) ?? null;
 }
 
+export function isRateBasedExtraPayCode(code: unknown): boolean {
+  return getExtraPayDefinition(code)?.calculationKind === "rate_units";
+}
+
+export function getExtraPayRateMultiplier(code: unknown): number | null {
+  const def = getExtraPayDefinition(code);
+  if (!def || def.calculationKind !== "rate_units") return null;
+
+  const multiplier = Number(def.rateMultiplier);
+  return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : null;
+}
+
 export function getEditableExtraPayTypesForUi() {
   return EXTRA_PAY_DEFINITIONS.map((x) => ({
     code: x.code,
     label: x.label,
+    calculationKind: x.calculationKind,
+    rateMultiplier: x.rateMultiplier,
+    unitLabel: x.unitLabel,
   }));
 }
