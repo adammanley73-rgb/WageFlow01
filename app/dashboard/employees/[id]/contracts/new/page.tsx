@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBannerClient from "@/components/ui/ActiveCompanyBannerClient";
+import { formatMoneyInput, roundMoney } from "@/lib/formatMoney";
 
 type ActiveCompany = { id?: string; name?: string } | null;
 
@@ -54,14 +55,6 @@ function toNumberOrNull(v: string) {
   if (!s) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
-}
-
-function moneyRound(n: number) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-
-function fmtMoney(n: number) {
-  return moneyRound(n).toFixed(2).replace(/\.?0+$/, "");
 }
 
 function isJson(res: Response) {
@@ -258,7 +251,7 @@ export default function NewEmployeeContractPage() {
     if (paySource === "salary" || form.pay_basis === "salary") {
       if (salary !== null && salary > 0) {
         const derivedHourly = salary / (hours * WEEKS_PER_YEAR);
-        const next = fmtMoney(derivedHourly);
+        const next = formatMoneyInput(derivedHourly);
         if (String(form.hourly_rate || "").trim() !== next) {
           setForm((prev) => ({ ...prev, hourly_rate: next }));
         }
@@ -269,7 +262,7 @@ export default function NewEmployeeContractPage() {
     if (paySource === "hourly" || form.pay_basis === "hourly") {
       if (hourly !== null && hourly > 0) {
         const derivedSalary = hourly * hours * WEEKS_PER_YEAR;
-        const next = fmtMoney(derivedSalary);
+        const next = formatMoneyInput(derivedSalary);
         if (String(form.annual_salary || "").trim() !== next) {
           setForm((prev) => ({ ...prev, annual_salary: next }));
         }
@@ -373,9 +366,9 @@ export default function NewEmployeeContractPage() {
       leave_date: String(form.leave_date || "").trim() || null,
       pay_frequency: payFrequency,
       pay_basis: payBasis,
-      annual_salary: annualSalary !== null ? moneyRound(annualSalary) : null,
-      hourly_rate: hourlyRate !== null ? moneyRound(hourlyRate) : null,
-      hours_per_week: moneyRound(hours),
+      annual_salary: annualSalary !== null ? roundMoney(annualSalary) : null,
+      hourly_rate: hourlyRate !== null ? roundMoney(hourlyRate) : null,
+      hours_per_week: roundMoney(hours),
       pay_after_leaving: !!form.pay_after_leaving,
 
       pension_enabled: form.pension_enabled,
@@ -621,6 +614,10 @@ export default function NewEmployeeContractPage() {
                         setPaySource("salary");
                         setField("annual_salary", e.target.value);
                       }}
+                      onBlur={(e) => {
+                        const n = toNumberOrNull(e.target.value);
+                        if (n !== null) setField("annual_salary", formatMoneyInput(n));
+                      }}
                       className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                       name="annual_salary"
                       inputMode="decimal"
@@ -635,6 +632,10 @@ export default function NewEmployeeContractPage() {
                       onChange={(e) => {
                         setPaySource("hourly");
                         setField("hourly_rate", e.target.value);
+                      }}
+                      onBlur={(e) => {
+                        const n = toNumberOrNull(e.target.value);
+                        if (n !== null) setField("hourly_rate", formatMoneyInput(n));
                       }}
                       className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                       name="hourly_rate"

@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBannerClient from "@/components/ui/ActiveCompanyBannerClient";
+import { formatMoneyInput, roundMoney } from "@/lib/formatMoney";
 
 type ActiveCompany = { id?: string; name?: string } | null;
 
@@ -113,14 +114,6 @@ function toNumberOrNull(v: string) {
   if (!s) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
-}
-
-function moneyRound(n: number) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-
-function fmtMoney(n: number) {
-  return moneyRound(n).toFixed(2).replace(/\.?0+$/, "");
 }
 
 function hasAnyText(...vals: string[]) {
@@ -374,7 +367,7 @@ export default function NewEmployeePage() {
     if (paySource === "salary") {
       if (salary !== null && salary > 0) {
         const derivedHourly = salary / (hours * WEEKS_PER_YEAR);
-        const next = fmtMoney(derivedHourly);
+        const next = formatMoneyInput(derivedHourly);
         if (String(form.hourly_rate || "").trim() !== next) {
           setForm((prev) => ({ ...prev, hourly_rate: next }));
         }
@@ -385,7 +378,7 @@ export default function NewEmployeePage() {
     if (paySource === "hourly") {
       if (hourly !== null && hourly > 0) {
         const derivedSalary = hourly * hours * WEEKS_PER_YEAR;
-        const next = fmtMoney(derivedSalary);
+        const next = formatMoneyInput(derivedSalary);
         if (String(form.salary || "").trim() !== next) {
           setForm((prev) => ({ ...prev, salary: next }));
         }
@@ -395,14 +388,14 @@ export default function NewEmployeePage() {
 
     if (salary !== null && salary > 0 && (!form.hourly_rate || String(form.hourly_rate).trim() === "")) {
       const derivedHourly = salary / (hours * WEEKS_PER_YEAR);
-      const next = fmtMoney(derivedHourly);
+      const next = formatMoneyInput(derivedHourly);
       setForm((prev) => ({ ...prev, hourly_rate: next }));
       return;
     }
 
     if (hourly !== null && hourly > 0 && (!form.salary || String(form.salary).trim() === "")) {
       const derivedSalary = hourly * hours * WEEKS_PER_YEAR;
-      const next = fmtMoney(derivedSalary);
+      const next = formatMoneyInput(derivedSalary);
       setForm((prev) => ({ ...prev, salary: next }));
     }
   }, [form.salary, form.hourly_rate, form.hours_per_week, paySource]);
@@ -434,7 +427,7 @@ export default function NewEmployeePage() {
       ready: true,
       message: below ? "Below NMW for this worker." : "Meets or exceeds NMW.",
       requiredRate: required.rate,
-      payHourly: moneyRound(payHourly),
+      payHourly: roundMoney(payHourly),
       band: required.band,
       age: required.age,
       effectiveFrom: required.usingEffectiveFrom,
@@ -601,9 +594,9 @@ export default function NewEmployeePage() {
 
       ni_number: ni,
 
-      annual_salary: salary !== null ? moneyRound(salary) : null,
-      hourly_rate: hourly !== null ? moneyRound(hourly) : null,
-      hours_per_week: hours !== null ? moneyRound(hours) : null,
+      annual_salary: salary !== null ? roundMoney(salary) : null,
+      hourly_rate: hourly !== null ? roundMoney(hourly) : null,
+      hours_per_week: hours !== null ? roundMoney(hours) : null,
       pay_basis: inferredPayBasis,
       pay_type: inferredPayBasis,
 
@@ -980,6 +973,10 @@ export default function NewEmployeePage() {
                             setPaySource("salary");
                             setField("salary", e.target.value);
                           }}
+                          onBlur={(e) => {
+                            const n = toNumberOrNull(e.target.value);
+                            if (n !== null) setField("salary", formatMoneyInput(n));
+                          }}
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="salary"
                           inputMode="decimal"
@@ -994,6 +991,10 @@ export default function NewEmployeePage() {
                           onChange={(e) => {
                             setPaySource("hourly");
                             setField("hourly_rate", e.target.value);
+                          }}
+                          onBlur={(e) => {
+                            const n = toNumberOrNull(e.target.value);
+                            if (n !== null) setField("hourly_rate", formatMoneyInput(n));
                           }}
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="hourly_rate"
@@ -1025,9 +1026,9 @@ export default function NewEmployeePage() {
                         <div className="mt-2 text-sm text-neutral-800">
                           Worker age: <span className="font-semibold">{nmw.age}</span>. Band:{" "}
                           <span className="font-semibold">{bandLabel(nmw.band as NmwBand)}</span>. Required:{" "}
-                          <span className="font-semibold">£{(nmw.requiredRate as number).toLocaleString("en-GB")}</span>{" "}
+                          <span className="font-semibold">£{formatMoneyInput(nmw.requiredRate as number)}</span>{" "}
                           per hour. Your hourly figure:{" "}
-                          <span className="font-semibold">£{(nmw.payHourly as number).toLocaleString("en-GB")}</span>.
+                          <span className="font-semibold">£{formatMoneyInput(nmw.payHourly as number)}</span>.
                           <div className="mt-1 text-xs text-neutral-600">
                             Rates applied from {nmw.effectiveFrom}.
                           </div>
