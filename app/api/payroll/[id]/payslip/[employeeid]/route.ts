@@ -168,6 +168,23 @@ function safeNumber(x: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function parseBooleanStrict(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return null;
+  }
+
+  const s = String(value ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (["true", "t", "yes", "y", "1"].includes(s)) return true;
+  if (["false", "f", "no", "n", "0"].includes(s)) return false;
+
+  return null;
+}
+
 function isSspLike(e: { code?: unknown; name?: unknown; description?: unknown }) {
   const code = String(e?.code || "").toUpperCase();
   const name = String(e?.name || "").toLowerCase();
@@ -1189,8 +1206,7 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
             contractStatus: contractStatus ? String(contractStatus) : null,
             contractStartDate: contractStartDate ? String(contractStartDate) : null,
             contractLeaveDate: contractLeaveDate ? String(contractLeaveDate) : null,
-            contractPayAfterLeaving:
-              contractPayAfterLeavingRaw === null ? null : Boolean(contractPayAfterLeavingRaw),
+            contractPayAfterLeaving: parseBooleanStrict(contractPayAfterLeavingRaw),
             gross: getCorrectedRowGross(row),
             tax: getCorrectedRowTax(row),
             employeeNi: getCorrectedRowEmployeeNi(row),
