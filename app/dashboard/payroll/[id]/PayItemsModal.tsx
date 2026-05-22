@@ -942,7 +942,7 @@ export default function PayItemsModal(props: Props) {
                                       Total
                                     </div>
                                     <div className="mt-1 flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-900">
-                                      {calculatedAmount > 0 ? formatMoney(calculatedAmount) : "£0.00"}
+                                      {formatMoney(calculatedAmount)}
                                     </div>
                                   </div>
 
