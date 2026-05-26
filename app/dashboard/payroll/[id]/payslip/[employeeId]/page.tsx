@@ -586,7 +586,7 @@ export default function PayslipPage() {
   const meta = payslip?.meta ?? null;
 
   const gross = toNumberSafe(totals?.gross);
-  const totalDeductions = toNumberSafe(totals?.deductions);
+  const totalDeductions = round2(toNumberSafe(totals?.gross) - toNumberSafe(totals?.net));
   const net = toNumberSafe(totals?.net);
   const tax = toNumberSafe(totals?.tax);
   const ni = toNumberSafe(totals?.ni);
@@ -597,6 +597,12 @@ export default function PayslipPage() {
   const rawSalarySacrificeFromDeductions = useMemo(() => {
     return rawDeductions.filter((item) => isSalarySacrificePensionElement(item));
   }, [rawDeductions]);
+
+  const rawSalarySacrificeFromEarnings = useMemo(() => {
+    return nonZeroElements(payslip?.payElements?.earnings).filter((item) =>
+      isSalarySacrificePensionElement(item)
+    );
+  }, [payslip]);
 
   const correctedRows = useMemo(() => {
     return Array.isArray(payslip?.correctedPayrollRows) ? payslip.correctedPayrollRows : [];
@@ -620,13 +626,38 @@ export default function PayslipPage() {
       const rowDeductions = nonZeroElements(row?.payElements?.deductions);
       const rowEmployerInfoElements = rowDeductions.filter((item) => isEmployerInfoElement(item));
       const rowEmployeeDeductionElements = rowDeductions.filter(
-        (item) => !isEmployerInfoElement(item) && !isSalarySacrificePensionElement(item)
+        (item) => !isEmployerInfoElement(item)
       );
 
-      const earningLines = rowEarnings.map((item) => toBreakdownLine(item, `contract-${index + 1}-earn`));
+      const earningLines = rowEarnings
+        .filter((item) => !isSalarySacrificePensionElement(item))
+        .map((item) => toBreakdownLine(item, `contract-${index + 1}-earn`));
       const deductionLines = rowEmployeeDeductionElements.map((item) =>
         toBreakdownLine(item, `contract-${index + 1}-ded`)
       );
+
+      const rowSalarySacrificeDeductionKeys = new Set(
+        rowEmployeeDeductionElements
+          .filter((item) => isSalarySacrificePensionElement(item))
+          .map((item) => `${upperTrim(item.code)}|${Math.abs(round2(toNumberSafe(item.amount)))}`)
+      );
+
+      for (const item of rowEarnings.filter((entry) => isSalarySacrificePensionElement(entry))) {
+        const key = `${upperTrim(item.code)}|${Math.abs(round2(toNumberSafe(item.amount)))}`;
+        if (!rowSalarySacrificeDeductionKeys.has(key)) {
+          deductionLines.push(
+            toBreakdownLine(
+              {
+                ...item,
+                side: "deduction",
+                amount: Math.abs(round2(toNumberSafe(item.amount))),
+                name: "Salary sacrifice pension",
+              },
+              `contract-${index + 1}-ded`
+            )
+          );
+        }
+      }
 
       const rowTax = round2(toNumberSafe(row?.tax));
       const rowEmployeeNi = round2(toNumberSafe(row?.employeeNi));
@@ -656,9 +687,10 @@ export default function PayslipPage() {
       const grossBeforeSalarySacrifice = round2(toNumberSafe(row?.gross));
 
       const salarySacrifice = round2(
-        rowEarnings
-          .filter((item) => isSalarySacrificePensionElement(item))
-          .reduce((sum, item) => sum + Math.abs(toNumberSafe(item.amount)), 0)
+        [
+          ...rowEarnings.filter((item) => isSalarySacrificePensionElement(item)),
+          ...rowEmployeeDeductionElements.filter((item) => isSalarySacrificePensionElement(item)),
+        ].reduce((sum, item) => sum + Math.abs(toNumberSafe(item.amount)), 0)
       );
 
       return {
@@ -669,7 +701,7 @@ export default function PayslipPage() {
         startDate,
         leaveDate,
         payAfterLeaving: Boolean(row?.contractPayAfterLeaving),
-        gross: round2(grossBeforeSalarySacrifice - salarySacrifice),
+        gross: grossBeforeSalarySacrifice,
         grossBeforeSalarySacrifice,
         salarySacrifice,
         salarySacrificeMeta:
@@ -685,34 +717,29 @@ export default function PayslipPage() {
     });
   }, [correctedRows]);
 
+  const payslipGross = useMemo(() => {
+    if (contractCards.length > 0) {
+      return round2(contractCards.reduce((sum, card) => sum + toNumberSafe(card.gross), 0));
+    }
+
+    return round2(gross);
+  }, [contractCards, gross]);
+
+  const payslipTotalDeductions = useMemo(() => {
+    return round2(payslipGross - net);
+  }, [payslipGross, net]);
+
   const rawEarnings = useMemo(() => {
-    const directEarnings = nonZeroElements(payslip?.payElements?.earnings);
-    const directSalarySacrificeKeys = new Set(
-      directEarnings
-        .filter((item) => isSalarySacrificePensionElement(item))
-        .map((item) => `${upperTrim(item.code)}|${Math.abs(round2(toNumberSafe(item.amount)))}`)
+    const directEarnings = nonZeroElements(payslip?.payElements?.earnings).filter(
+      (item) => !isSalarySacrificePensionElement(item)
     );
 
-    const syntheticSalarySacrificeEarnings = rawSalarySacrificeFromDeductions
-      .filter((item) => {
-        const key = `${upperTrim(item.code)}|${Math.abs(round2(toNumberSafe(item.amount)))}`;
-        return !directSalarySacrificeKeys.has(key);
-      })
-      .map((item) => ({
-        ...item,
-        side: "earning" as const,
-        amount: -Math.abs(round2(toNumberSafe(item.amount))),
-        name: "Salary sacrifice pension",
-        description:
-          normaliseText(item.description) || "Salary sacrifice pension adjustment shown before deductions.",
-      }));
-
-    return [...directEarnings, ...syntheticSalarySacrificeEarnings].sort((a, b) => {
+    return directEarnings.sort((a, b) => {
       const weightDiff = earningSortWeight(a) - earningSortWeight(b);
       if (weightDiff !== 0) return weightDiff;
       return upperTrim(a.code).localeCompare(upperTrim(b.code));
     });
-  }, [payslip, rawSalarySacrificeFromDeductions]);
+  }, [payslip]);
 
   const displayedEarnings = useMemo<BreakdownLine[]>(() => {
     const lines = rawEarnings.map((item) => toBreakdownLine(item, "earn"));
@@ -741,14 +768,30 @@ export default function PayslipPage() {
   const employerInfoElements = useMemo(() => rawDeductions.filter((item) => isEmployerInfoElement(item)), [rawDeductions]);
 
   const employeeDeductionElements = useMemo(() => {
-    return rawDeductions.filter(
-      (item) =>
-        !isTaxElement(item) &&
-        !isEmployeeNiElement(item) &&
-        !isEmployerInfoElement(item) &&
-        !isSalarySacrificePensionElement(item)
+    const base = rawDeductions.filter(
+      (item) => !isTaxElement(item) && !isEmployeeNiElement(item) && !isEmployerInfoElement(item)
     );
-  }, [rawDeductions]);
+
+    const salarySacrificeKeys = new Set(
+      rawSalarySacrificeFromDeductions.map(
+        (item) => `${upperTrim(item.code)}|${Math.abs(round2(toNumberSafe(item.amount)))}`
+      )
+    );
+
+    const fromEarnings = rawSalarySacrificeFromEarnings
+      .filter((item) => {
+        const key = `${upperTrim(item.code)}|${Math.abs(round2(toNumberSafe(item.amount)))}`;
+        return !salarySacrificeKeys.has(key);
+      })
+      .map((item) => ({
+        ...item,
+        side: "deduction" as const,
+        amount: Math.abs(round2(toNumberSafe(item.amount))),
+        name: "Salary sacrifice pension",
+      }));
+
+    return [...base, ...fromEarnings];
+  }, [rawDeductions, rawSalarySacrificeFromDeductions, rawSalarySacrificeFromEarnings]);
 
   const displayedTaxLines = useMemo<BreakdownLine[]>(() => {
     if (taxElements.length > 0) return taxElements.map((item) => toBreakdownLine(item, "tax"));
@@ -1134,14 +1177,14 @@ export default function PayslipPage() {
           <div style={S.block}>
             <div style={S.label}>Gross pay</div>
             <div className="wf-num" style={S.num}>
-              {formatMoney(gross)}
+              {formatMoney(payslipGross)}
             </div>
           </div>
 
           <div style={S.block}>
             <div style={S.label}>Total deductions</div>
             <div className="wf-num" style={S.num}>
-              {formatMoney(totalDeductions)}
+              {formatMoney(payslipTotalDeductions)}
             </div>
           </div>
 
@@ -1177,7 +1220,7 @@ export default function PayslipPage() {
               <div style={S.breakdownRow}>
                 <div style={{ fontWeight: 900 }}>Gross pay</div>
                 <div className="wf-num" style={{ fontWeight: 900 }}>
-                  {formatMoney(gross)}
+                  {formatMoney(payslipGross)}
                 </div>
               </div>
 
@@ -1198,7 +1241,7 @@ export default function PayslipPage() {
               <div style={S.breakdownRow}>
                 <div style={{ fontWeight: 900 }}>Total deductions</div>
                 <div className="wf-num" style={{ fontWeight: 900 }}>
-                  {formatMoney(totalDeductions)}
+                  {formatMoney(payslipTotalDeductions)}
                 </div>
               </div>
 
@@ -1250,7 +1293,7 @@ export default function PayslipPage() {
                 6. Sickness adjustments. Where sickness affects normal pay, WageFlow should show the reduction separately from SSP so the visible earnings lines reconcile to Gross pay.
               </div>
               <div style={{ marginBottom: 10 }}>
-                7. Salary sacrifice pension. Where pension is handled by salary sacrifice, the reduction should be shown in the earnings section before deductions, because it reduces pay before PAYE and employee NI are applied.
+                7. Salary sacrifice pension. Where pension is handled by salary sacrifice, the reduction is shown as a pension reduction so Gross pay stays aligned with the payroll run while net pay still reflects the pre-tax sacrifice.
               </div>
               <div>
                 8. Net pay. Gross pay minus total deductions should equal the final net pay shown on the payslip.
