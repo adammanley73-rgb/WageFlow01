@@ -1,4 +1,4 @@
-/* C:\Projects\wageflow01\app\api\employees\route.ts
+﻿/* C:\Projects\wageflow01\app\api\employees\route.ts
    Supabase-backed Employees API.
    Multi-tenant safe: uses session + RLS, validates company membership, avoids service role.
 */
@@ -92,10 +92,6 @@ function normalizePayFrequency(v: any): ContractPayFrequency | null {
   return null;
 }
 
-function isAllowedPayFrequency(v: any) {
-  return normalizePayFrequency(v) !== null || !String(v ?? "").trim();
-}
-
 function normalizePayBasis(v: any): ContractPayBasis | null {
   const s = String(v ?? "").trim().toLowerCase();
   if (!s) return null;
@@ -174,6 +170,47 @@ async function requireUserAndMembership(companyId: string) {
   };
 }
 
+async function resolvePayScheduleId(
+  supabase: any,
+  companyId: string,
+  payFrequency: ContractPayFrequency
+): Promise<string | null> {
+  const { data: defaultSchedule, error: defaultError } = await supabase
+    .from("pay_schedules")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("frequency", payFrequency)
+    .eq("is_active", true)
+    .eq("is_default", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (defaultError) {
+    throw new Error(defaultError.message);
+  }
+
+  if (defaultSchedule?.id) {
+    return String(defaultSchedule.id);
+  }
+
+  const { data: fallbackSchedule, error: fallbackError } = await supabase
+    .from("pay_schedules")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("frequency", payFrequency)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (fallbackError) {
+    throw new Error(fallbackError.message);
+  }
+
+  return fallbackSchedule?.id ? String(fallbackSchedule.id) : null;
+}
+
 // GET /api/employees
 export async function GET() {
   try {
@@ -209,6 +246,7 @@ export async function GET() {
           "ni_number",
           "national_insurance_number",
           "pay_frequency",
+          "pay_schedule_id",
           "status",
           "created_at",
         ].join(",")
@@ -275,12 +313,27 @@ export async function POST(req: Request) {
 
     const hire_date = strOrNull(body?.hire_date) ?? start_date ?? todayISO();
 
-    const normalisedPayFrequency = normalizePayFrequency(body?.pay_frequency ?? null);
-    if (!isAllowedPayFrequency(body?.pay_frequency)) {
+    const normalisedPayFrequency = normalizePayFrequency(body?.pay_frequency ?? body?.frequency ?? null);
+
+    if (!normalisedPayFrequency) {
       return json(400, {
         ok: false,
-        code: "BAD_PAY_FREQUENCY",
+        code: "MISSING_PAY_FREQUENCY",
         error: "pay_frequency must be weekly, fortnightly, four_weekly, or monthly",
+      });
+    }
+
+    const payScheduleId = await resolvePayScheduleId(
+      gate.supabase,
+      companyId,
+      normalisedPayFrequency
+    );
+
+    if (!payScheduleId) {
+      return json(400, {
+        ok: false,
+        code: "PAY_SCHEDULE_NOT_FOUND",
+        error: "No active pay schedule exists for the selected pay frequency.",
       });
     }
 
@@ -364,6 +417,7 @@ export async function POST(req: Request) {
 
       pay_frequency: normalisedPayFrequency,
       frequency: normalisedPayFrequency,
+      pay_schedule_id: payScheduleId,
       pay_basis,
       pay_type: pay_basis,
 
@@ -420,7 +474,7 @@ export async function POST(req: Request) {
       status: "active" as ContractStatus,
       start_date,
       leave_date: null,
-      pay_frequency: normalisedPayFrequency ?? "monthly",
+      pay_frequency: normalisedPayFrequency,
       pay_basis,
       annual_salary,
       hourly_rate,
