@@ -2,58 +2,81 @@
 -- Purpose: Restore the minimal Companies + Memberships model required by:
 -- - /dashboard/companies (Company Selection) -> queries public.vw_member_companies
 -- - ActiveCompanyBanner -> queries public.companies(id,name)
--- Safe: uses IF EXISTS / IF NOT EXISTS and can run on other environments without breaking.
+-- Guarded because Supabase Preview may replay this migration before public.companies exists.
 
-BEGIN;
+do $$
+begin
+  if to_regclass('public.companies') is not null then
+    alter table public.companies
+    add column if not exists name text;
+  end if;
+end $$;
 
--- 1) Ensure companies has the fields the app reads
-ALTER TABLE IF EXISTS public.companies
-  ADD COLUMN IF NOT EXISTS name text;
-
--- 2) Create the membership table the view expects
-CREATE TABLE IF NOT EXISTS public.company_memberships (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
-  user_id_uuid uuid NOT NULL,
-  role text NOT NULL DEFAULT 'member',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT company_memberships_company_user_unique UNIQUE (company_id, user_id_uuid)
+create table if not exists public.company_memberships (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null,
+  user_id_uuid uuid not null,
+  role text not null default 'member',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint company_memberships_company_user_unique unique (company_id, user_id_uuid)
 );
 
--- 3) RLS for memberships so authenticated users only see their own rows
-ALTER TABLE public.company_memberships ENABLE ROW LEVEL SECURITY;
+do $$
+begin
+  if to_regclass('public.companies') is not null then
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'company_memberships_company_id_fkey'
+    ) then
+      alter table public.company_memberships
+      add constraint company_memberships_company_id_fkey
+      foreign key (company_id)
+      references public.companies(id)
+      on delete cascade;
+    end if;
+  end if;
+end $$;
 
-DROP POLICY IF EXISTS "company_memberships_select_own" ON public.company_memberships;
-CREATE POLICY "company_memberships_select_own"
-ON public.company_memberships
-FOR SELECT
-TO authenticated
-USING (user_id_uuid = auth.uid());
+alter table public.company_memberships enable row level security;
 
-DROP POLICY IF EXISTS "company_memberships_insert_own" ON public.company_memberships;
-CREATE POLICY "company_memberships_insert_own"
-ON public.company_memberships
-FOR INSERT
-TO authenticated
-WITH CHECK (user_id_uuid = auth.uid());
+drop policy if exists "company_memberships_select_own" on public.company_memberships;
 
--- 4) Create or replace the view used by Company Selection
-DROP VIEW IF EXISTS public.vw_member_companies;
+create policy "company_memberships_select_own"
+on public.company_memberships
+for select
+to authenticated
+using (user_id_uuid = auth.uid());
 
-CREATE OR REPLACE VIEW public.vw_member_companies AS
-SELECT DISTINCT
-  c.id,
-  c.name,
-  c.created_at,
-  m.user_id_uuid
-FROM public.companies c
-JOIN public.company_memberships m ON m.company_id = c.id
-WHERE m.user_id_uuid = auth.uid();
+drop policy if exists "company_memberships_insert_own" on public.company_memberships;
 
--- 5) Grants so PostgREST can read the view when logged in
-GRANT SELECT ON public.vw_member_companies TO authenticated;
-GRANT SELECT ON public.companies TO authenticated;
-GRANT SELECT, INSERT ON public.company_memberships TO authenticated;
+create policy "company_memberships_insert_own"
+on public.company_memberships
+for insert
+to authenticated
+with check (user_id_uuid = auth.uid());
 
-COMMIT;
+do $$
+begin
+  if to_regclass('public.companies') is not null then
+    drop view if exists public.vw_member_companies;
+
+    execute '
+      create or replace view public.vw_member_companies as
+      select distinct
+        c.id,
+        c.name,
+        c.created_at,
+        m.user_id_uuid
+      from public.companies c
+      join public.company_memberships m on m.company_id = c.id
+      where m.user_id_uuid = auth.uid()
+    ';
+
+    grant select on public.vw_member_companies to authenticated;
+    grant select on public.companies to authenticated;
+  end if;
+end $$;
+
+grant select, insert on public.company_memberships to authenticated;

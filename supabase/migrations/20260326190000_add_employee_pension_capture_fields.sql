@@ -3,7 +3,8 @@
 begin;
 
 alter table public.employees
-  add column if not exists pension_scheme_name text,
+    add column if not exists pension_status text,
+add column if not exists pension_scheme_name text,
   add column if not exists pension_reference text,
   add column if not exists pension_contribution_method text,
   add column if not exists pension_earnings_basis text,
@@ -21,7 +22,8 @@ where pension_status is null
    or btrim(pension_status) = '';
 
 alter table public.employees
-  alter column pension_status set default 'not_assessed';
+    add column if not exists pension_status text,
+alter column pension_status set default 'not_assessed';
 
 comment on column public.employees.pension_status is 'Employee pension status for onboarding and payroll capture, e.g. not_assessed, postponed, enrolled, opted_out, ceased, not_eligible.';
 comment on column public.employees.pension_scheme_name is 'Free-text pension scheme name until scheme master data exists.';
@@ -45,7 +47,8 @@ begin
       and conrelid = 'public.employees'::regclass
   ) then
     alter table public.employees
-      add constraint employees_pension_contribution_method_check
+        add column if not exists pension_status text,
+add constraint employees_pension_contribution_method_check
       check (
         pension_contribution_method is null
         or pension_contribution_method in ('relief_at_source', 'net_pay', 'salary_sacrifice')
@@ -63,7 +66,8 @@ begin
       and conrelid = 'public.employees'::regclass
   ) then
     alter table public.employees
-      add constraint employees_pension_earnings_basis_check
+        add column if not exists pension_status text,
+add constraint employees_pension_earnings_basis_check
       check (
         pension_earnings_basis is null
         or pension_earnings_basis in ('qualifying_earnings', 'pensionable_pay', 'basic_pay')
@@ -81,7 +85,8 @@ begin
       and conrelid = 'public.employees'::regclass
   ) then
     alter table public.employees
-      add constraint employees_pension_employee_rate_check
+        add column if not exists pension_status text,
+add constraint employees_pension_employee_rate_check
       check (
         pension_employee_rate is null
         or (pension_employee_rate >= 0 and pension_employee_rate <= 100)
@@ -99,7 +104,8 @@ begin
       and conrelid = 'public.employees'::regclass
   ) then
     alter table public.employees
-      add constraint employees_pension_employer_rate_check
+        add column if not exists pension_status text,
+add constraint employees_pension_employer_rate_check
       check (
         pension_employer_rate is null
         or (pension_employer_rate >= 0 and pension_employer_rate <= 100)

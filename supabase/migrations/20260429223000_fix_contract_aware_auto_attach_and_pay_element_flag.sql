@@ -1,4 +1,4 @@
-﻿UPDATE public.pay_element_types
+UPDATE public.pay_element_types
 SET
   is_salary_sacrifice_type = true,
   updated_at = NOW()

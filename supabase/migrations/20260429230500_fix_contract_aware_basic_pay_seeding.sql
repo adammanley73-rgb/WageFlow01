@@ -1,4 +1,4 @@
-﻿CREATE OR REPLACE FUNCTION public.wf_seed_prep_defaults(p_prep_id uuid)
+CREATE OR REPLACE FUNCTION public.wf_seed_prep_defaults(p_prep_id uuid)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER

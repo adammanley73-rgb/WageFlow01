@@ -8,7 +8,16 @@ declare
   resolved_frequency text;
   resolved_schedule_id uuid;
 begin
-  resolved_frequency := nullif(trim(coalesce(new.pay_frequency::text, new.frequency::text, '')), '');
+  resolved_frequency := nullif(
+    trim(
+      coalesce(
+        to_jsonb(new)->>'pay_frequency',
+        to_jsonb(new)->>'frequency',
+        ''
+      )
+    ),
+    ''
+  );
 
   if new.pay_schedule_id is not null then
     return new;
@@ -50,17 +59,76 @@ begin
   end if;
 
   new.pay_frequency := resolved_frequency;
-  new.frequency := resolved_frequency;
   new.pay_schedule_id := resolved_schedule_id;
 
   return new;
 end;
 $$;
 
-drop trigger if exists trg_set_employee_pay_schedule_id on public.employees;
+do $$
+declare
+  has_frequency boolean;
+begin
+  if to_regclass('public.employees') is null then
+    return;
+  end if;
 
-create trigger trg_set_employee_pay_schedule_id
-before insert or update of pay_frequency, frequency, pay_schedule_id, company_id
-on public.employees
-for each row
-execute function public.set_employee_pay_schedule_id();
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'company_id'
+  ) then
+    return;
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'pay_frequency'
+  ) then
+    return;
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'pay_schedule_id'
+  ) then
+    return;
+  end if;
+
+  if to_regclass('public.pay_schedules') is null then
+    return;
+  end if;
+
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'employees'
+      and column_name = 'frequency'
+  )
+  into has_frequency;
+
+  drop trigger if exists trg_set_employee_pay_schedule_id on public.employees;
+
+  if has_frequency then
+    create trigger trg_set_employee_pay_schedule_id
+    before insert or update of pay_frequency, frequency, pay_schedule_id, company_id
+    on public.employees
+    for each row
+    execute function public.set_employee_pay_schedule_id();
+  else
+    create trigger trg_set_employee_pay_schedule_id
+    before insert or update of pay_frequency, pay_schedule_id, company_id
+    on public.employees
+    for each row
+    execute function public.set_employee_pay_schedule_id();
+  end if;
+end $$;
