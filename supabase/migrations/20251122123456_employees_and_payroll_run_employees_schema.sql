@@ -90,21 +90,22 @@ END
 $$;
 
 -- Optional foreign key to companies (if not already present)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM   pg_constraint
-        WHERE  conname = 'employees_company_id_fkey'
-    ) THEN
-        ALTER TABLE public.employees
-        ADD CONSTRAINT employees_company_id_fkey
-        FOREIGN KEY (company_id)
-        REFERENCES public.companies(id)
-        ON DELETE CASCADE;
-    END IF;
-END
-$$;
+do $$
+begin
+    if to_regclass('public.companies') is not null then
+        if not exists (
+            select 1
+            from pg_constraint
+            where conname = 'employees_company_id_fkey'
+        ) then
+            alter table public.employees
+            add constraint employees_company_id_fkey
+            foreign key (company_id)
+            references public.companies(id)
+            on delete cascade;
+        end if;
+    end if;
+end $$;
 
 -- Helpful indexes
 CREATE INDEX IF NOT EXISTS idx_employees_company_id
@@ -203,21 +204,22 @@ ALTER TABLE public.payroll_run_employees
     ALTER COLUMN marked_for_payment SET DEFAULT true;
 
 -- Foreign keys
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM   pg_constraint
-        WHERE  conname = 'payroll_run_employees_run_id_fkey'
-    ) THEN
-        ALTER TABLE public.payroll_run_employees
-        ADD CONSTRAINT payroll_run_employees_run_id_fkey
-        FOREIGN KEY (run_id)
-        REFERENCES public.payroll_runs(id)
-        ON DELETE CASCADE;
-    END IF;
-END
-$$;
+do $$
+begin
+    if to_regclass('public.payroll_runs') is not null then
+        if not exists (
+            select 1
+            from pg_constraint
+            where conname = 'payroll_run_employees_run_id_fkey'
+        ) then
+            alter table public.payroll_run_employees
+            add constraint payroll_run_employees_run_id_fkey
+            foreign key (run_id)
+            references public.payroll_runs(id)
+            on delete cascade;
+        end if;
+    end if;
+end $$;
 
 DO $$
 BEGIN
@@ -235,21 +237,22 @@ BEGIN
 END
 $$;
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM   pg_constraint
-        WHERE  conname = 'payroll_run_employees_company_id_fkey'
-    ) THEN
-        ALTER TABLE public.payroll_run_employees
-        ADD CONSTRAINT payroll_run_employees_company_id_fkey
-        FOREIGN KEY (company_id)
-        REFERENCES public.companies(id)
-        ON DELETE CASCADE;
-    END IF;
-END
-$$;
+do $$
+begin
+    if to_regclass('public.companies') is not null then
+        if not exists (
+            select 1
+            from pg_constraint
+            where conname = 'payroll_run_employees_company_id_fkey'
+        ) then
+            alter table public.payroll_run_employees
+            add constraint payroll_run_employees_company_id_fkey
+            foreign key (company_id)
+            references public.companies(id)
+            on delete cascade;
+        end if;
+    end if;
+end $$;
 
 -- Helpful indexes
 CREATE INDEX IF NOT EXISTS idx_payroll_run_employees_run_id

@@ -1,49 +1,52 @@
 -- C:\Users\adamm\Projects\wageflow01\supabase\migrations\202511221730_fix_four_weekly_frequency.sql
+-- Guarded because Supabase Preview may replay this migration before public.payroll_runs exists.
 
--- 1) Drop existing frequency check so we can normalise values safely
-ALTER TABLE public.payroll_runs
-DROP CONSTRAINT IF EXISTS payroll_runs_frequency_check;
+do $$
+begin
+    if to_regclass('public.payroll_runs') is not null then
+        alter table public.payroll_runs
+        drop constraint if exists payroll_runs_frequency_check;
 
--- 2) Normalise payroll_runs.frequency OR pay_frequency: fourweekly -> four_weekly
--- Handle both column names for backward compatibility
-DO $$
-BEGIN
-    -- Try frequency column first
-    IF EXISTS (SELECT 1 FROM information_schema.columns 
-               WHERE table_schema = 'public' 
-               AND table_name = 'payroll_runs' 
-               AND column_name = 'frequency') THEN
-        UPDATE public.payroll_runs
-        SET frequency = 'four_weekly'
-        WHERE frequency = 'fourweekly';
-    END IF;
-    
-    -- Try pay_frequency column
-    IF EXISTS (SELECT 1 FROM information_schema.columns 
-               WHERE table_schema = 'public' 
-               AND table_name = 'payroll_runs' 
-               AND column_name = 'pay_frequency') THEN
-        UPDATE public.payroll_runs
-        SET pay_frequency = 'four_weekly'
-        WHERE pay_frequency = 'fourweekly';
-    END IF;
-END $$;
+        if exists (
+            select 1
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'payroll_runs'
+              and column_name = 'frequency'
+        ) then
+            update public.payroll_runs
+            set frequency = 'four_weekly'
+            where frequency = 'fourweekly';
 
--- 3) Normalise employees.pay_frequency: fourweekly -> four_weekly
-UPDATE public.employees
-SET pay_frequency = 'four_weekly'
-WHERE pay_frequency = 'fourweekly';
+            alter table public.payroll_runs
+            add constraint payroll_runs_frequency_check
+            check (frequency in ('weekly', 'fortnightly', 'four_weekly', 'monthly'));
+        end if;
 
--- 4) Recreate the CHECK constraint with the correct allowed values
--- Only add to frequency column if it exists
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns 
-               WHERE table_schema = 'public' 
-               AND table_name = 'payroll_runs' 
-               AND column_name = 'frequency') THEN
-        ALTER TABLE public.payroll_runs
-        ADD CONSTRAINT payroll_runs_frequency_check
-        CHECK (frequency IN ('weekly', 'fortnightly', 'four_weekly', 'monthly'));
-    END IF;
-END $$;
+        if exists (
+            select 1
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'payroll_runs'
+              and column_name = 'pay_frequency'
+        ) then
+            update public.payroll_runs
+            set pay_frequency = 'four_weekly'
+            where pay_frequency = 'fourweekly';
+        end if;
+    end if;
+
+    if to_regclass('public.employees') is not null then
+        if exists (
+            select 1
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = 'employees'
+              and column_name = 'pay_frequency'
+        ) then
+            update public.employees
+            set pay_frequency = 'four_weekly'
+            where pay_frequency = 'fourweekly';
+        end if;
+    end if;
+end $$;

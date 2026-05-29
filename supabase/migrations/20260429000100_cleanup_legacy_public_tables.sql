@@ -1,4 +1,4 @@
-﻿-- C:\Projects\wageflow01\supabase\migrations\20260429000100_cleanup_legacy_public_tables.sql
+-- C:\Projects\wageflow01\supabase\migrations\20260429000100_cleanup_legacy_public_tables.sql
 --
 -- Purpose:
 -- Archive and remove legacy public tables that are no longer used by active WageFlow app code.

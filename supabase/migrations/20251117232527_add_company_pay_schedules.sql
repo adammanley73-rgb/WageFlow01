@@ -7,7 +7,7 @@
 create table if not exists public.company_pay_schedules (
   id uuid primary key default gen_random_uuid(),
 
-  company_id uuid not null references public.companies(id) on delete cascade,
+  company_id uuid not null,
 
   -- weekly, fortnightly, four_weekly, monthly
   frequency text not null check (
@@ -57,3 +57,20 @@ create trigger trg_company_pay_schedules_updated_at
 before update on public.company_pay_schedules
 for each row
 execute function public.set_company_pay_schedules_updated_at();
+
+do $$
+begin
+  if to_regclass('public.companies') is not null then
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'company_pay_schedules_company_id_fkey'
+    ) then
+      alter table public.company_pay_schedules
+      add constraint company_pay_schedules_company_id_fkey
+      foreign key (company_id)
+      references public.companies(id)
+      on delete cascade;
+    end if;
+  end if;
+end $$;

@@ -113,32 +113,36 @@ $$;
 
 DO $$
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM   pg_constraint
-        WHERE  conname = 'employee_contracts_company_id_fkey'
-    ) THEN
-        ALTER TABLE public.employee_contracts
-        ADD CONSTRAINT employee_contracts_company_id_fkey
-        FOREIGN KEY (company_id)
-        REFERENCES public.companies(id)
-        ON DELETE CASCADE;
+    IF to_regclass('public.companies') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint
+            WHERE conname = 'employee_contracts_company_id_fkey'
+        ) THEN
+            ALTER TABLE public.employee_contracts
+            ADD CONSTRAINT employee_contracts_company_id_fkey
+            FOREIGN KEY (company_id)
+            REFERENCES public.companies(id)
+            ON DELETE CASCADE;
+        END IF;
     END IF;
 END
 $$;
 
 DO $$
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM   pg_constraint
-        WHERE  conname = 'employee_contracts_employee_id_fkey'
-    ) THEN
-        ALTER TABLE public.employee_contracts
-        ADD CONSTRAINT employee_contracts_employee_id_fkey
-        FOREIGN KEY (employee_id)
-        REFERENCES public.employees(id)
-        ON DELETE CASCADE;
+    IF to_regclass('public.employees') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint
+            WHERE conname = 'employee_contracts_employee_id_fkey'
+        ) THEN
+            ALTER TABLE public.employee_contracts
+            ADD CONSTRAINT employee_contracts_employee_id_fkey
+            FOREIGN KEY (employee_id)
+            REFERENCES public.employees(id)
+            ON DELETE CASCADE;
+        END IF;
     END IF;
 END
 $$;

@@ -1,24 +1,26 @@
 -- C:\Users\adamm\Projects\wageflow01\supabase\migrations\20251122xxxxxx_payroll_runs_attach_trigger.sql
 -- Trigger: whenever a new payroll_run row is inserted, automatically
 --          attach all due employees based on company_id + frequency.
+-- Guarded because Supabase Preview may replay this migration before public.payroll_runs exists.
 
-BEGIN;
-
-CREATE OR REPLACE FUNCTION public.payroll_runs_after_insert_attach()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  PERFORM public.attach_due_employees_to_run(NEW.id);
-  RETURN NEW;
-END;
+create or replace function public.payroll_runs_after_insert_attach()
+returns trigger
+language plpgsql
+as $$
+begin
+  perform public.attach_due_employees_to_run(new.id);
+  return new;
+end;
 $$;
 
-DROP TRIGGER IF EXISTS payroll_runs_after_insert_attach ON public.payroll_runs;
+do $$
+begin
+  if to_regclass('public.payroll_runs') is not null then
+    drop trigger if exists payroll_runs_after_insert_attach on public.payroll_runs;
 
-CREATE TRIGGER payroll_runs_after_insert_attach
-AFTER INSERT ON public.payroll_runs
-FOR EACH ROW
-EXECUTE FUNCTION public.payroll_runs_after_insert_attach();
-
-COMMIT;
+    create trigger payroll_runs_after_insert_attach
+    after insert on public.payroll_runs
+    for each row
+    execute function public.payroll_runs_after_insert_attach();
+  end if;
+end $$;

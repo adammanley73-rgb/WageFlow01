@@ -9,7 +9,7 @@ create table if not exists public.pay_element_types (
 
   -- Optional: tie an element type to a specific company.
   -- If null, it is a global/default type.
-  company_id uuid references public.companies(id) on delete cascade,
+  company_id uuid,
 
   -- Short code used in the app, e.g. BASIC, OT15, BONUS
   code text not null,
@@ -78,3 +78,20 @@ create index if not exists payroll_run_pay_elements_element_type_idx
   on public.payroll_run_pay_elements (pay_element_type_id);
 
 commit;
+
+do $$
+begin
+  if to_regclass('public.companies') is not null then
+    if not exists (
+      select 1
+      from pg_constraint
+      where conname = 'pay_element_types_company_id_fkey'
+    ) then
+      alter table public.pay_element_types
+      add constraint pay_element_types_company_id_fkey
+      foreign key (company_id)
+      references public.companies(id)
+      on delete cascade;
+    end if;
+  end if;
+end $$;
