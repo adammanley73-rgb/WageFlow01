@@ -1,4 +1,4 @@
-﻿create or replace function public.set_employee_pay_schedule_id()
+create or replace function public.set_employee_pay_schedule_id()
 returns trigger
 language plpgsql
 security definer

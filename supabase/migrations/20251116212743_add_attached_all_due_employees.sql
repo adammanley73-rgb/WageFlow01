@@ -1,4 +1,4 @@
-﻿-- Add attached_all_due_employees flag to payroll_runs
+-- Add attached_all_due_employees flag to payroll_runs
 -- Purpose:
 -- - Track user-confirmed "all due employees are attached" state
 -- - Default to false for all existing and new runs
