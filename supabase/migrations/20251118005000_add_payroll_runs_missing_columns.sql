@@ -1,42 +1,27 @@
 -- Add missing columns to payroll_runs table
--- The table already exists remotely but may be missing some columns
+-- Guarded because Supabase Preview may replay this migration before public.payroll_runs or public.companies exists.
 
-BEGIN;
+do $$
+begin
+  if to_regclass('public.payroll_runs') is not null then
+    execute 'alter table public.payroll_runs add column if not exists status text';
 
--- Add columns that may be missing in remote database
-ALTER TABLE public.payroll_runs
-    ADD COLUMN IF NOT EXISTS status text;
+    execute 'update public.payroll_runs set status = coalesce(status, ''draft'') where status is null';
 
--- Set default for status if column was just added
-UPDATE public.payroll_runs
-SET status = COALESCE(status, 'draft')
-WHERE status IS NULL;
+    execute 'alter table public.payroll_runs alter column status set default ''draft''';
 
-ALTER TABLE public.payroll_runs
-    ALTER COLUMN status SET DEFAULT 'draft';
+    if to_regclass('public.companies') is not null then
+      if not exists (
+        select 1
+        from pg_constraint
+        where conname = 'payroll_runs_company_id_fkey'
+      ) then
+        execute 'alter table public.payroll_runs add constraint payroll_runs_company_id_fkey foreign key (company_id) references public.companies(id) on delete cascade';
+      end if;
+    end if;
 
--- Add foreign key only if it doesn't exist
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'payroll_runs_company_id_fkey'
-    ) THEN
-        ALTER TABLE public.payroll_runs
-        ADD CONSTRAINT payroll_runs_company_id_fkey
-        FOREIGN KEY (company_id)
-        REFERENCES public.companies(id)
-        ON DELETE CASCADE;
-    END IF;
-END
-$$;
+    execute 'create index if not exists idx_payroll_runs_status on public.payroll_runs (status)';
 
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_payroll_runs_status 
-    ON public.payroll_runs (status);
-
-CREATE INDEX IF NOT EXISTS idx_payroll_runs_pay_date 
-    ON public.payroll_runs (pay_date);
-
-COMMIT;
+    execute 'create index if not exists idx_payroll_runs_pay_date on public.payroll_runs (pay_date)';
+  end if;
+end $$;
