@@ -60,7 +60,13 @@ async function getCountsForCompany(companyId: string): Promise<Counts> {
   }
 
   const [employeesRes, payrollRunsRes, absencesRes, startersRes] = await Promise.all([
-    supabase.from("employees").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+    supabase
+      .from("employees")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .eq("status", "active")
+      .is("leave_date", null)
+      .is("leaving_date", null),
     supabase.from("payroll_runs").select("id", { count: "exact", head: true }).eq("company_id", companyId),
     supabase.from("absences").select("id", { count: "exact", head: true }).eq("company_id", companyId),
     supabase
