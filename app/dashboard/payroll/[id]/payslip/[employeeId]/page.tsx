@@ -148,6 +148,11 @@ type ContractCard = {
   tax: number;
   employeeNi: number;
   employerNi: number;
+  calculatedNetPay: number;
+  payableNetPay: number;
+  recoveryCreatedAmount: number;
+  recoveryStatus: string;
+  recoveryNote: string | null;
   net: number;
   earningLines: BreakdownLine[];
   deductionLines: BreakdownLine[];
@@ -610,6 +615,7 @@ export default function PayslipPage() {
 
   const contractCards = useMemo<ContractCard[]>(() => {
     return correctedRows.map((row, index) => {
+      const rowAny = row as any;
       const contractNumber = normaliseText(row?.contractNumber);
       const jobTitle = normaliseText(row?.contractJobTitle) || null;
       const status = formatContractStatus(normaliseText(row?.contractStatus) || null);
@@ -709,6 +715,16 @@ export default function PayslipPage() {
         tax: round2(toNumberSafe(row?.tax)),
         employeeNi: round2(toNumberSafe(row?.employeeNi)),
         employerNi: round2(toNumberSafe(row?.employerNi)),
+        calculatedNetPay: round2(toNumberSafe(pickFirst(rowAny?.calculatedNetPay, rowAny?.calculated_net_pay, row?.net, 0))),
+        payableNetPay: round2(toNumberSafe(pickFirst(rowAny?.payableNetPay, rowAny?.payable_net_pay, Math.max(0, toNumberSafe(pickFirst(rowAny?.calculatedNetPay, rowAny?.calculated_net_pay, row?.net, 0)))))),
+        recoveryCreatedAmount: round2(toNumberSafe(pickFirst(rowAny?.recoveryCreatedAmount, rowAny?.recovery_created_amount, 0))),
+        recoveryStatus: String(pickFirst(rowAny?.recoveryStatus, rowAny?.recovery_status, "none") || "none"),
+        recoveryNote: (() => {
+          const raw = pickFirst(rowAny?.recoveryNote, rowAny?.recovery_note, null);
+          if (raw === null || raw === undefined) return null;
+          const value = String(raw).trim();
+          return value || null;
+        })(),
         net: round2(toNumberSafe(row?.net)),
         earningLines,
         deductionLines,
@@ -1158,11 +1174,32 @@ export default function PayslipPage() {
                   ) : null}
 
                   <div style={S.breakdownRow}>
-                    <div style={{ fontWeight: 900 }}>Contract subtotal net pay</div>
+                    <div style={{ fontWeight: 900 }}>Calculated net pay</div>
                     <div className="wf-num" style={{ fontWeight: 900 }}>
-                      {formatMoney(card.net)}
+                      {formatMoney(card.calculatedNetPay)}
                     </div>
                   </div>
+
+                  <div style={S.breakdownRow}>
+                    <div style={{ fontWeight: 900 }}>Amount payable this period</div>
+                    <div className="wf-num" style={{ fontWeight: 900 }}>
+                      {formatMoney(card.payableNetPay)}
+                    </div>
+                  </div>
+
+                  {card.recoveryCreatedAmount > 0 ? (
+                    <div style={S.breakdownRow}>
+                      <div style={S.breakdownLabelWrap}>
+                        <div style={{ fontWeight: 900 }}>Employee recovery balance created</div>
+                        <div style={S.breakdownMeta}>
+                          {card.recoveryNote || "Negative calculated net pay has been carried as an employee recovery balance. No negative bank payment should be exported."}
+                        </div>
+                      </div>
+                      <div className="wf-num" style={{ fontWeight: 900, color: "#991b1b" }}>
+                        {formatMoney(card.recoveryCreatedAmount)}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -1189,11 +1226,27 @@ export default function PayslipPage() {
           </div>
 
           <div style={S.block}>
-            <div style={S.label}>Net pay</div>
+            <div style={S.label}>Calculated net pay</div>
             <div className="wf-num" style={S.num}>
-              {formatMoney(net)}
+              {formatMoney(contractCards.length > 0 ? contractCards.reduce((sum, card) => sum + card.calculatedNetPay, 0) : net)}
             </div>
           </div>
+
+          <div style={S.block}>
+            <div style={S.label}>Amount payable</div>
+            <div className="wf-num" style={S.num}>
+              {formatMoney(contractCards.length > 0 ? contractCards.reduce((sum, card) => sum + card.payableNetPay, 0) : Math.max(0, net))}
+            </div>
+          </div>
+
+          {contractCards.reduce((sum, card) => sum + card.recoveryCreatedAmount, 0) > 0 ? (
+            <div style={S.block}>
+              <div style={S.label}>Recovery balance created</div>
+              <div className="wf-num" style={S.num}>
+                {formatMoney(contractCards.reduce((sum, card) => sum + card.recoveryCreatedAmount, 0))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div style={S.sectionTitle}>{contractCards.length === 0 ? "Combined employee breakdown" : "Payslip guide"}</div>
@@ -1246,11 +1299,32 @@ export default function PayslipPage() {
               </div>
 
               <div style={S.breakdownRow}>
-                <div style={{ fontWeight: 900 }}>Net pay</div>
+                <div style={{ fontWeight: 900 }}>Calculated net pay</div>
                 <div className="wf-num" style={{ fontWeight: 900 }}>
-                  {formatMoney(net)}
+                  {formatMoney(contractCards.length > 0 ? contractCards.reduce((sum, card) => sum + card.calculatedNetPay, 0) : net)}
                 </div>
               </div>
+
+              <div style={S.breakdownRow}>
+                <div style={{ fontWeight: 900 }}>Amount payable this period</div>
+                <div className="wf-num" style={{ fontWeight: 900 }}>
+                  {formatMoney(contractCards.length > 0 ? contractCards.reduce((sum, card) => sum + card.payableNetPay, 0) : Math.max(0, net))}
+                </div>
+              </div>
+
+              {contractCards.reduce((sum, card) => sum + card.recoveryCreatedAmount, 0) > 0 ? (
+                <div style={S.breakdownRow}>
+                  <div style={S.breakdownLabelWrap}>
+                    <div style={{ fontWeight: 900 }}>Employee recovery balance created</div>
+                    <div style={S.breakdownMeta}>
+                      Negative calculated net pay has been carried as an employee recovery balance. No negative bank payment should be exported.
+                    </div>
+                  </div>
+                  <div className="wf-num" style={{ fontWeight: 900, color: "#991b1b" }}>
+                    {formatMoney(contractCards.reduce((sum, card) => sum + card.recoveryCreatedAmount, 0))}
+                  </div>
+                </div>
+              ) : null}
 
               {displayedEmployerInfoLines.length > 0 ? (
                 <>
@@ -1296,7 +1370,7 @@ export default function PayslipPage() {
                 7. Salary sacrifice pension. Where pension is handled by salary sacrifice, the reduction is shown as a pension reduction so Gross pay stays aligned with the payroll run while net pay still reflects the pre-tax sacrifice.
               </div>
               <div>
-                8. Net pay. Gross pay minus total deductions should equal the final net pay shown on the payslip.
+                8. Calculated net pay and amount payable. Calculated net pay is the true payroll result after deductions. If calculated net pay is negative, amount payable is capped at GBP 0.00 and the negative balance is carried as an employee recovery balance.
               </div>
             </div>
 

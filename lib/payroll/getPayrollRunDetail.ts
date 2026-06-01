@@ -1868,6 +1868,32 @@ function buildEmployeeRow(
     net: round2(net),
     net_pay: round2(net),
     total_net: round2(net),
+    calculated_net_pay: round2(toNumberSafe(pickFirst(att?.calculated_net_pay, att?.calculatedNetPay, net))),
+    calculatedNetPay: round2(toNumberSafe(pickFirst(att?.calculated_net_pay, att?.calculatedNetPay, net))),
+    payable_net_pay: round2(
+      toNumberSafe(
+        pickFirst(
+          att?.payable_net_pay,
+          att?.payableNetPay,
+          Math.max(0, toNumberSafe(pickFirst(att?.calculated_net_pay, att?.calculatedNetPay, net)))
+        )
+      )
+    ),
+    payableNetPay: round2(
+      toNumberSafe(
+        pickFirst(
+          att?.payable_net_pay,
+          att?.payableNetPay,
+          Math.max(0, toNumberSafe(pickFirst(att?.calculated_net_pay, att?.calculatedNetPay, net)))
+        )
+      )
+    ),
+    recovery_created_amount: round2(toNumberSafe(pickFirst(att?.recovery_created_amount, att?.recoveryCreatedAmount, 0))),
+    recoveryCreatedAmount: round2(toNumberSafe(pickFirst(att?.recovery_created_amount, att?.recoveryCreatedAmount, 0))),
+    recovery_status: String(pickFirst(att?.recovery_status, att?.recoveryStatus, "none") || "none"),
+    recoveryStatus: String(pickFirst(att?.recovery_status, att?.recoveryStatus, "none") || "none"),
+    recovery_note: pickFirst(att?.recovery_note, att?.recoveryNote, null),
+    recoveryNote: pickFirst(att?.recovery_note, att?.recoveryNote, null),
     calc_mode: calcMode,
     manual_override: Boolean(att?.manual_override ?? false),
     tax_code_used: taxCodeUsed,

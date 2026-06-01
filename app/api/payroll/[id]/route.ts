@@ -2653,7 +2653,20 @@ async function loadContracts(
     const pensionEmployee = round2(pensionOverlay.pensionEmployee);
     const pensionEmployer = round2(pensionOverlay.pensionEmployer);
 
-    const net = round2(Math.max(0, gross - employeeElementDeductions - paye - employeeNi - pensionEmployee));
+    const calculatedNet = round2(gross - employeeElementDeductions - paye - employeeNi - pensionEmployee);
+
+    const payableNet = round2(Math.max(0, calculatedNet));
+
+    const recoveryCreatedAmount = calculatedNet < 0 ? round2(Math.abs(calculatedNet)) : 0;
+
+    const recoveryStatus = recoveryCreatedAmount > 0 ? "open" : "none";
+
+    const recoveryNote =
+      recoveryCreatedAmount > 0
+        ? "Negative calculated net pay carried as employee recovery balance. No negative bank payment should be exported."
+        : null;
+
+    const net = calculatedNet;
 
     const patch: any = {
       gross_pay: gross,
@@ -2666,6 +2679,11 @@ async function loadContracts(
       pension_employer: pensionEmployer,
       other_deductions: employeeElementDeductions,
       net_pay: net,
+      calculated_net_pay: calculatedNet,
+      payable_net_pay: payableNet,
+      recovery_created_amount: recoveryCreatedAmount,
+      recovery_status: recoveryStatus,
+      recovery_note: recoveryNote,
       calc_mode: "full",
     };
 
@@ -2686,6 +2704,164 @@ async function loadContracts(
       };
     }
 
+    const { data: existingRecovery, error: existingRecoveryErr } = await supabase
+      .from("payroll_recovery_balances")
+      .select("id, amount_recovered, amount_outstanding, status, original_recovery_amount")
+      .eq("source_payroll_run_employee_id", preId)
+      .maybeSingle();
+
+    if (existingRecoveryErr) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: `Failed to check payroll recovery balance for row ${preId}: ${existingRecoveryErr.message}`,
+      };
+    }
+
+    if (recoveryCreatedAmount > 0) {
+      const amountRecovered = round2(toNumberSafe((existingRecovery as any)?.amount_recovered));
+      const amountOutstanding = round2(Math.max(0, recoveryCreatedAmount - amountRecovered));
+      const nextRecoveryStatus =
+        amountOutstanding <= 0 ? "recovered" : amountRecovered > 0 ? "part_recovered" : "open";
+
+      let recoveryBalanceId = String((existingRecovery as any)?.id || "").trim();
+
+      if (recoveryBalanceId) {
+        const { error: updateRecoveryErr } = await supabase
+          .from("payroll_recovery_balances")
+          .update({
+            company_id: companyId,
+            employee_id: employeeId,
+            source_payroll_run_id: runId,
+            source_payroll_run_employee_id: preId,
+            reason_code: "negative_net_pay",
+            description: recoveryNote,
+            original_calculated_net_pay: calculatedNet,
+            original_payable_net_pay: payableNet,
+            original_recovery_amount: recoveryCreatedAmount,
+            amount_outstanding: amountOutstanding,
+            status: nextRecoveryStatus,
+          })
+          .eq("id", recoveryBalanceId);
+
+        if (updateRecoveryErr) {
+          return {
+            ok: false as const,
+            status: 500,
+            error: `Failed to update payroll recovery balance for row ${preId}: ${updateRecoveryErr.message}`,
+          };
+        }
+      } else {
+        const { data: insertedRecovery, error: insertRecoveryErr } = await supabase
+          .from("payroll_recovery_balances")
+          .insert({
+            company_id: companyId,
+            employee_id: employeeId,
+            source_payroll_run_id: runId,
+            source_payroll_run_employee_id: preId,
+            reason_code: "negative_net_pay",
+            description: recoveryNote,
+            original_calculated_net_pay: calculatedNet,
+            original_payable_net_pay: payableNet,
+            original_recovery_amount: recoveryCreatedAmount,
+            amount_recovered: 0,
+            amount_outstanding: recoveryCreatedAmount,
+            status: "open",
+          })
+          .select("id")
+          .single();
+
+        if (insertRecoveryErr) {
+          return {
+            ok: false as const,
+            status: 500,
+            error: `Failed to create payroll recovery balance for row ${preId}: ${insertRecoveryErr.message}`,
+          };
+        }
+
+        recoveryBalanceId = String((insertedRecovery as any)?.id || "").trim();
+
+        if (recoveryBalanceId) {
+          const { error: insertTransactionErr } = await supabase
+            .from("payroll_recovery_transactions")
+            .insert({
+              company_id: companyId,
+              employee_id: employeeId,
+              recovery_balance_id: recoveryBalanceId,
+              payroll_run_id: runId,
+              payroll_run_employee_id: preId,
+              transaction_type: "created",
+              amount: recoveryCreatedAmount,
+              balance_after: recoveryCreatedAmount,
+              description: recoveryNote,
+              metadata: {
+                calculated_net_pay: calculatedNet,
+                payable_net_pay: payableNet,
+                recovery_created_amount: recoveryCreatedAmount,
+              },
+            });
+
+          if (insertTransactionErr) {
+            return {
+              ok: false as const,
+              status: 500,
+              error: `Failed to create payroll recovery transaction for row ${preId}: ${insertTransactionErr.message}`,
+            };
+          }
+        }
+      }
+    } else if (existingRecovery) {
+      const recoveryBalanceId = String((existingRecovery as any)?.id || "").trim();
+
+      if (recoveryBalanceId) {
+        const { error: clearRecoveryErr } = await supabase
+          .from("payroll_recovery_balances")
+          .update({
+            original_calculated_net_pay: calculatedNet,
+            original_payable_net_pay: payableNet,
+            original_recovery_amount: 0,
+            amount_outstanding: 0,
+            status: "recovered",
+            description: "Source payroll row no longer has negative calculated net pay after recalculation.",
+          })
+          .eq("id", recoveryBalanceId);
+
+        if (clearRecoveryErr) {
+          return {
+            ok: false as const,
+            status: 500,
+            error: `Failed to clear payroll recovery balance for row ${preId}: ${clearRecoveryErr.message}`,
+          };
+        }
+
+        const { error: clearTransactionErr } = await supabase
+          .from("payroll_recovery_transactions")
+          .insert({
+            company_id: companyId,
+            employee_id: employeeId,
+            recovery_balance_id: recoveryBalanceId,
+            payroll_run_id: runId,
+            payroll_run_employee_id: preId,
+            transaction_type: "manual_adjustment",
+            amount: 0,
+            balance_after: 0,
+            description: "Recovery balance cleared because the source payroll row no longer has negative calculated net pay.",
+            metadata: {
+              calculated_net_pay: calculatedNet,
+              payable_net_pay: payableNet,
+              recovery_created_amount: 0,
+            },
+          });
+
+        if (clearTransactionErr) {
+          return {
+            ok: false as const,
+            status: 500,
+            error: `Failed to record payroll recovery clear transaction for row ${preId}: ${clearTransactionErr.message}`,
+          };
+        }
+      }
+    }
     const payeType = generatedTypeByCode.get("PAYE");
     if (payeType?.id) {
       const up = await upsertGeneratedPayElement(
