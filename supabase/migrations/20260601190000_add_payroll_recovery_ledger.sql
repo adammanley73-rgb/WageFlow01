@@ -1,3 +1,4 @@
+Set-Location "C:\Projects\wageflow01"; @'
 alter table public.payroll_run_employees
 add column if not exists calculated_net_pay numeric(12,2),
 add column if not exists payable_net_pay numeric(12,2),
@@ -106,137 +107,129 @@ execute function public.set_payroll_recovery_balance_updated_at();
 alter table public.payroll_recovery_balances enable row level security;
 
 alter table public.payroll_recovery_transactions enable row level security;
-
-do $$
+create or replace function public.is_payroll_recovery_company_member(p_company_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_exists boolean := false;
 begin
-  if not exists (
-    select 1
-    from pg_policies
-    where schemaname = 'public'
-      and tablename = 'payroll_recovery_balances'
-      and policyname = 'payroll_recovery_balances_select_company_member'
-  ) then
-    create policy payroll_recovery_balances_select_company_member
-    on public.payroll_recovery_balances
-    for select
-    to authenticated
-    using (
-      exists (
-        select 1
-        from public.company_memberships cm
-        where cm.company_id = payroll_recovery_balances.company_id
-          and cm.user_id = auth.uid()
-      )
-    );
+  if auth.uid() is null then
+    return false;
   end if;
+
+  if to_regclass('public.company_memberships') is not null then
+    if exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'company_memberships'
+        and column_name = 'user_id'
+    ) then
+      execute
+        'select exists (
+           select 1
+           from public.company_memberships cm
+           where cm.company_id = $1
+             and cm.user_id = auth.uid()
+         )'
+      into v_exists
+      using p_company_id;
+
+      if v_exists then
+        return true;
+      end if;
+    end if;
+
+    if exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'company_memberships'
+        and column_name = 'user_id_uuid'
+    ) then
+      execute
+        'select exists (
+           select 1
+           from public.company_memberships cm
+           where cm.company_id = $1
+             and cm.user_id_uuid = auth.uid()
+         )'
+      into v_exists
+      using p_company_id;
+
+      if v_exists then
+        return true;
+      end if;
+    end if;
+  end if;
+
+  if to_regclass('public.user_company_memberships') is not null then
+    execute
+      'select exists (
+         select 1
+         from public.user_company_memberships ucm
+         where ucm.company_id = $1
+           and ucm.user_id = auth.uid()
+       )'
+    into v_exists
+    using p_company_id;
+
+    if v_exists then
+      return true;
+    end if;
+  end if;
+
+  return false;
 end;
 $$;
 
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_policies
-    where schemaname = 'public'
-      and tablename = 'payroll_recovery_balances'
-      and policyname = 'payroll_recovery_balances_insert_company_member'
-  ) then
-    create policy payroll_recovery_balances_insert_company_member
-    on public.payroll_recovery_balances
-    for insert
-    to authenticated
-    with check (
-      exists (
-        select 1
-        from public.company_memberships cm
-        where cm.company_id = payroll_recovery_balances.company_id
-          and cm.user_id = auth.uid()
-      )
-    );
-  end if;
-end;
-$$;
+grant execute on function public.is_payroll_recovery_company_member(uuid) to authenticated;
 
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_policies
-    where schemaname = 'public'
-      and tablename = 'payroll_recovery_balances'
-      and policyname = 'payroll_recovery_balances_update_company_member'
-  ) then
-    create policy payroll_recovery_balances_update_company_member
-    on public.payroll_recovery_balances
-    for update
-    to authenticated
-    using (
-      exists (
-        select 1
-        from public.company_memberships cm
-        where cm.company_id = payroll_recovery_balances.company_id
-          and cm.user_id = auth.uid()
-      )
-    )
-    with check (
-      exists (
-        select 1
-        from public.company_memberships cm
-        where cm.company_id = payroll_recovery_balances.company_id
-          and cm.user_id = auth.uid()
-      )
-    );
-  end if;
-end;
-$$;
+drop policy if exists payroll_recovery_balances_select_company_member
+on public.payroll_recovery_balances;
 
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_policies
-    where schemaname = 'public'
-      and tablename = 'payroll_recovery_transactions'
-      and policyname = 'payroll_recovery_transactions_select_company_member'
-  ) then
-    create policy payroll_recovery_transactions_select_company_member
-    on public.payroll_recovery_transactions
-    for select
-    to authenticated
-    using (
-      exists (
-        select 1
-        from public.company_memberships cm
-        where cm.company_id = payroll_recovery_transactions.company_id
-          and cm.user_id = auth.uid()
-      )
-    );
-  end if;
-end;
-$$;
+create policy payroll_recovery_balances_select_company_member
+on public.payroll_recovery_balances
+for select
+to authenticated
+using (public.is_payroll_recovery_company_member(company_id));
 
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_policies
-    where schemaname = 'public'
-      and tablename = 'payroll_recovery_transactions'
-      and policyname = 'payroll_recovery_transactions_insert_company_member'
-  ) then
-    create policy payroll_recovery_transactions_insert_company_member
-    on public.payroll_recovery_transactions
-    for insert
-    to authenticated
-    with check (
-      exists (
-        select 1
-        from public.company_memberships cm
-        where cm.company_id = payroll_recovery_transactions.company_id
-          and cm.user_id = auth.uid()
-      )
-    );
-  end if;
-end;
-$$;
-'@ | Set-Content -LiteralPath "supabase\migrations\20260601190000_add_payroll_recovery_ledger.sql" -NoNewline
+drop policy if exists payroll_recovery_balances_insert_company_member
+on public.payroll_recovery_balances;
+
+create policy payroll_recovery_balances_insert_company_member
+on public.payroll_recovery_balances
+for insert
+to authenticated
+with check (public.is_payroll_recovery_company_member(company_id));
+
+drop policy if exists payroll_recovery_balances_update_company_member
+on public.payroll_recovery_balances;
+
+create policy payroll_recovery_balances_update_company_member
+on public.payroll_recovery_balances
+for update
+to authenticated
+using (public.is_payroll_recovery_company_member(company_id))
+with check (public.is_payroll_recovery_company_member(company_id));
+
+drop policy if exists payroll_recovery_transactions_select_company_member
+on public.payroll_recovery_transactions;
+
+create policy payroll_recovery_transactions_select_company_member
+on public.payroll_recovery_transactions
+for select
+to authenticated
+using (public.is_payroll_recovery_company_member(company_id));
+
+drop policy if exists payroll_recovery_transactions_insert_company_member
+on public.payroll_recovery_transactions;
+
+create policy payroll_recovery_transactions_insert_company_member
+on public.payroll_recovery_transactions
+for insert
+to authenticated
+with check (public.is_payroll_recovery_company_member(company_id));
