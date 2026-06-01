@@ -283,8 +283,7 @@ export function computePAYE(inputs: PayeInputs): PayeResult {
       cfg
     );
 
-    let taxThisPeriod = TWO_DP(taxToDate - (ytdTaxPaidBeforeThisPeriod ?? 0));
-    if (taxThisPeriod < 0) taxThisPeriod = 0;
+    const taxThisPeriod = TWO_DP(taxToDate - (ytdTaxPaidBeforeThisPeriod ?? 0));
 
     // For a useful breakdown, also compute period-only taxable used within progressive bands
     // Approximation: recompute period-only using delta of cumulative ceilings vs previous period.

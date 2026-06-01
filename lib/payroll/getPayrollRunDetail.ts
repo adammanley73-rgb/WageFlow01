@@ -952,7 +952,7 @@ function computeRowFiguresFromPayElements(
     }
 
     if (flags.isTax) {
-      tax += absAmount;
+      tax += amount;
       hasTax = true;
       continue;
     }
@@ -1634,6 +1634,9 @@ function buildEmployeeRow(
     isPrimaryContract,
   });
   const pensionSettings = resolvedPension.settings;
+  const hasExplicitPayElementTax =
+    figuresFromPayElements?.tax !== null && figuresFromPayElements?.tax !== undefined;
+
 
   const payElementGrossChanged =
     figuresFromPayElements?.hasElements === true &&
@@ -1653,9 +1656,10 @@ function buildEmployeeRow(
     taxCodeUsed &&
     gross > 0 &&
     runFrequency === "monthly" &&
+    !hasExplicitPayElementTax &&
     (
       payElementGrossChanged ||
-      tax <= 0 ||
+      tax === 0 ||
       (figuresFromPayElements?.hasElements === true && figuresFromPayElements.tax == null)
     );
 

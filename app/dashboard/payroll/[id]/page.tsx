@@ -662,7 +662,6 @@ export default function PayrollRunDetailPage() {
       const d = toNumberSafe(r.deductions);
       const n = toNumberSafe(r.net);
       if (g < 0) v[r.id] = "Gross cannot be negative";
-      else if (d < 0) v[r.id] = "Deductions cannot be negative";
       else if (n < 0) v[r.id] = "Net cannot be negative";
     }
     setValidation(v);
