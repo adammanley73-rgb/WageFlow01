@@ -142,7 +142,39 @@ function getCorrectedRowEmployerNi(row: CorrectedRunDetailRow): number {
 }
 
 function getCorrectedRowNet(row: CorrectedRunDetailRow): number {
-  return round2(firstFiniteNumber(row?.net_pay, row?.net, 0) ?? 0);
+  const rowAny = row as any;
+  return round2(firstFiniteNumber(rowAny?.calculated_net_pay, rowAny?.calculatedNetPay, rowAny?.net_pay, rowAny?.net, 0) ?? 0);
+}
+
+function getCorrectedRowCalculatedNet(row: CorrectedRunDetailRow): number {
+  const rowAny = row as any;
+  return round2(firstFiniteNumber(rowAny?.calculated_net_pay, rowAny?.calculatedNetPay, rowAny?.net_pay, rowAny?.net, 0) ?? 0);
+}
+
+function getCorrectedRowPayableNet(row: CorrectedRunDetailRow): number {
+  const rowAny = row as any;
+  const calculatedNet = getCorrectedRowCalculatedNet(row);
+  return round2(firstFiniteNumber(rowAny?.payable_net_pay, rowAny?.payableNetPay, Math.max(0, calculatedNet)) ?? 0);
+}
+
+function getCorrectedRowRecoveryCreatedAmount(row: CorrectedRunDetailRow): number {
+  const rowAny = row as any;
+  return round2(firstFiniteNumber(rowAny?.recovery_created_amount, rowAny?.recoveryCreatedAmount, 0) ?? 0);
+}
+
+function getCorrectedRowRecoveryStatus(row: CorrectedRunDetailRow): string {
+  const rowAny = row as any;
+  const raw = rowAny?.recovery_status ?? rowAny?.recoveryStatus ?? "none";
+  const value = String(raw || "none").trim();
+  return value || "none";
+}
+
+function getCorrectedRowRecoveryNote(row: CorrectedRunDetailRow): string | null {
+  const rowAny = row as any;
+  const raw = rowAny?.recovery_note ?? rowAny?.recoveryNote ?? null;
+  if (raw === null || raw === undefined) return null;
+  const value = String(raw).trim();
+  return value || null;
 }
 
 function isIsoDate(s: unknown): boolean {
@@ -1212,6 +1244,11 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
             employeeNi: getCorrectedRowEmployeeNi(row),
             employerNi: getCorrectedRowEmployerNi(row),
             net: getCorrectedRowNet(row),
+            calculatedNetPay: getCorrectedRowCalculatedNet(row),
+            payableNetPay: getCorrectedRowPayableNet(row),
+            recoveryCreatedAmount: getCorrectedRowRecoveryCreatedAmount(row),
+            recoveryStatus: getCorrectedRowRecoveryStatus(row),
+            recoveryNote: getCorrectedRowRecoveryNote(row),
             payElements: {
               earnings: rowEarnings,
               deductions: rowDeductions,

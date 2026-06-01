@@ -30,6 +30,11 @@ type Row = {
   gross: number;
   deductions: number;
   net: number;
+  calculatedNetPay: number;
+  payableNetPay: number;
+  recoveryCreatedAmount: number;
+  recoveryStatus: string;
+  recoveryNote: string | null;
   calcMode: string;
 };
 
@@ -314,6 +319,12 @@ function mapEmployees(raw: any[]): Row[] {
     const gross = toNumberSafe(pickFirst(r.gross, r.total_gross, r.gross_pay, 0) as any);
     const deductions = toNumberSafe(pickFirst(r.deductions, r.total_deductions, r.deduction_total, 0) as any);
     const net = toNumberSafe(pickFirst(r.net, r.total_net, r.net_pay, gross - deductions) as any);
+    const calculatedNetPay = toNumberSafe(pickFirst(r.calculatedNetPay, r.calculated_net_pay, net) as any);
+    const payableNetPay = toNumberSafe(pickFirst(r.payableNetPay, r.payable_net_pay, Math.max(0, calculatedNetPay)) as any);
+    const recoveryCreatedAmount = toNumberSafe(pickFirst(r.recoveryCreatedAmount, r.recovery_created_amount, 0) as any);
+    const recoveryStatus = String(pickFirst(r.recoveryStatus, r.recovery_status, recoveryCreatedAmount > 0 ? "open" : "none") || "none");
+    const recoveryNoteRaw = pickFirst(r.recoveryNote, r.recovery_note, null);
+    const recoveryNote = recoveryNoteRaw === null || recoveryNoteRaw === undefined ? null : String(recoveryNoteRaw);
     const tax = toNumberSafe(pickFirst(r.tax, r.total_tax, r.tax_pay, r.paye_tax, r.income_tax, 0) as any);
     const ni = toNumberSafe(pickFirst(r.ni, r.ni_employee, r.employee_ni, r.niEmployee, r.employeeNi, 0) as any);
     const eePen = toNumberSafe(
@@ -333,6 +344,11 @@ function mapEmployees(raw: any[]): Row[] {
       gross: Number.isFinite(gross) ? Number(gross.toFixed(2)) : 0,
       deductions: Number.isFinite(deductions) ? Number(deductions.toFixed(2)) : 0,
       net: Number.isFinite(net) ? Number(net.toFixed(2)) : 0,
+      calculatedNetPay: Number.isFinite(calculatedNetPay) ? Number(calculatedNetPay.toFixed(2)) : Number(net.toFixed(2)),
+      payableNetPay: Number.isFinite(payableNetPay) ? Number(payableNetPay.toFixed(2)) : Math.max(0, Number(net.toFixed(2))),
+      recoveryCreatedAmount: Number.isFinite(recoveryCreatedAmount) ? Number(recoveryCreatedAmount.toFixed(2)) : 0,
+      recoveryStatus,
+      recoveryNote,
       calcMode,
     };
   });
@@ -1170,19 +1186,20 @@ export default function PayrollRunDetailPage() {
         <div ref={employeeTableRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
           <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-extrabold text-slate-900">Employees in this run</h2>
-            <div className="text-sm text-slate-700">Review PAYE, NI, EE Pen and Net Pay, or edit pay items before running calculation. Open payslip now shows one combined employee payslip across all contracts in this run.</div>
+            <div className="text-sm text-slate-700">Review PAYE, NI, EE Pen, calculated net, amount payable and recovery balances, or edit pay items before running calculation. Open payslip now shows one combined employee payslip across all contracts in this run.</div>
           </div>
           <div className="w-full overflow-hidden">
             <table className="w-full table-fixed border-collapse">
               <colgroup>
-                <col style={{ width: "24%" }} />
+                <col style={{ width: "21%" }} />
+                <col style={{ width: "9%" }} />
                 <col style={{ width: "10%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "9%" }} />
                 <col style={{ width: "11%" }} />
+                <col style={{ width: "12%" }} />
                 <col style={{ width: "10%" }} />
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "14%" }} />
               </colgroup>
               <thead>
                 <tr className="bg-neutral-100">
@@ -1192,13 +1209,14 @@ export default function PayrollRunDetailPage() {
                   <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">PAYE</th>
                   <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">NI</th>
                   <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">EE Pen</th>
-                  <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">Net Pay</th>
+                  <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">Calculated net</th>
+                  <th className="px-2 py-3 text-left text-sm font-extrabold text-slate-900 border-b border-neutral-300">Amount payable</th>
                   <th className="px-2 py-3 text-center text-sm font-extrabold text-slate-900 border-b border-neutral-300">Combined payslip</th>
                 </tr>
               </thead>
               <tbody>
-                {loading ? <tr><td className="px-4 py-4 text-sm text-slate-700 border-b border-neutral-200" colSpan={8}>Loading...</td></tr> : null}
-                {!loading && rows.length === 0 ? <tr><td className="px-4 py-4 text-sm text-slate-700 border-b border-neutral-200" colSpan={8}>No employees attached to this run.</td></tr> : null}
+                {loading ? <tr><td className="px-4 py-4 text-sm text-slate-700 border-b border-neutral-200" colSpan={9}>Loading...</td></tr> : null}
+                {!loading && rows.length === 0 ? <tr><td className="px-4 py-4 text-sm text-slate-700 border-b border-neutral-200" colSpan={9}>No employees attached to this run.</td></tr> : null}
                 {!loading && rows.map((r) => {
                   const rowError = validation?.[r.id];
                   const badge = calcBadgeStyles(r.calcMode);
@@ -1210,14 +1228,15 @@ export default function PayrollRunDetailPage() {
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="PAYE for this employee in this run">{formatMoney(r.tax)}</div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee NI for this employee in this run">{formatMoney(r.ni)}</div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee pension deduction for this employee in this run">{formatMoney(r.eePen)}</div></td>
-                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[8.5rem]"><div className="flex flex-col gap-1"><div className={`${inter.className} flex h-10 w-full min-w-0 items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-right text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Net pay is calculated from gross pay and deductions and cannot be edited directly">{formatMoney(r.net)}</div>{rowError ? <div className="text-xs font-semibold text-red-700">{rowError}</div> : null}</div></div></td>
+                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[8.5rem]"><div className="flex flex-col gap-1"><div className={`${inter.className} flex h-10 w-full min-w-0 items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-right text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="True calculated net pay. This can be negative where a payroll correction creates an employee recovery balance.">{formatMoney(r.calculatedNetPay)}</div>{rowError ? <div className="text-xs font-semibold text-red-700">{rowError}</div> : null}</div></div></td>
+                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[9.5rem]"><div className="flex flex-col gap-1"><div className={`${inter.className} flex h-10 w-full min-w-0 items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-right text-[13px] font-extrabold`} style={{ color: r.recoveryCreatedAmount > 0 ? "#991b1b" : WF_BLUE }} title="Bank-safe amount payable. Negative calculated net is capped at GBP 0.00 for payment export.">{formatMoney(r.payableNetPay)}</div>{r.recoveryCreatedAmount > 0 ? <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800" title={r.recoveryNote || "Negative calculated net carried as an employee recovery balance."}>Recovery {formatMoney(r.recoveryCreatedAmount)}</div> : null}</div></div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[6.5rem]"><Link href={`/dashboard/payroll/${runId}/payslip/${r.employeeId}`} className="inline-flex h-10 w-full min-w-0 items-center justify-center rounded-xl px-2 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE }} title="Open one combined payslip for this employee across all contracts in the run">Open</Link></div></td>
                   </tr>;
                 })}
               </tbody>
             </table>
           </div>
-          <div className="px-5 py-4 text-sm text-slate-700">Live totals reflect saved pay items and the latest payroll calculation. Gross, PAYE, NI, EE Pen and Net Pay are controlled outputs for quick review before opening a payslip or editing extra pay items.</div>
+          <div className="px-5 py-4 text-sm text-slate-700">Live totals reflect saved pay items and the latest payroll calculation. Gross, PAYE, NI, EE Pen, calculated net, amount payable and recovery balances are controlled outputs for quick review before opening a payslip or editing extra pay items.</div>
         </div>
 
         {confirmOpen && confirmCfg ? <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.45)" }}><div className="w-full max-w-xl rounded-3xl bg-white shadow-xl ring-1 ring-neutral-300 overflow-hidden"><div className="px-5 py-4 flex items-center justify-between border-b border-neutral-200"><div className="text-base font-extrabold text-slate-900">{confirmCfg.title}</div><button type="button" onClick={closeConfirm} disabled={actionBusy === confirmCfg.action} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE, opacity: actionBusy === confirmCfg.action ? 0.6 : 1, cursor: actionBusy === confirmCfg.action ? "not-allowed" : "pointer" }}>Close</button></div><div className="px-5 py-4"><div className="text-sm text-slate-700">{confirmCfg.message}</div><div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"><button type="button" onClick={closeConfirm} disabled={actionBusy === confirmCfg.action} className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: "#64748b", opacity: actionBusy === confirmCfg.action ? 0.6 : 1, cursor: actionBusy === confirmCfg.action ? "not-allowed" : "pointer" }}>Cancel</button><button type="button" onClick={() => confirmAndRun(confirmCfg)} disabled={actionBusy === confirmCfg.action} className="inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: confirmCfg.danger ? "#991b1b" : WF_GREEN, opacity: actionBusy === confirmCfg.action ? 0.6 : 1, cursor: actionBusy === confirmCfg.action ? "not-allowed" : "pointer" }}>{actionBusy === confirmCfg.action ? "Working..." : confirmCfg.confirmLabel}</button></div></div></div></div> : null}
