@@ -6,6 +6,7 @@ import PageTemplate from "@/components/layout/PageTemplate";
 import ActiveCompanyBanner from "@/components/ui/ActiveCompanyBanner";
 import { formatMoney } from "@/lib/formatMoney";
 import { createClient } from "@/lib/supabase/server";
+import EmployeeRecoveryPanel from "./EmployeeRecoveryPanel";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -667,6 +668,9 @@ export default async function EmployeeDetailsPage({
             </div>
           </div>
         </div>
+
+        <EmployeeRecoveryPanel employeeId={empKey} />
+
 
         <div className="rounded-xl bg-neutral-100 ring-1 ring-neutral-300 overflow-hidden">
           <div className="px-4 py-3 border-b-2 border-neutral-300 bg-neutral-50 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
