@@ -1,4 +1,3 @@
-Set-Location "C:\Projects\wageflow01"; @'
 alter table public.payroll_run_employees
 add column if not exists calculated_net_pay numeric(12,2),
 add column if not exists payable_net_pay numeric(12,2),
