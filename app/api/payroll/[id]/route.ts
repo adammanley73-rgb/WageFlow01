@@ -48,6 +48,31 @@ function isIsoDateOnly(s: any): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(s ?? "").trim());
 }
 
+function payeTaxMonthNumber(payDateIso: any): number {
+  const s = String(payDateIso ?? "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return 1;
+
+  const month = Number(s.slice(5, 7));
+  const day = Number(s.slice(8, 10));
+
+  if (!Number.isFinite(month) || !Number.isFinite(day)) return 1;
+
+  const shifted = day >= 6 ? month - 3 : month - 4;
+  return ((shifted + 11) % 12) + 1;
+}
+
+function ukTaxYearStartYear(payDateIso: any): number | undefined {
+  const s = String(payDateIso ?? "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
+
+  const year = Number(s.slice(0, 4));
+  const month = Number(s.slice(5, 7));
+  const day = Number(s.slice(8, 10));
+
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return undefined;
+
+  return month > 4 || (month === 4 && day >= 6) ? year : year - 1;
+}
 
 function toSortableTime(value: any): number {
   const s = String(value ?? "").trim();
@@ -923,6 +948,9 @@ function computeMonthlyPayeAndNiFromGross(args: {
   taxBasis: any;
   payFrequency: any;
   taxYear?: number;
+  taxPeriodNumber?: number;
+  ytdTaxableBeforeThisPeriod?: number;
+  ytdTaxPaidBeforeThisPeriod?: number;
   niCategory: any;
 }): MonthlyPayeAndNiResult {
   const payFrequency = String(args.payFrequency ?? "").trim().toLowerCase();
@@ -943,9 +971,9 @@ function computeMonthlyPayeAndNiFromGross(args: {
     const payResult = calculatePay({
       grossForPeriod: grossForTax,
       taxCode: formatTaxCodeForCalc(args.taxCode, args.taxBasis, payFrequency),
-      period: 1,
-      ytdTaxableBeforeThisPeriod: 0,
-      ytdTaxPaidBeforeThisPeriod: 0,
+      period: Math.min(12, Math.max(1, Math.trunc(Number(args.taxPeriodNumber || 1)))),
+      ytdTaxableBeforeThisPeriod: round2(Math.max(0, args.ytdTaxableBeforeThisPeriod || 0)),
+      ytdTaxPaidBeforeThisPeriod: round2(args.ytdTaxPaidBeforeThisPeriod || 0),
       taxYear: args.taxYear,
     });
 
@@ -971,6 +999,9 @@ function overlayPensionFromEmployeeSettings(args: {
   aeQualifyingSourcePay: number;
   payFrequency: any;
   taxYear?: number;
+  taxPeriodNumber?: number;
+  ytdTaxableBeforeThisPeriod?: number;
+  ytdTaxPaidBeforeThisPeriod?: number;
   taxCode: any;
   taxBasis: any;
   niCategory: any;
@@ -1026,6 +1057,9 @@ function overlayPensionFromEmployeeSettings(args: {
     taxBasis: args.taxBasis,
     payFrequency: args.payFrequency,
     taxYear: args.taxYear,
+    taxPeriodNumber: args.taxPeriodNumber,
+    ytdTaxableBeforeThisPeriod: args.ytdTaxableBeforeThisPeriod,
+    ytdTaxPaidBeforeThisPeriod: args.ytdTaxPaidBeforeThisPeriod,
     niCategory: args.niCategory,
   });
 
@@ -1328,7 +1362,7 @@ function buildEmployeeRow(att: any, emp: any, contract: any, run: any, isPrimary
       const payResult = calculatePay({
         grossForPeriod: grossForTaxFallback,
         taxCode: formatTaxCodeForCalc(taxCodeUsed, taxCodeBasisUsed, runFrequency),
-        period: 1,
+        period: payeTaxMonthNumber(pickFirst(run?.pay_date, run?.payDate, run?.period_end, run?.pay_period_end, "")),
         ytdTaxableBeforeThisPeriod: toNumberSafe(
           pickFirst(att?.ytd_taxable_before, att?.ytd_gross_before, emp?.ytd_gross, 0)
         ),
@@ -2310,11 +2344,179 @@ async function loadContracts(
     byPreId.get(preId)!.push(normalised);
   }
 
-  const taxYear = (() => {
-    const src = String(pickFirst(run?.period_start, run?.pay_period_start, "") || "");
-    const yr = parseInt(src.slice(0, 4), 10);
-    return Number.isFinite(yr) ? yr : undefined;
-  })();
+  const payDateForTax = pickFirst(
+    run?.pay_date,
+    run?.payDate,
+    run?.period_end,
+    run?.pay_period_end,
+    run?.period_start,
+    run?.pay_period_start,
+    ""
+  );
+  const payDateForTaxIso = String(payDateForTax ?? "").trim().slice(0, 10);
+  const taxYear =
+    ukTaxYearStartYear(payDateForTaxIso) ??
+    (() => {
+      const src = String(pickFirst(run?.period_start, run?.pay_period_start, "") || "");
+      const yr = parseInt(src.slice(0, 4), 10);
+      return Number.isFinite(yr) ? yr : undefined;
+    })();
+  const taxPeriodNumber = payeTaxMonthNumber(payDateForTaxIso);
+
+  const priorYtdByEmployeeId = new Map<string, { taxable: number; taxPaid: number }>();
+
+  function addPriorYtdBase(employeeIdValue: any, taxableValue: any, taxPaidValue: any) {
+    const baseEmployeeId = String(employeeIdValue ?? "").trim();
+    if (!baseEmployeeId) return;
+
+    const taxable = round2(Math.max(0, toNumberSafe(taxableValue)));
+    const taxPaid = round2(toNumberSafe(taxPaidValue));
+
+    if (taxable === 0 && taxPaid === 0) return;
+
+    const current = priorYtdByEmployeeId.get(baseEmployeeId) ?? { taxable: 0, taxPaid: 0 };
+    current.taxable = round2(current.taxable + taxable);
+    current.taxPaid = round2(current.taxPaid + taxPaid);
+    priorYtdByEmployeeId.set(baseEmployeeId, current);
+  }
+
+  if (employeeIds.length > 0) {
+    const usedP45BaseEmployeeIds = new Set<string>();
+
+    const { data: payrollSettingsRaw, error: payrollSettingsErr } = await supabase
+      .from("employee_payroll_settings_current")
+      .select("employee_uuid, p45_ytd_pay, p45_ytd_tax")
+      .in("employee_uuid", employeeIds);
+
+    if (payrollSettingsErr) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: `Failed to load current payroll settings P45 YTD values: ${payrollSettingsErr.message}`,
+      };
+    }
+
+    for (const row of Array.isArray(payrollSettingsRaw) ? payrollSettingsRaw : []) {
+      const baseEmployeeId = String((row as any)?.employee_uuid ?? "").trim();
+      const taxable = round2(Math.max(0, toNumberSafe((row as any)?.p45_ytd_pay)));
+      const taxPaid = round2(toNumberSafe((row as any)?.p45_ytd_tax));
+
+      if (!baseEmployeeId || (taxable === 0 && taxPaid === 0)) continue;
+
+      addPriorYtdBase(baseEmployeeId, taxable, taxPaid);
+      usedP45BaseEmployeeIds.add(baseEmployeeId);
+    }
+
+    const { data: p45RowsRaw, error: p45RowsErr } = await supabase
+      .from("employee_p45")
+      .select("employee_id, total_pay_to_date, total_tax_to_date")
+      .in("employee_id", employeeIds);
+
+    if (p45RowsErr) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: `Failed to load employee P45 YTD values: ${p45RowsErr.message}`,
+      };
+    }
+
+    for (const row of Array.isArray(p45RowsRaw) ? p45RowsRaw : []) {
+      const baseEmployeeId = String((row as any)?.employee_id ?? "").trim();
+      if (!baseEmployeeId || usedP45BaseEmployeeIds.has(baseEmployeeId)) continue;
+
+      const taxable = round2(Math.max(0, toNumberSafe((row as any)?.total_pay_to_date)));
+      const taxPaid = round2(toNumberSafe((row as any)?.total_tax_to_date));
+
+      if (taxable === 0 && taxPaid === 0) continue;
+
+      addPriorYtdBase(baseEmployeeId, taxable, taxPaid);
+      usedP45BaseEmployeeIds.add(baseEmployeeId);
+    }
+
+    const { data: starterRowsRaw, error: starterRowsErr } = await supabase
+      .from("employee_starter_details")
+      .select("employee_id, p45_prev_pay, p45_prev_tax")
+      .in("employee_id", employeeIds);
+
+    if (starterRowsErr) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: `Failed to load starter P45 YTD values: ${starterRowsErr.message}`,
+      };
+    }
+
+    for (const row of Array.isArray(starterRowsRaw) ? starterRowsRaw : []) {
+      const baseEmployeeId = String((row as any)?.employee_id ?? "").trim();
+      if (!baseEmployeeId || usedP45BaseEmployeeIds.has(baseEmployeeId)) continue;
+
+      const taxable = round2(Math.max(0, toNumberSafe((row as any)?.p45_prev_pay)));
+      const taxPaid = round2(toNumberSafe((row as any)?.p45_prev_tax));
+
+      if (taxable === 0 && taxPaid === 0) continue;
+
+      addPriorYtdBase(baseEmployeeId, taxable, taxPaid);
+      usedP45BaseEmployeeIds.add(baseEmployeeId);
+    }
+  }
+
+  if (employeeIds.length > 0 && taxYear && isIsoDateOnly(payDateForTaxIso)) {
+    const taxYearStartIso = `${taxYear}-04-06`;
+
+    const { data: priorRunsRaw, error: priorRunsErr } = await supabase
+      .from("payroll_runs")
+      .select("id")
+      .eq("company_id", companyId)
+      .gte("pay_date", taxYearStartIso)
+      .lt("pay_date", payDateForTaxIso)
+      .in("status", ["approved", "rti_submitted", "completed"]);
+
+    if (priorRunsErr) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: `Failed to load prior payroll runs for cumulative PAYE: ${priorRunsErr.message}`,
+      };
+    }
+
+    const priorRunIds = Array.from(
+      new Set(
+        (Array.isArray(priorRunsRaw) ? priorRunsRaw : [])
+          .map((row: any) => String(row?.id || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (priorRunIds.length > 0) {
+      const { data: priorPayRowsRaw, error: priorPayRowsErr } = await supabase
+        .from("payroll_run_employees")
+        .select("employee_id, taxable_pay, gross_pay, tax")
+        .eq("company_id", companyId)
+        .in("run_id", priorRunIds)
+        .in("employee_id", employeeIds);
+
+      if (priorPayRowsErr) {
+        return {
+          ok: false as const,
+          status: 500,
+          error: `Failed to load prior payroll rows for cumulative PAYE: ${priorPayRowsErr.message}`,
+        };
+      }
+
+      for (const priorRow of Array.isArray(priorPayRowsRaw) ? priorPayRowsRaw : []) {
+        const priorEmployeeId = String((priorRow as any)?.employee_id || "").trim();
+        if (!priorEmployeeId) continue;
+
+        const current = priorYtdByEmployeeId.get(priorEmployeeId) ?? { taxable: 0, taxPaid: 0 };
+        current.taxable = round2(
+          current.taxable +
+            round2(toNumberSafe(pickFirst((priorRow as any)?.taxable_pay, (priorRow as any)?.gross_pay, 0)))
+        );
+        current.taxPaid = round2(current.taxPaid + round2(toNumberSafe((priorRow as any)?.tax)));
+        priorYtdByEmployeeId.set(priorEmployeeId, current);
+      }
+    }
+  }
 
   for (const att of attachments) {
     const preId = String(pickFirst(att?.id, "") || "").trim();
@@ -2427,6 +2629,8 @@ async function loadContracts(
       .trim()
       .toUpperCase();
 
+    const priorYtd = priorYtdByEmployeeId.get(employeeId) ?? { taxable: 0, taxPaid: 0 };
+
     const pensionOverlay = overlayPensionFromEmployeeSettings({
       gross,
       basicPay,
@@ -2434,6 +2638,9 @@ async function loadContracts(
       aeQualifyingSourcePay,
       payFrequency: rowPayFrequency,
       taxYear,
+      taxPeriodNumber,
+      ytdTaxableBeforeThisPeriod: priorYtd.taxable,
+      ytdTaxPaidBeforeThisPeriod: priorYtd.taxPaid,
       taxCode: rawTaxCode,
       taxBasis: rawTaxBasis,
       niCategory,
