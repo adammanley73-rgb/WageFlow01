@@ -1,4 +1,4 @@
-﻿﻿# dependencies
+?# dependencies
 /node_modules
 /.pnp
 .pnp.js
@@ -58,3 +58,7 @@ _git-archives/
 # Local backups
 .backups/
 
+
+# Allow WageFlow employee recovery control API route
+!app/api/employees/\[id\]/recovery/
+!app/api/employees/\[id\]/recovery/route.ts
