@@ -11,7 +11,14 @@ type RecoveryAction =
   | "write_off"
   | "mark_disputed"
   | "resolve_dispute"
-  | "manual_adjustment";
+  | "manual_adjustment"
+  | "save_plan";
+
+type RecoveryMode =
+  | "full_available"
+  | "fixed_total_per_run"
+  | "fixed_per_balance_per_run"
+  | "hold";
 
 type AdjustmentDirection = "increase" | "decrease";
 
@@ -42,6 +49,9 @@ type RecoveryBody = {
   description?: unknown;
   direction?: unknown;
   adjustmentDirection?: unknown;
+  recoveryMode?: unknown;
+  fixedAmountPerRun?: unknown;
+  note?: unknown;
 };
 
 function json(status: number, body: unknown) {
@@ -84,6 +94,7 @@ function normalizeAction(value: unknown): RecoveryAction | null {
   if (s === "mark_disputed") return "mark_disputed";
   if (s === "resolve_dispute") return "resolve_dispute";
   if (s === "manual_adjustment") return "manual_adjustment";
+  if (s === "save_plan") return "save_plan";
 
   return null;
 }
@@ -93,6 +104,17 @@ function normalizeDirection(value: unknown): AdjustmentDirection | null {
 
   if (s === "increase") return "increase";
   if (s === "decrease") return "decrease";
+
+  return null;
+}
+
+function normalizeRecoveryMode(value: unknown): RecoveryMode | null {
+  const s = String(value ?? "").trim().toLowerCase();
+
+  if (s === "full_available") return "full_available";
+  if (s === "fixed_total_per_run") return "fixed_total_per_run";
+  if (s === "fixed_per_balance_per_run") return "fixed_per_balance_per_run";
+  if (s === "hold") return "hold";
 
   return null;
 }
@@ -228,6 +250,34 @@ export async function GET(_req: Request, ctx: RouteContext) {
     transactions = Array.isArray(txRows) ? txRows : [];
   }
 
+  const { data: planRow, error: planErr } = await supabase
+    .from("payroll_recovery_employee_plans")
+    .select("*")
+    .eq("company_id", employeeKeys.company_id)
+    .eq("employee_id", employeeKeys.uuid)
+    .maybeSingle();
+
+  if (planErr) {
+    return json(500, {
+      ok: false,
+      error: "RECOVERY_PLAN_QUERY_FAILED",
+      message: "Could not load employee payroll recovery plan.",
+      ...dbErrPayload(planErr),
+    });
+  }
+
+  const recoveryPlan = planRow || {
+    id: null,
+    company_id: employeeKeys.company_id,
+    employee_id: employeeKeys.uuid,
+    recovery_mode: "full_available",
+    fixed_amount_per_run: null,
+    note: null,
+    created_at: null,
+    updated_at: null,
+    updated_by: null,
+  };
+
   const openOutstanding = balanceRows.reduce((sum: number, row: any) => {
     const status = String(row?.status ?? "").toLowerCase();
     if (status === "recovered" || status === "written_off") return sum;
@@ -242,6 +292,7 @@ export async function GET(_req: Request, ctx: RouteContext) {
       balanceCount: balanceRows.length,
       openOutstanding,
     },
+    plan: recoveryPlan,
     balances: balanceRows,
     transactions,
   });
@@ -291,6 +342,62 @@ export async function POST(req: Request, ctx: RouteContext) {
       ok: false,
       error: "BAD_REQUEST",
       message: "A valid action is required.",
+    });
+  }
+
+  if (action === "save_plan") {
+    const recoveryMode = normalizeRecoveryMode(body.recoveryMode);
+    const note = normalizeDescription(body.note ?? body.description);
+    const fixedAmountPerRun = positiveMoney(body.fixedAmountPerRun);
+
+    if (!recoveryMode) {
+      return json(400, {
+        ok: false,
+        error: "BAD_REQUEST",
+        message: "A valid payroll recovery mode is required.",
+      });
+    }
+
+    const needsAmount =
+      recoveryMode === "fixed_total_per_run" ||
+      recoveryMode === "fixed_per_balance_per_run";
+
+    if (needsAmount && !fixedAmountPerRun) {
+      return json(400, {
+        ok: false,
+        error: "BAD_REQUEST",
+        message: "A fixed recovery amount greater than zero is required for this plan.",
+      });
+    }
+
+    const payload = {
+      company_id: employeeKeys.company_id,
+      employee_id: employeeKeys.uuid,
+      recovery_mode: recoveryMode,
+      fixed_amount_per_run: needsAmount ? fixedAmountPerRun : null,
+      note,
+      updated_by: auth.user.id,
+    };
+
+    const { data: plan, error: planErr } = await supabase
+      .from("payroll_recovery_employee_plans")
+      .upsert(payload, { onConflict: "company_id,employee_id" })
+      .select("*")
+      .single();
+
+    if (planErr) {
+      return json(400, {
+        ok: false,
+        error: "RECOVERY_PLAN_SAVE_FAILED",
+        message: "Could not save the employee payroll recovery plan.",
+        ...dbErrPayload(planErr),
+      });
+    }
+
+    return json(200, {
+      ok: true,
+      action,
+      plan,
     });
   }
 

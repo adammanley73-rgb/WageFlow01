@@ -12,6 +12,24 @@ type RecoveryAction =
 
 type AdjustmentDirection = "increase" | "decrease";
 
+type RecoveryMode =
+  | "full_available"
+  | "fixed_total_per_run"
+  | "fixed_per_balance_per_run"
+  | "hold";
+
+type RecoveryPlan = {
+  id: string | null;
+  company_id: string;
+  employee_id: string;
+  recovery_mode: RecoveryMode | string;
+  fixed_amount_per_run: number | string | null;
+  note: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
 type RecoveryBalance = {
   id: string;
   company_id: string;
@@ -46,6 +64,7 @@ type RecoveryResponse = {
     balanceCount?: number;
     openOutstanding?: number;
   };
+  plan?: RecoveryPlan | null;
   balances?: RecoveryBalance[];
   transactions?: RecoveryTransaction[];
   error?: string;
@@ -59,6 +78,12 @@ type ActionFormState = {
   direction: AdjustmentDirection;
 };
 
+type PlanFormState = {
+  recoveryMode: RecoveryMode;
+  fixedAmountPerRun: string;
+  note: string;
+};
+
 type Props = {
   employeeId: string;
 };
@@ -68,6 +93,12 @@ const DEFAULT_FORM: ActionFormState = {
   amount: "",
   description: "",
   direction: "decrease",
+};
+
+const DEFAULT_PLAN_FORM: PlanFormState = {
+  recoveryMode: "full_available",
+  fixedAmountPerRun: "",
+  note: "",
 };
 
 function toNumber(value: unknown): number {
@@ -162,6 +193,36 @@ function actionHelpText(action: RecoveryAction): string {
   return "Use this only to correct the recovery balance. A reason is required.";
 }
 
+function normalizeRecoveryMode(value: unknown): RecoveryMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+
+  if (raw === "fixed_total_per_run") return "fixed_total_per_run";
+  if (raw === "fixed_per_balance_per_run") return "fixed_per_balance_per_run";
+  if (raw === "hold") return "hold";
+
+  return "full_available";
+}
+
+function recoveryPlanHelpText(mode: RecoveryMode): string {
+  if (mode === "full_available") {
+    return "Future payroll runs will recover as much as possible from available payable net pay.";
+  }
+
+  if (mode === "fixed_total_per_run") {
+    return "Future payroll runs will recover one fixed amount in total across all open overpayments.";
+  }
+
+  if (mode === "fixed_per_balance_per_run") {
+    return "Future payroll runs will recover the fixed amount from each open overpayment balance.";
+  }
+
+  return "Future payroll runs will not recover this employee's open overpayment balances until the hold is changed.";
+}
+
+function modeNeedsFixedAmount(mode: RecoveryMode): boolean {
+  return mode === "fixed_total_per_run" || mode === "fixed_per_balance_per_run";
+}
+
 export default function EmployeeRecoveryPanel({ employeeId }: Props) {
   const [data, setData] = useState<RecoveryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -169,6 +230,8 @@ export default function EmployeeRecoveryPanel({ employeeId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<string, ActionFormState>>({});
+  const [planForm, setPlanForm] = useState<PlanFormState>(DEFAULT_PLAN_FORM);
+  const [savingPlan, setSavingPlan] = useState(false);
 
   const balances = useMemo(() => {
     return Array.isArray(data?.balances) ? data.balances : [];
@@ -199,6 +262,17 @@ export default function EmployeeRecoveryPanel({ employeeId }: Props) {
       }
 
       setData(payload);
+
+      const plan = payload.plan;
+      const recoveryMode = normalizeRecoveryMode(plan?.recovery_mode);
+      setPlanForm({
+        recoveryMode,
+        fixedAmountPerRun:
+          plan?.fixed_amount_per_run === null || plan?.fixed_amount_per_run === undefined
+            ? ""
+            : String(plan.fixed_amount_per_run),
+        note: String(plan?.note ?? ""),
+      });
     } catch {
       setError("Could not load payroll recovery details.");
     } finally {
@@ -222,6 +296,51 @@ export default function EmployeeRecoveryPanel({ employeeId }: Props) {
         ...patch,
       },
     }));
+  }
+
+  async function saveRecoveryPlan() {
+    setSavingPlan(true);
+    setError(null);
+    setNotice(null);
+
+    const recoveryMode = planForm.recoveryMode;
+    const fixedAmount = toNumber(planForm.fixedAmountPerRun);
+
+    if (modeNeedsFixedAmount(recoveryMode) && fixedAmount <= 0) {
+      setSavingPlan(false);
+      setError("Enter a fixed recovery amount greater than zero.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/employees/${encodeURIComponent(employeeId)}/recovery`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          action: "save_plan",
+          recoveryMode,
+          fixedAmountPerRun: modeNeedsFixedAmount(recoveryMode) ? planForm.fixedAmountPerRun : null,
+          note: planForm.note,
+        }),
+      });
+
+      const payload = await res.json().catch(() => null);
+
+      if (!res.ok || !payload?.ok) {
+        setError(payload?.message || "Could not save the payroll recovery plan.");
+        return;
+      }
+
+      setNotice("Payroll recovery plan updated.");
+      await loadRecovery();
+    } catch {
+      setError("Could not save the payroll recovery plan.");
+    } finally {
+      setSavingPlan(false);
+    }
   }
 
   async function submitAction(balance: RecoveryBalance) {
@@ -303,6 +422,90 @@ export default function EmployeeRecoveryPanel({ employeeId }: Props) {
                 {notice}
               </div>
             ) : null}
+
+            <div className="rounded-lg border border-neutral-300 bg-white p-4">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-sm font-extrabold text-neutral-950">Future payroll recovery plan</div>
+                  <div className="mt-1 text-xs text-neutral-700">
+                    Set how much WageFlow should recover automatically from future payroll runs.
+                  </div>
+                </div>
+                <div className="rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-900">
+                  {recoveryPlanHelpText(planForm.recoveryMode)}
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-12">
+                <label className="lg:col-span-4">
+                  <span className="block text-xs font-semibold text-neutral-700">Recovery method</span>
+                  <select
+                    value={planForm.recoveryMode}
+                    onChange={(event) => {
+                      const recoveryMode = event.target.value as RecoveryMode;
+                      setPlanForm((current) => ({
+                        ...current,
+                        recoveryMode,
+                        fixedAmountPerRun: modeNeedsFixedAmount(recoveryMode) ? current.fixedAmountPerRun : "",
+                      }));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950"
+                  >
+                    <option value="full_available">Recover full available amount</option>
+                    <option value="fixed_total_per_run">Recover fixed amount once per payroll run</option>
+                    <option value="fixed_per_balance_per_run">Recover fixed amount per overpayment per payroll run</option>
+                    <option value="hold">Hold recovery</option>
+                  </select>
+                </label>
+
+                {modeNeedsFixedAmount(planForm.recoveryMode) ? (
+                  <label className="lg:col-span-3">
+                    <span className="block text-xs font-semibold text-neutral-700">Fixed amount per run</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={planForm.fixedAmountPerRun}
+                      onChange={(event) =>
+                        setPlanForm((current) => ({
+                          ...current,
+                          fixedAmountPerRun: event.target.value,
+                        }))
+                      }
+                      placeholder="50.00"
+                      className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950"
+                    />
+                  </label>
+                ) : null}
+
+                <label className={modeNeedsFixedAmount(planForm.recoveryMode) ? "lg:col-span-3" : "lg:col-span-6"}>
+                  <span className="block text-xs font-semibold text-neutral-700">Agreement note</span>
+                  <input
+                    type="text"
+                    value={planForm.note}
+                    onChange={(event) =>
+                      setPlanForm((current) => ({
+                        ...current,
+                        note: event.target.value,
+                      }))
+                    }
+                    placeholder="Example: Employee agreed £50 per payroll run"
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-950"
+                  />
+                </label>
+
+                <div className="flex items-end lg:col-span-2">
+                  <button
+                    type="button"
+                    disabled={savingPlan}
+                    onClick={saveRecoveryPlan}
+                    className="inline-flex w-full items-center justify-center rounded-full bg-[#0f3c85] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {savingPlan ? "Saving..." : "Save plan"}
+                  </button>
+                </div>
+              </div>
+            </div>
 
             {balances.map((balance) => {
               const form = formFor(balance.id);
@@ -529,7 +732,7 @@ export default function EmployeeRecoveryPanel({ employeeId }: Props) {
             })}
 
             <div className="rounded-lg border border-blue-300 bg-blue-50 p-4 text-sm text-blue-900">
-              Recovering through future payroll is not enabled in this screen yet. For now, record money repaid outside payroll, write-offs, disputes, and manual balance corrections here.
+              Future payroll calculations use the recovery plan above. Manual repayments, write-offs, disputes, and balance corrections remain available here for audit control.
             </div>
           </div>
         )}

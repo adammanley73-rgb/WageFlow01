@@ -177,6 +177,31 @@ function getCorrectedRowRecoveryNote(row: CorrectedRunDetailRow): string | null 
   return value || null;
 }
 
+function getCorrectedRowRecoveryAppliedAmount(row: CorrectedRunDetailRow): number {
+  const rowAny = row as any;
+  return round2(firstFiniteNumber(rowAny?.recovery_applied_amount, rowAny?.recoveryAppliedAmount, 0) ?? 0);
+}
+
+function getCorrectedRowRecoveryBalanceAfterAmount(row: CorrectedRunDetailRow): number {
+  const rowAny = row as any;
+  return round2(firstFiniteNumber(rowAny?.recovery_balance_after_amount, rowAny?.recoveryBalanceAfterAmount, 0) ?? 0);
+}
+
+function getCorrectedRowRecoveryApplicationStatus(row: CorrectedRunDetailRow): string {
+  const rowAny = row as any;
+  const raw = rowAny?.recovery_application_status ?? rowAny?.recoveryApplicationStatus ?? "none";
+  const value = String(raw || "none").trim();
+  return value || "none";
+}
+
+function getCorrectedRowRecoveryApplicationNote(row: CorrectedRunDetailRow): string | null {
+  const rowAny = row as any;
+  const raw = rowAny?.recovery_application_note ?? rowAny?.recoveryApplicationNote ?? null;
+  if (raw === null || raw === undefined) return null;
+  const value = String(raw).trim();
+  return value || null;
+}
+
 function isIsoDate(s: unknown): boolean {
   return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
@@ -1249,6 +1274,10 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
             recoveryCreatedAmount: getCorrectedRowRecoveryCreatedAmount(row),
             recoveryStatus: getCorrectedRowRecoveryStatus(row),
             recoveryNote: getCorrectedRowRecoveryNote(row),
+            recoveryAppliedAmount: getCorrectedRowRecoveryAppliedAmount(row),
+            recoveryBalanceAfterAmount: getCorrectedRowRecoveryBalanceAfterAmount(row),
+            recoveryApplicationStatus: getCorrectedRowRecoveryApplicationStatus(row),
+            recoveryApplicationNote: getCorrectedRowRecoveryApplicationNote(row),
             payElements: {
               earnings: rowEarnings,
               deductions: rowDeductions,

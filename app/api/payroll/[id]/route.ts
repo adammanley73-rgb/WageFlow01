@@ -2195,7 +2195,365 @@ async function loadContracts(
     ok: true as const,
     rows: Array.isArray(data) ? data : [],
   };
-}async function localComputeFullFromElements(supabase: any, runId: string, companyId: string, run: any) {
+}
+
+type OpenPayrollRecoveryBalance = {
+  id: string;
+  employee_id: string;
+  amount_outstanding: number;
+  amount_recovered: number;
+  status: string;
+  source_payroll_run_employee_id: string | null;
+  created_at: string | null;
+};
+
+type PayrollRecoveryEmployeePlan = {
+  employee_id: string;
+  recovery_mode: "full_available" | "fixed_total_per_run" | "fixed_per_balance_per_run" | "hold";
+  fixed_amount_per_run: number | null;
+  note: string | null;
+};
+
+function normalisePayrollRecoveryMode(value: unknown): PayrollRecoveryEmployeePlan["recovery_mode"] {
+  const raw = String(value ?? "").trim().toLowerCase();
+
+  if (raw === "fixed_total_per_run") return "fixed_total_per_run";
+  if (raw === "fixed_per_balance_per_run") return "fixed_per_balance_per_run";
+  if (raw === "hold") return "hold";
+
+  return "full_available";
+}
+
+function payrollRecoveryPlanNote(plan: PayrollRecoveryEmployeePlan, amount: number): string {
+  if (plan.recovery_mode === "fixed_total_per_run") {
+    return `Recovery from previous overpayment proposed for this payroll run. Employee plan caps total recovery at ${formatMoneyForLog(amount)} per run.`;
+  }
+
+  if (plan.recovery_mode === "fixed_per_balance_per_run") {
+    return `Recovery from previous overpayment proposed for this payroll run. Employee plan caps recovery at ${formatMoneyForLog(amount)} per overpayment balance per run.`;
+  }
+
+  return "Recovery from previous overpayment proposed for this payroll run.";
+}
+
+function formatMoneyForLog(value: unknown): string {
+  const amount = round2(toNumberSafe(value));
+  return `GBP ${amount.toFixed(2)}`;
+}
+
+async function resetProposedPayrollRecoveryApplications(
+  supabase: any,
+  runId: string,
+  companyId: string
+) {
+  const { error: deleteErr } = await supabase
+    .from("payroll_recovery_applications")
+    .delete()
+    .eq("company_id", companyId)
+    .eq("payroll_run_id", runId)
+    .eq("status", "proposed");
+
+  if (deleteErr) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to clear proposed payroll recovery applications: ${deleteErr.message}`,
+    };
+  }
+
+  const { error: resetErr } = await supabase
+    .from("payroll_run_employees")
+    .update({
+      recovery_applied_amount: 0,
+      recovery_balance_after_amount: null,
+      recovery_application_status: "none",
+      recovery_application_note: null,
+    })
+    .eq("company_id", companyId)
+    .eq("run_id", runId)
+    .eq("recovery_application_status", "proposed");
+
+  if (resetErr) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to reset proposed payroll recovery fields: ${resetErr.message}`,
+    };
+  }
+
+  return { ok: true as const };
+}
+
+async function loadOpenPayrollRecoveryBalancesByEmployee(
+  supabase: any,
+  companyId: string,
+  employeeIds: string[]
+) {
+  const byEmployeeId = new Map<string, OpenPayrollRecoveryBalance[]>();
+
+  if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+    return { ok: true as const, byEmployeeId };
+  }
+
+  const { data, error } = await supabase
+    .from("payroll_recovery_balances")
+    .select("id, employee_id, amount_outstanding, amount_recovered, status, source_payroll_run_employee_id, created_at")
+    .eq("company_id", companyId)
+    .in("employee_id", employeeIds)
+    .in("status", ["open", "part_recovered"])
+    .gt("amount_outstanding", 0)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to load open payroll recovery balances: ${error.message}`,
+    };
+  }
+
+  for (const raw of Array.isArray(data) ? data : []) {
+    const employeeId = String((raw as any)?.employee_id || "").trim();
+    const balanceId = String((raw as any)?.id || "").trim();
+    if (!employeeId || !balanceId) continue;
+
+    const row: OpenPayrollRecoveryBalance = {
+      id: balanceId,
+      employee_id: employeeId,
+      amount_outstanding: round2(toNumberSafe((raw as any)?.amount_outstanding)),
+      amount_recovered: round2(toNumberSafe((raw as any)?.amount_recovered)),
+      status: String((raw as any)?.status || "open").trim().toLowerCase(),
+      source_payroll_run_employee_id: String((raw as any)?.source_payroll_run_employee_id || "").trim() || null,
+      created_at: String((raw as any)?.created_at || "").trim() || null,
+    };
+
+    if (!byEmployeeId.has(employeeId)) byEmployeeId.set(employeeId, []);
+    byEmployeeId.get(employeeId)!.push(row);
+  }
+
+  return { ok: true as const, byEmployeeId };
+}
+
+async function loadPayrollRecoveryPlansByEmployee(
+  supabase: any,
+  companyId: string,
+  employeeIds: string[]
+) {
+  const byEmployeeId = new Map<string, PayrollRecoveryEmployeePlan>();
+
+  if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+    return { ok: true as const, byEmployeeId };
+  }
+
+  const { data, error } = await supabase
+    .from("payroll_recovery_employee_plans")
+    .select("employee_id, recovery_mode, fixed_amount_per_run, note")
+    .eq("company_id", companyId)
+    .in("employee_id", employeeIds);
+
+  if (error) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to load employee payroll recovery plans: ${error.message}`,
+    };
+  }
+
+  for (const raw of Array.isArray(data) ? data : []) {
+    const employeeId = String((raw as any)?.employee_id || "").trim();
+    if (!employeeId) continue;
+
+    const mode = normalisePayrollRecoveryMode((raw as any)?.recovery_mode);
+    const fixedAmount = round2(toNumberSafe((raw as any)?.fixed_amount_per_run));
+    const noteRaw = String((raw as any)?.note || "").trim();
+
+    byEmployeeId.set(employeeId, {
+      employee_id: employeeId,
+      recovery_mode: mode,
+      fixed_amount_per_run:
+        mode === "fixed_total_per_run" || mode === "fixed_per_balance_per_run"
+          ? Math.max(0, fixedAmount)
+          : null,
+      note: noteRaw || null,
+    });
+  }
+
+  return { ok: true as const, byEmployeeId };
+}
+
+async function insertProposedPayrollRecoveryApplications(
+  supabase: any,
+  rows: any[]
+) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { ok: true as const };
+  }
+
+  const { error } = await supabase
+    .from("payroll_recovery_applications")
+    .insert(rows);
+
+  if (error) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to create proposed payroll recovery applications: ${error.message}`,
+    };
+  }
+
+  return { ok: true as const };
+}
+
+async function reconcileProposedPayrollRecoveryApplications(
+  supabase: any,
+  runId: string,
+  companyId: string
+) {
+  const { data: applicationRows, error: applicationErr } = await supabase
+    .from("payroll_recovery_applications")
+    .select("payroll_run_employee_id, amount_applied, balance_after, note")
+    .eq("company_id", companyId)
+    .eq("payroll_run_id", runId)
+    .eq("status", "proposed");
+
+  if (applicationErr) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to load proposed payroll recovery applications for reconciliation: ${applicationErr.message}`,
+    };
+  }
+
+  const summaryByRowId = new Map<
+    string,
+    {
+      amountApplied: number;
+      balanceAfter: number;
+      note: string | null;
+    }
+  >();
+
+  for (const app of Array.isArray(applicationRows) ? applicationRows : []) {
+    const rowId = String((app as any)?.payroll_run_employee_id || "").trim();
+    if (!rowId) continue;
+
+    const current = summaryByRowId.get(rowId) || {
+      amountApplied: 0,
+      balanceAfter: 0,
+      note: null,
+    };
+
+    current.amountApplied = round2(current.amountApplied + round2(toNumberSafe((app as any)?.amount_applied)));
+    current.balanceAfter = round2(current.balanceAfter + round2(toNumberSafe((app as any)?.balance_after)));
+
+    const note = String((app as any)?.note || "").trim();
+    if (note && !current.note) current.note = note;
+
+    summaryByRowId.set(rowId, current);
+  }
+
+  const { data: payrollRows, error: payrollRowsErr } = await supabase
+    .from("payroll_run_employees")
+    .select("id, calculated_net_pay, net_pay")
+    .eq("company_id", companyId)
+    .eq("run_id", runId);
+
+  if (payrollRowsErr) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to load payroll rows for recovery reconciliation: ${payrollRowsErr.message}`,
+    };
+  }
+
+  for (const row of Array.isArray(payrollRows) ? payrollRows : []) {
+    const rowId = String((row as any)?.id || "").trim();
+    if (!rowId) continue;
+
+    const summary = summaryByRowId.get(rowId);
+    const calculatedNet = round2(toNumberSafe(pickFirst((row as any)?.calculated_net_pay, (row as any)?.net_pay, 0)));
+
+    if (summary && summary.amountApplied > 0) {
+      const { error: updateErr } = await supabase
+        .from("payroll_run_employees")
+        .update({
+          payable_net_pay: round2(Math.max(0, calculatedNet - summary.amountApplied)),
+          recovery_applied_amount: summary.amountApplied,
+          recovery_balance_after_amount: summary.balanceAfter,
+          recovery_application_status: "proposed",
+          recovery_application_note: summary.note || "Recovery from previous overpayment proposed for this payroll run.",
+        })
+        .eq("id", rowId)
+        .eq("run_id", runId)
+        .eq("company_id", companyId);
+
+      if (updateErr) {
+        return {
+          ok: false as const,
+          status: 500,
+          error: `Failed to mirror proposed payroll recovery application for row ${rowId}: ${updateErr.message}`,
+        };
+      }
+
+      continue;
+    }
+
+    const { error: clearErr } = await supabase
+      .from("payroll_run_employees")
+      .update({
+        payable_net_pay: round2(Math.max(0, calculatedNet)),
+        recovery_applied_amount: 0,
+        recovery_balance_after_amount: null,
+        recovery_application_status: "none",
+        recovery_application_note: null,
+      })
+      .eq("id", rowId)
+      .eq("run_id", runId)
+      .eq("company_id", companyId)
+      .or("recovery_applied_amount.gt.0,recovery_application_status.neq.none");
+
+    if (clearErr) {
+      return {
+        ok: false as const,
+        status: 500,
+        error: `Failed to clear stale proposed payroll recovery mirror fields for row ${rowId}: ${clearErr.message}`,
+      };
+    }
+  }
+
+  return { ok: true as const };
+}
+
+async function approvePayrollRunWithRecoveryApplications(
+  supabase: any,
+  companyId: string,
+  runId: string,
+  userId: string
+) {
+  const { data, error } = await supabase.rpc("approve_payroll_run_with_recovery_applications", {
+    p_company_id: companyId,
+    p_payroll_run_id: runId,
+    p_user_id: userId,
+    p_comment: "Approved payroll run",
+  });
+
+  if (error) {
+    return {
+      ok: false as const,
+      status: error.code === "22023" ? 409 : error.code === "42501" ? 403 : 500,
+      error: `Failed to approve payroll run with recovery applications: ${error.message}`,
+      debug: {
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      },
+    };
+  }
+
+  return { ok: true as const, data };
+}
+
+async function localComputeFullFromElements(supabase: any, runId: string, companyId: string, run: any) {
   const attachTry = await loadAttachments(supabase, runId, companyId);
   if (!attachTry.ok) {
     return {
@@ -2518,6 +2876,42 @@ async function loadContracts(
     }
   }
 
+  const resetRecoveryApplications = await resetProposedPayrollRecoveryApplications(
+    supabase,
+    runId,
+    companyId
+  );
+
+  if (!resetRecoveryApplications.ok) {
+    return resetRecoveryApplications;
+  }
+
+  const openRecoveryBalancesRes = await loadOpenPayrollRecoveryBalancesByEmployee(
+    supabase,
+    companyId,
+    employeeIds
+  );
+
+  if (!openRecoveryBalancesRes.ok) {
+    return openRecoveryBalancesRes;
+  }
+
+  const openRecoveryBalancesByEmployeeId = openRecoveryBalancesRes.byEmployeeId;
+
+  const recoveryPlansRes = await loadPayrollRecoveryPlansByEmployee(
+    supabase,
+    companyId,
+    employeeIds
+  );
+
+  if (!recoveryPlansRes.ok) {
+    return recoveryPlansRes;
+  }
+
+  const recoveryPlanByEmployeeId = recoveryPlansRes.byEmployeeId;
+  const fixedTotalRecoveryRemainingByEmployeeId = new Map<string, number>();
+  const fixedPerBalanceRecoveryRemainingByBalanceId = new Map<string, number>();
+
   for (const att of attachments) {
     const preId = String(pickFirst(att?.id, "") || "").trim();
     if (!preId) continue;
@@ -2655,8 +3049,6 @@ async function loadContracts(
 
     const calculatedNet = round2(gross - employeeElementDeductions - paye - employeeNi - pensionEmployee);
 
-    const payableNet = round2(Math.max(0, calculatedNet));
-
     const recoveryCreatedAmount = calculatedNet < 0 ? round2(Math.abs(calculatedNet)) : 0;
 
     const recoveryStatus = recoveryCreatedAmount > 0 ? "open" : "none";
@@ -2666,7 +3058,137 @@ async function loadContracts(
         ? "Negative calculated net pay carried as employee recovery balance. No negative bank payment should be exported."
         : null;
 
+    const payableNetBeforeRecovery = round2(Math.max(0, calculatedNet));
+    let recoveryAppliedAmount = 0;
+    let recoveryBalanceAfterAmount: number | null = null;
+    let recoveryApplicationStatus = "none";
+    let recoveryApplicationNote: string | null = null;
+    const proposedRecoveryApplications: any[] = [];
+
+    if (payableNetBeforeRecovery > 0 && recoveryCreatedAmount <= 0 && employeeId) {
+      const openBalances = openRecoveryBalancesByEmployeeId.get(employeeId) || [];
+      const recoveryPlan =
+        recoveryPlanByEmployeeId.get(employeeId) || {
+          employee_id: employeeId,
+          recovery_mode: "full_available" as const,
+          fixed_amount_per_run: null,
+          note: null,
+        };
+
+      if (recoveryPlan.recovery_mode !== "hold") {
+        let availableForRecovery = payableNetBeforeRecovery;
+
+        if (recoveryPlan.recovery_mode === "fixed_total_per_run") {
+          const fixedAmount = round2(toNumberSafe(recoveryPlan.fixed_amount_per_run));
+
+          if (!fixedTotalRecoveryRemainingByEmployeeId.has(employeeId)) {
+            fixedTotalRecoveryRemainingByEmployeeId.set(employeeId, fixedAmount);
+          }
+
+          const remainingEmployeePlanAmount = round2(
+            fixedTotalRecoveryRemainingByEmployeeId.get(employeeId) || 0
+          );
+
+          availableForRecovery = round2(Math.min(availableForRecovery, remainingEmployeePlanAmount));
+        }
+
+        for (const balance of openBalances) {
+          if (availableForRecovery <= 0) break;
+
+          const recoveryBalanceId = String(balance.id || "").trim();
+          const sourcePayrollRunEmployeeId = String(balance.source_payroll_run_employee_id || "").trim();
+          const balanceBefore = round2(toNumberSafe(balance.amount_outstanding));
+
+          if (!recoveryBalanceId) continue;
+          if (sourcePayrollRunEmployeeId && sourcePayrollRunEmployeeId === preId) continue;
+          if (balanceBefore <= 0) continue;
+
+          let planLimitedAvailable = availableForRecovery;
+
+          if (recoveryPlan.recovery_mode === "fixed_per_balance_per_run") {
+            const fixedAmount = round2(toNumberSafe(recoveryPlan.fixed_amount_per_run));
+
+            if (!fixedPerBalanceRecoveryRemainingByBalanceId.has(recoveryBalanceId)) {
+              fixedPerBalanceRecoveryRemainingByBalanceId.set(recoveryBalanceId, fixedAmount);
+            }
+
+            const remainingBalancePlanAmount = round2(
+              fixedPerBalanceRecoveryRemainingByBalanceId.get(recoveryBalanceId) || 0
+            );
+
+            planLimitedAvailable = round2(Math.min(planLimitedAvailable, remainingBalancePlanAmount));
+          }
+
+          const amountApplied = round2(Math.min(planLimitedAvailable, balanceBefore));
+          if (amountApplied <= 0) continue;
+
+          const balanceAfter = round2(Math.max(0, balanceBefore - amountApplied));
+          const plannedNote = payrollRecoveryPlanNote(recoveryPlan, amountApplied);
+
+          proposedRecoveryApplications.push({
+            company_id: companyId,
+            employee_id: employeeId,
+            recovery_balance_id: recoveryBalanceId,
+            payroll_run_id: runId,
+            payroll_run_employee_id: preId,
+            amount_applied: amountApplied,
+            balance_before: balanceBefore,
+            balance_after: balanceAfter,
+            status: "proposed",
+            note: plannedNote,
+            metadata: {
+              calculated_net_pay: calculatedNet,
+              payable_net_before_recovery: payableNetBeforeRecovery,
+              recovery_applied_amount: amountApplied,
+              recovery_plan_mode: recoveryPlan.recovery_mode,
+              recovery_plan_fixed_amount_per_run: recoveryPlan.fixed_amount_per_run,
+              recovery_plan_note: recoveryPlan.note,
+            },
+          });
+
+          balance.amount_outstanding = balanceAfter;
+          recoveryAppliedAmount = round2(recoveryAppliedAmount + amountApplied);
+          availableForRecovery = round2(availableForRecovery - amountApplied);
+
+          if (recoveryPlan.recovery_mode === "fixed_total_per_run") {
+            fixedTotalRecoveryRemainingByEmployeeId.set(
+              employeeId,
+              round2((fixedTotalRecoveryRemainingByEmployeeId.get(employeeId) || 0) - amountApplied)
+            );
+          }
+
+          if (recoveryPlan.recovery_mode === "fixed_per_balance_per_run") {
+            fixedPerBalanceRecoveryRemainingByBalanceId.set(
+              recoveryBalanceId,
+              round2((fixedPerBalanceRecoveryRemainingByBalanceId.get(recoveryBalanceId) || 0) - amountApplied)
+            );
+          }
+
+          recoveryBalanceAfterAmount =
+            recoveryBalanceAfterAmount === null
+              ? balanceAfter
+              : round2(recoveryBalanceAfterAmount + balanceAfter);
+        }
+
+        if (recoveryAppliedAmount > 0) {
+          recoveryApplicationStatus = "proposed";
+          recoveryApplicationNote = payrollRecoveryPlanNote(recoveryPlan, recoveryAppliedAmount);
+        }
+      }
+    }
+
+    const payableNet = round2(Math.max(0, payableNetBeforeRecovery - recoveryAppliedAmount));
+
     const net = calculatedNet;
+
+    const proposedRecoveryInsert = await insertProposedPayrollRecoveryApplications(
+      supabase,
+      proposedRecoveryApplications
+    );
+
+    if (!proposedRecoveryInsert.ok) {
+      return proposedRecoveryInsert;
+    }
 
     const patch: any = {
       gross_pay: gross,
@@ -2684,6 +3206,10 @@ async function loadContracts(
       recovery_created_amount: recoveryCreatedAmount,
       recovery_status: recoveryStatus,
       recovery_note: recoveryNote,
+      recovery_applied_amount: recoveryAppliedAmount,
+      recovery_balance_after_amount: recoveryBalanceAfterAmount,
+      recovery_application_status: recoveryApplicationStatus,
+      recovery_application_note: recoveryApplicationNote,
       calc_mode: "full",
     };
 
@@ -2720,7 +3246,16 @@ async function loadContracts(
 
     if (recoveryCreatedAmount > 0) {
       const amountRecovered = round2(toNumberSafe((existingRecovery as any)?.amount_recovered));
-      const amountOutstanding = round2(Math.max(0, recoveryCreatedAmount - amountRecovered));
+      const previousOriginalRecoveryAmount = round2(
+        toNumberSafe((existingRecovery as any)?.original_recovery_amount)
+      );
+      const previousAmountOutstanding = round2(
+        toNumberSafe((existingRecovery as any)?.amount_outstanding)
+      );
+      const recoveryOriginalDelta = round2(recoveryCreatedAmount - previousOriginalRecoveryAmount);
+      const amountOutstanding = existingRecovery
+        ? round2(Math.max(0, previousAmountOutstanding + recoveryOriginalDelta))
+        : recoveryCreatedAmount;
       const nextRecoveryStatus =
         amountOutstanding <= 0 ? "recovered" : amountRecovered > 0 ? "part_recovered" : "open";
 
@@ -2961,6 +3496,16 @@ async function loadContracts(
         };
       }
     }
+  }
+
+  const recoveryReconcile = await reconcileProposedPayrollRecoveryApplications(
+    supabase,
+    runId,
+    companyId
+  );
+
+  if (!recoveryReconcile.ok) {
+    return recoveryReconcile;
   }
 
   return {
@@ -3926,20 +4471,15 @@ export async function PATCH(req: Request, { params }: Ctx) {
       });
     }
 
-    const wf = await WorkflowService.changeStatus({
-      client: supabase,
-      runId: id,
-      companyId,
-      newStatus: "approved",
-      userId,
-      comment: "Approved payroll run",
-      automated: false,
-    });
-
-    if (!wf.success) {
-      const msg = String(wf.error || "Failed to approve run");
-      const isTransition = msg.toLowerCase().includes("cannot change");
-      return json(isTransition ? 409 : 500, { ok: false, debugSource: "payroll_run_route_rls_v2", error: msg });
+    const approvalResult = await approvePayrollRunWithRecoveryApplications(supabase, companyId, id, userId);
+    if (!approvalResult.ok) {
+      return json(approvalResult.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        error: approvalResult.error,
+        debug: approvalResult.debug,
+        action: "approve",
+      });
     }
 
     const rtiLog = await upsertRtiLogForRun(
@@ -3969,6 +4509,8 @@ export async function PATCH(req: Request, { params }: Ctx) {
       ok: true,
       debugSource: "payroll_run_route_rls_v2",
       action: "approve",
+      recoveryFinalise: approvalResult.data?.recovery || null,
+      approvalResult: approvalResult.data || null,
       rtiLog,
       run: post.run,
       employees: post.employees,

@@ -153,6 +153,10 @@ type ContractCard = {
   recoveryCreatedAmount: number;
   recoveryStatus: string;
   recoveryNote: string | null;
+  recoveryAppliedAmount: number;
+  recoveryBalanceAfterAmount: number;
+  recoveryApplicationStatus: string;
+  recoveryApplicationNote: string | null;
   net: number;
   earningLines: BreakdownLine[];
   deductionLines: BreakdownLine[];
@@ -725,6 +729,15 @@ export default function PayslipPage() {
           const value = String(raw).trim();
           return value || null;
         })(),
+        recoveryAppliedAmount: round2(toNumberSafe(pickFirst(rowAny?.recoveryAppliedAmount, rowAny?.recovery_applied_amount, 0))),
+        recoveryBalanceAfterAmount: round2(toNumberSafe(pickFirst(rowAny?.recoveryBalanceAfterAmount, rowAny?.recovery_balance_after_amount, 0))),
+        recoveryApplicationStatus: String(pickFirst(rowAny?.recoveryApplicationStatus, rowAny?.recovery_application_status, "none") || "none"),
+        recoveryApplicationNote: (() => {
+          const raw = pickFirst(rowAny?.recoveryApplicationNote, rowAny?.recovery_application_note, null);
+          if (raw === null || raw === undefined) return null;
+          const value = String(raw).trim();
+          return value || null;
+        })(),
         net: round2(toNumberSafe(row?.net)),
         earningLines,
         deductionLines,
@@ -1180,12 +1193,40 @@ export default function PayslipPage() {
                     </div>
                   </div>
 
+                  {card.recoveryAppliedAmount > 0 ? (
+                    <div style={S.breakdownRow}>
+                      <div style={S.breakdownLabelWrap}>
+                        <div style={{ fontWeight: 900 }}>Recovery of previous overpayment</div>
+                        <div style={S.breakdownMeta}>
+                          {card.recoveryApplicationNote || "Deducted from this period's payable net pay. This is not new taxable pay and does not change gross pay, PAYE, NI, or pension."}
+                        </div>
+                      </div>
+                      <div className="wf-num" style={{ fontWeight: 900, color: "#047857" }}>
+                        -{formatMoney(card.recoveryAppliedAmount)}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div style={S.breakdownRow}>
                     <div style={{ fontWeight: 900 }}>Amount payable this period</div>
                     <div className="wf-num" style={{ fontWeight: 900 }}>
                       {formatMoney(card.payableNetPay)}
                     </div>
                   </div>
+
+                  {card.recoveryAppliedAmount > 0 ? (
+                    <div style={S.breakdownRow}>
+                      <div style={S.breakdownLabelWrap}>
+                        <div style={{ fontWeight: 900 }}>Remaining overpayment balance</div>
+                        <div style={S.breakdownMeta}>
+                          After this payroll recovery is applied.
+                        </div>
+                      </div>
+                      <div className="wf-num" style={{ fontWeight: 900 }}>
+                        {formatMoney(card.recoveryBalanceAfterAmount)}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {card.recoveryCreatedAmount > 0 ? (
                     <div style={S.breakdownRow}>
@@ -1231,6 +1272,15 @@ export default function PayslipPage() {
               {formatMoney(contractCards.length > 0 ? contractCards.reduce((sum, card) => sum + card.calculatedNetPay, 0) : net)}
             </div>
           </div>
+
+          {contractCards.reduce((sum, card) => sum + card.recoveryAppliedAmount, 0) > 0 ? (
+            <div style={S.block}>
+              <div style={S.label}>Recovery deducted</div>
+              <div className="wf-num" style={S.num}>
+                -{formatMoney(contractCards.reduce((sum, card) => sum + card.recoveryAppliedAmount, 0))}
+              </div>
+            </div>
+          ) : null}
 
           <div style={S.block}>
             <div style={S.label}>Amount payable</div>
@@ -1305,6 +1355,20 @@ export default function PayslipPage() {
                 </div>
               </div>
 
+              {contractCards.reduce((sum, card) => sum + card.recoveryAppliedAmount, 0) > 0 ? (
+                <div style={S.breakdownRow}>
+                  <div style={S.breakdownLabelWrap}>
+                    <div style={{ fontWeight: 900 }}>Recovery of previous overpayment</div>
+                    <div style={S.breakdownMeta}>
+                      Deducted from this period's payable net pay. This is not new taxable pay and does not change gross pay, PAYE, NI, or pension.
+                    </div>
+                  </div>
+                  <div className="wf-num" style={{ fontWeight: 900, color: "#047857" }}>
+                    -{formatMoney(contractCards.reduce((sum, card) => sum + card.recoveryAppliedAmount, 0))}
+                  </div>
+                </div>
+              ) : null}
+
               <div style={S.breakdownRow}>
                 <div style={{ fontWeight: 900 }}>Amount payable this period</div>
                 <div className="wf-num" style={{ fontWeight: 900 }}>
@@ -1370,7 +1434,7 @@ export default function PayslipPage() {
                 7. Salary sacrifice pension. Where pension is handled by salary sacrifice, the reduction is shown as a pension reduction so Gross pay stays aligned with the payroll run while net pay still reflects the pre-tax sacrifice.
               </div>
               <div>
-                8. Calculated net pay and amount payable. Calculated net pay is the true payroll result after deductions. If calculated net pay is negative, amount payable is capped at GBP 0.00 and the negative balance is carried as an employee recovery balance.
+                8. Calculated net pay, payroll recovery, and amount payable. Calculated net pay is the true payroll result after deductions. If a previous overpayment is recovered in this run, the recovery is shown separately and reduces amount payable only. It does not change gross pay, PAYE, NI, pension, or taxable pay. If calculated net pay is negative, amount payable is capped at GBP 0.00 and the negative balance is carried as an employee recovery balance.
               </div>
             </div>
 
