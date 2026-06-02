@@ -279,6 +279,12 @@ export async function POST(req: Request, ctx: RouteContext) {
   const body = await readRequestBody(req);
   const action = normalizeAction(body.action);
   const balanceId = String(body.balanceId ?? "").trim();
+  const description = normalizeDescription(body.description);
+  const direction =
+    action === "manual_adjustment"
+      ? normalizeDirection(body.direction ?? body.adjustmentDirection)
+      : null;
+  const amount = body.amount === null || body.amount === undefined || body.amount === "" ? null : round2(body.amount);
 
   if (!action) {
     return json(400, {
@@ -296,238 +302,24 @@ export async function POST(req: Request, ctx: RouteContext) {
     });
   }
 
-  const { data: balanceData, error: balanceErr } = await supabase
-    .from("payroll_recovery_balances")
-    .select("*")
-    .eq("id", balanceId)
-    .eq("company_id", employeeKeys.company_id)
-    .eq("employee_id", employeeKeys.uuid)
-    .maybeSingle();
-
-  if (balanceErr) {
-    return json(500, {
-      ok: false,
-      error: "BALANCE_QUERY_FAILED",
-      message: "Could not load the recovery balance.",
-      ...dbErrPayload(balanceErr),
-    });
-  }
-
-  if (!balanceData) {
-    return json(404, {
-      ok: false,
-      error: "NOT_FOUND",
-      message: "Recovery balance not found for this employee.",
-    });
-  }
-
-  const balance = balanceData as RecoveryBalanceRow;
-  const currentRecovered = round2(balance.amount_recovered);
-  const currentOutstanding = round2(balance.amount_outstanding);
-  const currentStatus = String(balance.status || "open").trim().toLowerCase();
-  const description = normalizeDescription(body.description);
-
-  let transactionType:
-    | "manual_repayment"
-    | "write_off"
-    | "dispute_opened"
-    | "dispute_resolved"
-    | "manual_adjustment" = "manual_adjustment";
-
-  let transactionAmount = 0;
-  let nextRecovered = currentRecovered;
-  let nextOutstanding = currentOutstanding;
-  let nextStatus = currentStatus || "open";
-  let transactionDescription = description;
-  let adjustmentDirection: AdjustmentDirection | null = null;
-
-  if (action === "record_repayment") {
-    const amount = positiveMoney(body.amount);
-
-    if (amount === null) {
-      return json(400, {
-        ok: false,
-        error: "BAD_REQUEST",
-        message: "Enter a repayment amount greater than 0.",
-      });
-    }
-
-    if (amount > currentOutstanding) {
-      return json(400, {
-        ok: false,
-        error: "AMOUNT_TOO_HIGH",
-        message: "Repayment cannot be greater than the outstanding amount.",
-      });
-    }
-
-    transactionType = "manual_repayment";
-    transactionAmount = amount;
-    nextRecovered = round2(currentRecovered + amount);
-    nextOutstanding = round2(currentOutstanding - amount);
-    nextStatus = statusFromAmounts(nextRecovered, nextOutstanding);
-    transactionDescription = description || "Manual repayment recorded.";
-  } else if (action === "write_off") {
-    const amount =
-      body.amount === null || body.amount === undefined || body.amount === ""
-        ? currentOutstanding
-        : positiveMoney(body.amount);
-
-    if (amount === null) {
-      return json(400, {
-        ok: false,
-        error: "BAD_REQUEST",
-        message: "Enter a write-off amount greater than 0.",
-      });
-    }
-
-    if (amount > currentOutstanding) {
-      return json(400, {
-        ok: false,
-        error: "AMOUNT_TOO_HIGH",
-        message: "Write-off cannot be greater than the outstanding amount.",
-      });
-    }
-
-    if (!description) {
-      return json(400, {
-        ok: false,
-        error: "REASON_REQUIRED",
-        message: "Enter a reason for writing off the balance.",
-      });
-    }
-
-    transactionType = "write_off";
-    transactionAmount = amount;
-    nextOutstanding = round2(currentOutstanding - amount);
-    nextStatus = nextOutstanding <= 0 ? "written_off" : statusFromAmounts(nextRecovered, nextOutstanding);
-    transactionDescription = description;
-  } else if (action === "mark_disputed") {
-    if (!description) {
-      return json(400, {
-        ok: false,
-        error: "REASON_REQUIRED",
-        message: "Enter a reason for marking the balance as disputed.",
-      });
-    }
-
-    transactionType = "dispute_opened";
-    transactionAmount = 0;
-    nextStatus = "disputed";
-    transactionDescription = description;
-  } else if (action === "resolve_dispute") {
-    transactionType = "dispute_resolved";
-    transactionAmount = 0;
-    nextStatus = statusFromAmounts(currentRecovered, currentOutstanding);
-    transactionDescription = description || "Dispute resolved.";
-  } else {
-    const amount = positiveMoney(body.amount);
-    adjustmentDirection = normalizeDirection(body.direction ?? body.adjustmentDirection);
-
-    if (amount === null) {
-      return json(400, {
-        ok: false,
-        error: "BAD_REQUEST",
-        message: "Enter an adjustment amount greater than 0.",
-      });
-    }
-
-    if (!adjustmentDirection) {
-      return json(400, {
-        ok: false,
-        error: "BAD_REQUEST",
-        message: 'Adjustment direction must be "increase" or "decrease".',
-      });
-    }
-
-    if (!description) {
-      return json(400, {
-        ok: false,
-        error: "REASON_REQUIRED",
-        message: "Enter a reason for the manual adjustment.",
-      });
-    }
-
-    if (adjustmentDirection === "decrease" && amount > currentOutstanding) {
-      return json(400, {
-        ok: false,
-        error: "AMOUNT_TOO_HIGH",
-        message: "Decrease adjustment cannot be greater than the outstanding amount.",
-      });
-    }
-
-    transactionType = "manual_adjustment";
-    transactionAmount = amount;
-    nextOutstanding =
-      adjustmentDirection === "increase"
-        ? round2(currentOutstanding + amount)
-        : round2(currentOutstanding - amount);
-    nextStatus = statusFromAmounts(nextRecovered, nextOutstanding);
-    transactionDescription = description;
-  }
-
-  const { data: updatedBalance, error: updateErr } = await supabase
-    .from("payroll_recovery_balances")
-    .update({
-      amount_recovered: nextRecovered,
-      amount_outstanding: nextOutstanding,
-      status: nextStatus,
-      updated_by: auth.user.id,
-    })
-    .eq("id", balance.id)
-    .eq("company_id", employeeKeys.company_id)
-    .eq("employee_id", employeeKeys.uuid)
-    .select("*")
-    .single();
-
-  if (updateErr) {
-    return json(500, {
-      ok: false,
-      error: "BALANCE_UPDATE_FAILED",
-      message: "Could not update the recovery balance.",
-      ...dbErrPayload(updateErr),
-    });
-  }
-
-  const { data: transaction, error: txErr } = await supabase
-    .from("payroll_recovery_transactions")
-    .insert({
-      company_id: employeeKeys.company_id,
-      employee_id: employeeKeys.uuid,
-      recovery_balance_id: balance.id,
-      payroll_run_id: balance.source_payroll_run_id,
-      payroll_run_employee_id: balance.source_payroll_run_employee_id,
-      transaction_type: transactionType,
-      amount: transactionAmount,
-      balance_after: nextOutstanding,
-      description: transactionDescription,
-      created_by: auth.user.id,
-      metadata: {
-        action,
-        adjustment_direction: adjustmentDirection,
-        previous_status: currentStatus,
-        next_status: nextStatus,
-        previous_amount_recovered: currentRecovered,
-        next_amount_recovered: nextRecovered,
-        previous_amount_outstanding: currentOutstanding,
-        next_amount_outstanding: nextOutstanding,
-      },
-    })
-    .select("*")
-    .single();
-
-  if (txErr) {
-    return json(500, {
-      ok: false,
-      error: "TRANSACTION_INSERT_FAILED",
-      message: "The recovery balance was updated, but the transaction history entry could not be created.",
-      ...dbErrPayload(txErr),
-    });
-  }
-
-  return json(200, {
-    ok: true,
-    action,
-    balance: updatedBalance,
-    transaction,
+  const { data: rpcResult, error: rpcErr } = await supabase.rpc("apply_payroll_recovery_action", {
+    p_company_id: employeeKeys.company_id,
+    p_employee_id: employeeKeys.uuid,
+    p_recovery_balance_id: balanceId,
+    p_action: action,
+    p_amount: amount,
+    p_description: description,
+    p_direction: direction,
   });
+
+  if (rpcErr) {
+    return json(400, {
+      ok: false,
+      error: "RECOVERY_ACTION_FAILED",
+      message: String(rpcErr.message || "Could not update the recovery balance."),
+      ...dbErrPayload(rpcErr),
+    });
+  }
+
+  return json(200, rpcResult || { ok: true, action });
 }
