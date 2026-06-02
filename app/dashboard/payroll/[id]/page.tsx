@@ -35,6 +35,10 @@ type Row = {
   recoveryCreatedAmount: number;
   recoveryStatus: string;
   recoveryNote: string | null;
+  recoveryAppliedAmount: number;
+  recoveryBalanceAfterAmount: number;
+  recoveryApplicationStatus: string;
+  recoveryApplicationNote: string | null;
   calcMode: string;
 };
 
@@ -325,6 +329,11 @@ function mapEmployees(raw: any[]): Row[] {
     const recoveryStatus = String(pickFirst(r.recoveryStatus, r.recovery_status, recoveryCreatedAmount > 0 ? "open" : "none") || "none");
     const recoveryNoteRaw = pickFirst(r.recoveryNote, r.recovery_note, null);
     const recoveryNote = recoveryNoteRaw === null || recoveryNoteRaw === undefined ? null : String(recoveryNoteRaw);
+    const recoveryAppliedAmount = toNumberSafe(pickFirst(r.recoveryAppliedAmount, r.recovery_applied_amount, 0) as any);
+    const recoveryBalanceAfterAmount = toNumberSafe(pickFirst(r.recoveryBalanceAfterAmount, r.recovery_balance_after_amount, 0) as any);
+    const recoveryApplicationStatus = String(pickFirst(r.recoveryApplicationStatus, r.recovery_application_status, recoveryAppliedAmount > 0 ? "proposed" : "none") || "none");
+    const recoveryApplicationNoteRaw = pickFirst(r.recoveryApplicationNote, r.recovery_application_note, null);
+    const recoveryApplicationNote = recoveryApplicationNoteRaw === null || recoveryApplicationNoteRaw === undefined ? null : String(recoveryApplicationNoteRaw);
     const tax = toNumberSafe(pickFirst(r.tax, r.total_tax, r.tax_pay, r.paye_tax, r.income_tax, 0) as any);
     const ni = toNumberSafe(pickFirst(r.ni, r.ni_employee, r.employee_ni, r.niEmployee, r.employeeNi, 0) as any);
     const eePen = toNumberSafe(
@@ -349,6 +358,10 @@ function mapEmployees(raw: any[]): Row[] {
       recoveryCreatedAmount: Number.isFinite(recoveryCreatedAmount) ? Number(recoveryCreatedAmount.toFixed(2)) : 0,
       recoveryStatus,
       recoveryNote,
+      recoveryAppliedAmount: Number.isFinite(recoveryAppliedAmount) ? Number(recoveryAppliedAmount.toFixed(2)) : 0,
+      recoveryBalanceAfterAmount: Number.isFinite(recoveryBalanceAfterAmount) ? Number(recoveryBalanceAfterAmount.toFixed(2)) : 0,
+      recoveryApplicationStatus,
+      recoveryApplicationNote,
       calcMode,
     };
   });
@@ -1229,7 +1242,7 @@ export default function PayrollRunDetailPage() {
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee NI for this employee in this run">{formatMoney(r.ni)}</div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Employee pension deduction for this employee in this run">{formatMoney(r.eePen)}</div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[8.5rem]"><div className="flex flex-col gap-1"><div className={`${inter.className} flex h-10 w-full min-w-0 items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-right text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="True calculated net pay. This can be negative where a payroll correction creates an employee recovery balance.">{formatMoney(r.calculatedNetPay)}</div>{rowError ? <div className="text-xs font-semibold text-red-700">{rowError}</div> : null}</div></div></td>
-                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[9.5rem]"><div className="flex flex-col gap-1"><div className={`${inter.className} flex h-10 w-full min-w-0 items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-right text-[13px] font-extrabold`} style={{ color: r.recoveryCreatedAmount > 0 ? "#991b1b" : WF_BLUE }} title="Bank-safe amount payable. Negative calculated net is capped at GBP 0.00 for payment export.">{formatMoney(r.payableNetPay)}</div>{r.recoveryCreatedAmount > 0 ? <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800" title={r.recoveryNote || "Negative calculated net carried as an employee recovery balance."}>Recovery {formatMoney(r.recoveryCreatedAmount)}</div> : null}</div></div></td>
+                    <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[9.5rem]"><div className="flex flex-col gap-1"><div className={`${inter.className} flex h-10 w-full min-w-0 items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-right text-[13px] font-extrabold`} style={{ color: r.recoveryCreatedAmount > 0 ? "#991b1b" : WF_BLUE }} title="Bank-safe amount payable. Negative calculated net is capped at GBP 0.00 for payment export. Payroll recovery reduces amount payable only, not gross or taxable pay.">{formatMoney(r.payableNetPay)}</div>{r.recoveryAppliedAmount > 0 ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-800" title={r.recoveryApplicationNote || "Recovery from previous overpayment proposed for this payroll run."}>Recovered this run {formatMoney(r.recoveryAppliedAmount)}</div> : null}{r.recoveryCreatedAmount > 0 ? <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800" title={r.recoveryNote || "Negative calculated net carried as an employee recovery balance."}>Recovery {formatMoney(r.recoveryCreatedAmount)}</div> : null}</div></div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className="mx-auto w-full max-w-[6.5rem]"><Link href={`/dashboard/payroll/${runId}/payslip/${r.employeeId}`} className="inline-flex h-10 w-full min-w-0 items-center justify-center rounded-xl px-2 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE }} title="Open one combined payslip for this employee across all contracts in the run">Open</Link></div></td>
                   </tr>;
                 })}
