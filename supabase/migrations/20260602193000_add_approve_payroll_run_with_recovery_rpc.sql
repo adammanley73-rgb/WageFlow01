@@ -11,7 +11,7 @@ set search_path = public
 as $$
 declare
   v_auth_uid uuid := auth.uid();
-  v_run public.payroll_runs%rowtype;
+  v_run record;
   v_now timestamptz := now();
   v_current_status text;
   v_history jsonb;

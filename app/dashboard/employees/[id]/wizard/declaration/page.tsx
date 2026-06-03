@@ -28,6 +28,33 @@ type FieldErrors = {
   student_loan_plan: string;
   postgraduate_loan: string;
 };
+const STARTER_DECLARATION_OPTIONS: Array<{
+  value: "A" | "B" | "C";
+  label: string;
+  description: string;
+  payrollEffect: string;
+}> = [
+  {
+    value: "A",
+    label: "Statement A",
+    description:
+      "This is the employee's first job since 6 April and they have not received taxable Jobseeker's Allowance, Employment and Support Allowance, taxable Incapacity Benefit, State Pension, or an occupational pension.",
+    payrollEffect: "Usually starts the employee on 1257L cumulative unless another tax code is entered later.",
+  },
+  {
+    value: "B",
+    label: "Statement B",
+    description:
+      "This is now the employee's only job, but since 6 April they have had another job, taxable Jobseeker's Allowance, Employment and Support Allowance, taxable Incapacity Benefit, State Pension, or an occupational pension.",
+    payrollEffect: "Usually starts the employee on 1257L Week 1 / Month 1 unless another tax code is entered later.",
+  },
+  {
+    value: "C",
+    label: "Statement C",
+    description: "The employee has another job or receives a pension.",
+    payrollEffect: "Usually starts the employee on BR Week 1 / Month 1 unless another tax code is entered later.",
+  },
+];
 
 function isJson(res: Response) {
   const ct = res.headers.get("content-type") || "";
@@ -216,6 +243,11 @@ export default function DeclarationPage() {
     );
   }, [fieldErrors]);
 
+  const selectedDeclaration = useMemo(() => {
+    const value = normaliseStarterDeclaration(form.starter_declaration);
+    return STARTER_DECLARATION_OPTIONS.find((option) => option.value === value) ?? null;
+  }, [form.starter_declaration]);
+
   async function onSave() {
     setTouched({
       starter_declaration: true,
@@ -360,15 +392,56 @@ export default function DeclarationPage() {
                   }`}
                 >
                   <option value="">Select declaration</option>
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
+                  {STARTER_DECLARATION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}: {option.description}
+                    </option>
+                  ))}
                 </select>
                 {touched.starter_declaration && fieldErrors.starter_declaration ? (
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.starter_declaration}</div>
                 ) : null}
-              </div>
 
+                <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
+                  <div className="font-semibold">Choose the statement from the employee's starter checklist.</div>
+                  <div className="mt-1">
+                    These descriptions explain what A, B, and C mean before WageFlow applies the usual starter tax treatment.
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-3">
+                  {STARTER_DECLARATION_OPTIONS.map((option) => {
+                    const selected = selectedDeclaration?.value === option.value;
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          setForm((prev) => ({
+                            ...prev,
+                            starter_declaration: option.value,
+                          }));
+                          setTouched((prev) => ({ ...prev, starter_declaration: true }));
+                        }}
+                        className={`rounded-lg border bg-white p-4 text-left text-sm ${
+                          selected
+                            ? "border-blue-700 ring-2 ring-blue-200"
+                            : "border-neutral-300 hover:border-blue-500"
+                        }`}
+                      >
+                        <div className="font-extrabold text-neutral-950">
+                          {option.label} ({option.value})
+                        </div>
+                        <div className="mt-1 text-neutral-800">{option.description}</div>
+                        <div className="mt-2 rounded-md bg-neutral-100 px-3 py-2 text-xs font-semibold text-neutral-800">
+                          Payroll effect: {option.payrollEffect}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div>
                 <label htmlFor="student_loan_plan" className="block text-sm font-medium text-neutral-900">
                   Student loan plan

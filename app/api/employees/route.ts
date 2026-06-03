@@ -1,4 +1,4 @@
-﻿/* C:\Projects\wageflow01\app\api\employees\route.ts
+/* C:\Projects\wageflow01\app\api\employees\route.ts
    Supabase-backed Employees API.
    Multi-tenant safe: uses session + RLS, validates company membership, avoids service role.
 */
@@ -302,9 +302,6 @@ export async function POST(req: Request) {
     }
 
     const email = strOrNull(body?.email)?.toLowerCase() ?? null;
-    if (!email) {
-      return json(400, { ok: false, code: "MISSING_EMAIL", error: "email is required" });
-    }
 
     const start_date = strOrNull(body?.start_date);
     if (!start_date) {

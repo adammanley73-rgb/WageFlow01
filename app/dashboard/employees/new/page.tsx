@@ -470,18 +470,13 @@ export default function NewEmployeePage() {
     const last = form.last_name.trim();
     const email = form.email.trim();
 
-    if (!first || !last || !email) {
-      setErr("First name, last name, and email are required.");
+    if (!first || !last) {
+      setErr("First name and last name are required.");
       return;
     }
 
-    if (!isValidEmail(email)) {
-      setErr("Enter a valid email address.");
-      return;
-    }
-
-    if (!form.job_title.trim()) {
-      setErr("Job title is required.");
+    if (email && !isValidEmail(email)) {
+      setErr("Enter a valid email address, or leave email blank if it is not available yet.");
       return;
     }
 
@@ -584,8 +579,8 @@ export default function NewEmployeePage() {
 
       first_name: first,
       last_name: last,
-      email,
-      job_title: form.job_title.trim(),
+      email: email || null,
+      job_title: form.job_title.trim() || null,
       start_date: form.start_date,
       date_of_birth: form.date_of_birth,
 
@@ -776,7 +771,7 @@ export default function NewEmployeePage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm text-neutral-800">Email address</label>
+                  <label className="block text-sm text-neutral-800">Email address (optional)</label>
                   <input
                     value={form.email}
                     onChange={(e) => setField("email", e.target.value)}
@@ -785,6 +780,9 @@ export default function NewEmployeePage() {
                     name="email"
                     inputMode="email"
                   />
+                  <div className="mt-1 text-xs text-neutral-600">
+                    Leave blank if the employee does not have an email address yet. It can be added later for payslips or self-service.
+                  </div>
                 </div>
 
                 <div>
@@ -811,13 +809,16 @@ export default function NewEmployeePage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm text-neutral-800">Job title</label>
+                  <label className="block text-sm text-neutral-800">Job title (optional)</label>
                   <input
                     value={form.job_title}
                     onChange={(e) => setField("job_title", e.target.value)}
                     className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                     name="job_title"
                   />
+                  <div className="mt-1 text-xs text-neutral-600">
+                    Useful for HR records and reporting, but not required to run payroll.
+                  </div>
                 </div>
 
                 <div>
