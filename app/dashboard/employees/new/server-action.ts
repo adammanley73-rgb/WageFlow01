@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { supabaseServer } from "@/lib/supabaseServer";
 import { requireCompanyIdOrRedirect } from "@/lib/company";
@@ -70,7 +70,7 @@ export async function createServerAction(formData: FormData) {
     if (!payFrequency) {
       return {
         ok: false,
-        error: "First name, last name, email, and pay frequency are required.",
+        error: "Pay frequency is required.",
       };
     }
 
@@ -97,10 +97,10 @@ export async function createServerAction(formData: FormData) {
       pay_schedule_id: payScheduleId,
     };
 
-    if (!payload.first_name || !payload.last_name || !payload.email) {
+    if (!payload.first_name || !payload.last_name) {
       return {
         ok: false,
-        error: "First name, last name, email, and pay frequency are required.",
+        error: "First name and last name are required.",
       };
     }
 

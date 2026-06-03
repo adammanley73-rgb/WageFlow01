@@ -10,6 +10,7 @@ import PageTemplate from "@/components/ui/PageTemplate";
 const CARD = "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
 
 type TaxCodeBasis = "cumulative" | "week1_month1";
+type StarterDeclaration = "A" | "B" | "C" | null;
 
 type NiCategory =
   | "A"
@@ -19,7 +20,15 @@ type NiCategory =
   | "J"
   | "M"
   | "V"
-  | "Z";
+  | "Z"
+  | "F"
+  | "I"
+  | "L"
+  | "S"
+  | "N"
+  | "E"
+  | "D"
+  | "K";
 
 type TaxRow = {
   tax_code: string;
@@ -66,17 +75,42 @@ function isValidTaxCode(raw: string): boolean {
 }
 
 const NI_CATEGORY_LABELS: Record<NiCategory, string> = {
-  A: "A – Standard rate",
-  B: "B – Married women / widows (reduced rate)",
-  C: "C – Over State Pension age",
-  H: "H – Apprentice under 25",
-  J: "J – Deferred NI",
-  M: "M – Under 21",
-  V: "V – Veteran",
-  Z: "Z – Under 21, deferred NI",
+  A: "A - Standard rate",
+  B: "B - Married women / widows reduced rate",
+  C: "C - Over State Pension age",
+  H: "H - Apprentice under 25",
+  J: "J - Deferred NI",
+  M: "M - Under 21",
+  V: "V - Veteran",
+  Z: "Z - Under 21, deferred NI",
+  F: "F - Freeport standard equivalent",
+  I: "I - Freeport reduced rate",
+  L: "L - Freeport deferred NI",
+  S: "S - Freeport over State Pension age",
+  N: "N - Investment Zone standard equivalent",
+  E: "E - Investment Zone reduced rate",
+  D: "D - Investment Zone deferred NI",
+  K: "K - Investment Zone over State Pension age",
 };
 
-const NI_CATEGORIES: NiCategory[] = ["A", "B", "C", "H", "J", "M", "V", "Z"];
+const NI_CATEGORIES: NiCategory[] = [
+  "A",
+  "B",
+  "C",
+  "H",
+  "J",
+  "M",
+  "V",
+  "Z",
+  "F",
+  "I",
+  "L",
+  "S",
+  "N",
+  "E",
+  "D",
+  "K",
+];
 
 function getFieldErrors(form: TaxRow): FieldErrors {
   return {
@@ -100,6 +134,7 @@ export default function TaxPage() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [p45Provided, setP45Provided] = useState<boolean | null>(null);
+  const [starterDeclaration, setStarterDeclaration] = useState<StarterDeclaration>(null);
 
   const [toast, setToast] = useState<ToastState>({ open: false, message: "", tone: "info" });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -148,6 +183,13 @@ export default function TaxPage() {
           if (sd && typeof sd.p45_provided === "boolean") {
             setP45Provided(sd.p45_provided);
           }
+
+          const declaration = String(sd?.starter_declaration || "").trim().toUpperCase();
+          setStarterDeclaration(
+            declaration === "A" || declaration === "B" || declaration === "C"
+              ? (declaration as StarterDeclaration)
+              : null
+          );
         }
 
         if (r.status === 204 || r.status === 404) return;
@@ -192,6 +234,18 @@ export default function TaxPage() {
     () => !fieldErrors.tax_code && !fieldErrors.tax_code_basis && !fieldErrors.ni_category,
     [fieldErrors]
   );
+
+  const taxLockedByStarterDeclaration =
+    p45Provided === false && Boolean(starterDeclaration);
+
+  const starterDeclarationLabel =
+    starterDeclaration === "A"
+      ? "Statement A"
+      : starterDeclaration === "B"
+      ? "Statement B"
+      : starterDeclaration === "C"
+      ? "Statement C"
+      : "";
 
   async function onSave() {
     setTouched({ tax_code: true, tax_code_basis: true, ni_category: true });
@@ -284,6 +338,18 @@ export default function TaxPage() {
               <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">{err}</div>
             )}
 
+            {taxLockedByStarterDeclaration ? (
+              <div className="mb-4 rounded-lg border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950">
+                <div className="font-extrabold">
+                  Tax code and tax basis are locked from the New Starter Declaration.
+                </div>
+                <div className="mt-1">
+                  {starterDeclarationLabel} has already set the starting tax code and basis for this employee.
+                  To avoid conflicting payroll setup, these fields cannot be changed in this wizard step.
+                </div>
+              </div>
+            ) : null}
+
             <div className="grid grid-cols-1 gap-6">
               <div>
                 <label htmlFor="tax_code" className="block text-sm font-medium text-neutral-900">
@@ -300,7 +366,10 @@ export default function TaxPage() {
                     }))
                   }
                   onBlur={() => setTouched((prev) => ({ ...prev, tax_code: true }))}
-                  className={inputClass(!!(touched.tax_code && fieldErrors.tax_code))}
+                  disabled={taxLockedByStarterDeclaration}
+                  className={`${inputClass(!!(touched.tax_code && fieldErrors.tax_code))} ${
+                    taxLockedByStarterDeclaration ? "cursor-not-allowed bg-neutral-100 text-neutral-700" : ""
+                  }`}
                   placeholder="e.g. 1257L"
                   aria-invalid={touched.tax_code && !!fieldErrors.tax_code}
                 />
@@ -326,13 +395,15 @@ export default function TaxPage() {
                     <button
                       key={opt.value}
                       type="button"
+                      disabled={taxLockedByStarterDeclaration}
                       onClick={() => {
+                        if (taxLockedByStarterDeclaration) return;
                         setForm((prev) => ({ ...prev, tax_code_basis: opt.value }));
                         setTouched((prev) => ({ ...prev, tax_code_basis: true }));
                       }}
                       className={`inline-flex items-center gap-2 rounded-md border border-neutral-400 bg-white px-3 py-2 text-sm text-neutral-900 ${
                         form.tax_code_basis === opt.value ? "ring-2 ring-blue-600" : ""
-                      }`}
+                      } ${taxLockedByStarterDeclaration ? "cursor-not-allowed opacity-70" : ""}`}
                     >
                       {opt.label}
                     </button>
@@ -342,8 +413,9 @@ export default function TaxPage() {
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.tax_code_basis}</div>
                 ) : (
                   <div className="mt-1 text-xs text-neutral-700">
-                    Use Week 1 / Month 1 only where the P45 or HMRC instruction requires it. The
-                    default is cumulative.
+                    {taxLockedByStarterDeclaration
+                      ? "Set automatically from the New Starter Declaration."
+                      : "Use Week 1 / Month 1 only where the P45 or HMRC instruction requires it. The default is cumulative."}
                   </div>
                 )}
               </div>
@@ -375,8 +447,7 @@ export default function TaxPage() {
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.ni_category}</div>
                 ) : (
                   <div className="mt-1 text-xs text-neutral-700">
-                    Most employees are category A. Use category V for qualifying veterans where
-                    applicable.
+                    Most employees are category A. Use Freeport and Investment Zone categories only where the employer and employee meet the special tax site relief rules. A qualifying workplace postcode must be available for FPS reporting.
                   </div>
                 )}
               </div>

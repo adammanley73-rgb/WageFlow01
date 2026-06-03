@@ -9,9 +9,9 @@ export const revalidate = 0;
 type RouteContext = { params: Promise<{ id: string }> };
 
 type TaxCodeBasis = "cumulative" | "week1_month1";
-type NiCategory = "A" | "B" | "C" | "H" | "J" | "M" | "V" | "Z";
+type NiCategory = "A" | "B" | "C" | "H" | "J" | "M" | "V" | "Z" | "F" | "I" | "L" | "S" | "N" | "E" | "D" | "K";type StarterDeclaration = "A" | "B" | "C" | null;
 
-const VALID_NI_CATEGORIES: NiCategory[] = ["A", "B", "C", "H", "J", "M", "V", "Z"];
+const VALID_NI_CATEGORIES: NiCategory[] = ["A", "B", "C", "H", "J", "M", "V", "Z", "F", "I", "L", "S", "N", "E", "D", "K"];
 
 type TaxRow = {
   tax_code: string;
@@ -99,6 +99,34 @@ function normalizeNiCategory(v: unknown): NiCategory | null {
 function normalizeBoolean(v: unknown): boolean {
   if (v === true || v === "true" || v === "yes" || v === "1" || v === 1) return true;
   return false;
+}
+
+function normalizeNullableBoolean(v: unknown): boolean | null {
+  if (v === true || v === "true" || v === "yes" || v === "1" || v === 1) return true;
+  if (v === false || v === "false" || v === "no" || v === "0" || v === 0) return false;
+  return null;
+}
+
+function normalizeStarterDeclaration(v: unknown): StarterDeclaration {
+  const s = String(v ?? "").trim().toUpperCase();
+  if (s === "A" || s === "B" || s === "C") return s;
+  return null;
+}
+
+function starterDeclarationTaxSettings(declaration: StarterDeclaration): Pick<TaxRow, "tax_code" | "tax_code_basis"> | null {
+  if (declaration === "A") {
+    return { tax_code: "1257L", tax_code_basis: "cumulative" };
+  }
+
+  if (declaration === "B") {
+    return { tax_code: "1257L", tax_code_basis: "week1_month1" };
+  }
+
+  if (declaration === "C") {
+    return { tax_code: "BR", tax_code_basis: "week1_month1" };
+  }
+
+  return null;
 }
 
 function dbErrPayload(err: unknown) {
@@ -276,11 +304,34 @@ export async function POST(req: Request, ctx: RouteContext) {
   }
 
   try {
+    const { data: starterRow, error: starterErr } = await supabase
+      .from("employee_starters")
+      .select("p45_provided, starter_declaration")
+      .eq("employee_id", employeeKeys.uuid)
+      .maybeSingle();
+
+    if (starterErr && !looksLikeMissingTableOrRls(starterErr)) {
+      return json(500, {
+        ok: false,
+        error: "STARTER_LOAD_FAILED",
+        message: "Failed to check starter declaration before saving tax details.",
+        ...dbErrPayload(starterErr),
+      });
+    }
+
+    const starterP45Provided = normalizeNullableBoolean((starterRow as any)?.p45_provided);
+    const starterDeclaration = normalizeStarterDeclaration((starterRow as any)?.starter_declaration);
+    const starterTaxSettings =
+      starterP45Provided === false ? starterDeclarationTaxSettings(starterDeclaration) : null;
+
+    const taxCodeToSave = starterTaxSettings?.tax_code ?? validated.row.tax_code;
+    const taxBasisToSave = starterTaxSettings?.tax_code_basis ?? validated.row.tax_code_basis;
+
     const { data: saved, error: updateError } = await supabase
       .from("employees")
       .update({
-        tax_code: validated.row.tax_code,
-        tax_code_basis: validated.row.tax_code_basis,
+        tax_code: taxCodeToSave,
+        tax_code_basis: taxBasisToSave,
         ni_category: validated.row.ni_category,
         is_director: validated.row.is_director,
       })
@@ -316,7 +367,9 @@ export async function POST(req: Request, ctx: RouteContext) {
           }
         : {
             ...validated.row,
-            tax_basis: validated.row.tax_code_basis,
+            tax_code: taxCodeToSave,
+            tax_code_basis: taxBasisToSave,
+            tax_basis: taxBasisToSave,
           },
     });
   } catch (e: unknown) {

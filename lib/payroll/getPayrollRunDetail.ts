@@ -1120,25 +1120,67 @@ function getNiThresholds(taxYear?: number): NiThresholds {
   };
 }
 
-function computeApproxMonthlyNi(
-  gross: number,
-  niCategory: any,
-  taxYear?: number
-) {
+function computeApproxMonthlyNi(gross: number, niCategory: any, taxYear?: number) {
   const pay = Math.max(0, Number(gross || 0));
   const cat = String(niCategory ?? "A").trim().toUpperCase();
-  const { PT, UEL, ST, employeeMain, employeeUpper, employerRate } = getNiThresholds(taxYear);
+
+  const thresholds: any = getNiThresholds(taxYear);
+  const PT = Number(thresholds.PT ?? 1048);
+  const UEL = Number(thresholds.UEL ?? 4189);
+  const ST = Number(thresholds.ST ?? 417);
+  const employeeMain = Number(thresholds.employeeMain ?? 0.08);
+  const employeeUpper = Number(thresholds.employeeUpper ?? 0.02);
+  const employeeReducedMain = Number(thresholds.employeeReducedMain ?? 0.0185);
+  const employeeDeferred = Number(thresholds.employeeDeferred ?? employeeUpper);
+  const employerRate = Number(thresholds.employerRate ?? 0.15);
+
+  const UST = Number(thresholds.UST ?? UEL);
+  const AUST = Number(thresholds.AUST ?? UST);
+  const VUST = Number(thresholds.VUST ?? UST);
+  const FUST = Number(thresholds.FUST ?? 2083);
+  const IZUST = Number(thresholds.IZUST ?? 2083);
+
+  const statePensionAgeCategories = new Set(["C", "S", "K"]);
+  const reducedRateCategories = new Set(["B", "I", "E"]);
+  const deferredCategories = new Set(["J", "Z", "L", "D"]);
+  const under21EmployerReliefCategories = new Set(["M", "Z"]);
+  const apprenticeEmployerReliefCategories = new Set(["H"]);
+  const veteranEmployerReliefCategories = new Set(["V"]);
+  const freeportEmployerReliefCategories = new Set(["F", "I", "L", "S"]);
+  const investmentZoneEmployerReliefCategories = new Set(["N", "E", "D", "K"]);
 
   let employee = 0;
   let employer = 0;
 
   if (pay > 0) {
-    if (cat !== "C") {
+    if (!statePensionAgeCategories.has(cat)) {
       const employeeMainBand = Math.max(Math.min(pay, UEL) - PT, 0);
       const employeeUpperBand = Math.max(pay - UEL, 0);
-      employee = employeeMainBand * employeeMain + employeeUpperBand * employeeUpper;
+
+      if (deferredCategories.has(cat)) {
+        employee = Math.max(pay - PT, 0) * employeeDeferred;
+      } else if (reducedRateCategories.has(cat)) {
+        employee = employeeMainBand * employeeReducedMain + employeeUpperBand * employeeUpper;
+      } else {
+        employee = employeeMainBand * employeeMain + employeeUpperBand * employeeUpper;
+      }
     }
-    employer = Math.max(pay - ST, 0) * employerRate;
+
+    let employerThreshold = ST;
+
+    if (freeportEmployerReliefCategories.has(cat)) {
+      employerThreshold = FUST;
+    } else if (investmentZoneEmployerReliefCategories.has(cat)) {
+      employerThreshold = IZUST;
+    } else if (veteranEmployerReliefCategories.has(cat)) {
+      employerThreshold = VUST;
+    } else if (apprenticeEmployerReliefCategories.has(cat)) {
+      employerThreshold = AUST;
+    } else if (under21EmployerReliefCategories.has(cat)) {
+      employerThreshold = UST;
+    }
+
+    employer = Math.max(pay - employerThreshold, 0) * employerRate;
   }
 
   return {

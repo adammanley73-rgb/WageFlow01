@@ -311,12 +311,10 @@ function getFieldErrors(form: FormState): FieldErrors {
   return {
     first_name: str(form.first_name) ? "" : "First name is required.",
     last_name: str(form.last_name) ? "" : "Last name is required.",
-    email: !str(form.email)
-      ? "Email is required."
-      : !isValidEmail(form.email)
-      ? "Enter a valid email address."
+    email: str(form.email) && !isValidEmail(form.email)
+      ? "Enter a valid email address, or leave email blank if it is not available yet."
       : "",
-    job_title: str(form.job_title) ? "" : "Job title is required.",
+    job_title: "",
     start_date: !str(form.start_date)
       ? "Start date is required."
       : !isIsoDateOnly(form.start_date)
@@ -723,8 +721,8 @@ export default function StarterPage() {
       const updatePayload = {
         first_name: str(form.first_name),
         last_name: str(form.last_name),
-        email: str(form.email),
-        job_title: str(form.job_title),
+        email: str(form.email) || null,
+        job_title: str(form.job_title) || null,
         start_date: str(form.start_date),
         date_of_birth: str(form.date_of_birth),
         employment_type: str(form.employment_type),
@@ -932,7 +930,7 @@ export default function StarterPage() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm text-neutral-900">Email</label>
+                <label className="block text-sm text-neutral-900">Email (optional)</label>
                 <input
                   value={form.email}
                   onChange={(e) => setField("email", e.target.value)}
@@ -942,11 +940,15 @@ export default function StarterPage() {
                 />
                 {touched.email && fieldErrors.email ? (
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.email}</div>
-                ) : null}
+                ) : (
+                  <div className="mt-1 text-xs text-neutral-700">
+                    Leave blank if the employee does not have an email address yet.
+                  </div>
+                )}
               </div>
 
               <div>
-                <label className="block text-sm text-neutral-900">Job title</label>
+                <label className="block text-sm text-neutral-900">Job title (optional)</label>
                 <input
                   value={form.job_title}
                   onChange={(e) => setField("job_title", e.target.value)}
@@ -955,7 +957,11 @@ export default function StarterPage() {
                 />
                 {touched.job_title && fieldErrors.job_title ? (
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.job_title}</div>
-                ) : null}
+                ) : (
+                  <div className="mt-1 text-xs text-neutral-700">
+                    Useful for HR records and reporting, but not required to run payroll.
+                  </div>
+                )}
               </div>
 
               <div>
