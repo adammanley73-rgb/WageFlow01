@@ -2,8 +2,18 @@
 
 import { createClient } from "@supabase/supabase-js";
 
+type PaymentMethod = "bacs" | "manual_transfer" | "cash" | "cheque" | "not_confirmed";
+
 type LegacyBankRow = {
   employee_id: string;
+  payment_method: PaymentMethod | null;
+  account_name: string | null;
+  sort_code: string | null;
+  account_number: string | null;
+};
+
+type BankValues = {
+  payment_method: PaymentMethod;
   account_name: string | null;
   sort_code: string | null;
   account_number: string | null;
@@ -61,6 +71,16 @@ function formatSortCodeForUi(value: unknown): string | null {
   return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`;
 }
 
+function normalizePaymentMethod(value: unknown): PaymentMethod {
+  const raw = String(value ?? "").trim().toLowerCase();
+
+  if (raw === "bacs") return "bacs";
+  if (raw === "manual_transfer") return "manual_transfer";
+  if (raw === "cash") return "cash";
+  if (raw === "cheque") return "cheque";
+  return "not_confirmed";
+}
+
 function isUuid(value: unknown) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     String(value || "").trim()
@@ -71,6 +91,33 @@ function isMissingRelationError(error: any) {
   const code = String(error?.code || "").trim();
   const message = String(error?.message || "").toLowerCase();
   return code === "42P01" || message.includes("relation") || message.includes("does not exist");
+}
+
+function hasAnyBankDetail(values: {
+  account_name: string | null;
+  sort_code: string | null;
+  account_number: string | null;
+}) {
+  return Boolean(values.account_name || values.sort_code || values.account_number);
+}
+
+function validateBankValues(values: BankValues): string | null {
+  const paymentMethod = normalizePaymentMethod(values.payment_method);
+  const requiresBankDetails = paymentMethod === "bacs";
+  const validatesOptionalBankDetails =
+    paymentMethod === "manual_transfer" && hasAnyBankDetail(values);
+
+  const shouldValidateBankDetails = requiresBankDetails || validatesOptionalBankDetails;
+
+  if (!shouldValidateBankDetails) return null;
+
+  if (!values.account_name) return "account name is required for this payment method";
+  if (!values.sort_code || values.sort_code.length !== 6) return "sort code must be exactly 6 digits";
+  if (!values.account_number || values.account_number.length !== 8) {
+    return "account number must be exactly 8 digits";
+  }
+
+  return null;
 }
 
 async function resolveEmployee(supabase: any, rawId: string) {
@@ -108,7 +155,10 @@ async function resolveEmployee(supabase: any, rawId: string) {
 function shapeBankForUi(row: any) {
   if (!row) return null;
 
+  const paymentMethod = normalizePaymentMethod(row.payment_method);
+
   return {
+    payment_method: paymentMethod,
     account_name: row.account_name ?? null,
     sort_code: formatSortCodeForUi(row.sort_code),
     account_number: row.account_number ?? null,
@@ -124,7 +174,7 @@ async function getFromNewTable(supabase: any, employeeUuid: string) {
   const res = await supabase
     .from("employee_bank_accounts")
     .select(
-      "id, employee_id, company_id, account_name, sort_code, account_number, roll_number, building_society, is_primary, created_at, updated_at"
+      "id, employee_id, company_id, payment_method, account_name, sort_code, account_number, roll_number, building_society, is_primary, created_at, updated_at"
     )
     .eq("employee_id", employeeUuid)
     .eq("is_primary", true)
@@ -158,11 +208,7 @@ async function getFromLegacyTable(supabase: any, employeeUuid: string) {
 async function saveToNewTable(
   supabase: any,
   employee: { id: string; employee_id: string | null; company_id: string | null },
-  values: {
-    account_name: string | null;
-    sort_code: string | null;
-    account_number: string | null;
-  }
+  values: BankValues
 ) {
   if (!employee.company_id) {
     return {
@@ -195,6 +241,7 @@ async function saveToNewTable(
   const payload = {
     employee_id: employee.id,
     company_id: employee.company_id,
+    payment_method: values.payment_method,
     account_name: values.account_name,
     sort_code: values.sort_code,
     account_number: values.account_number,
@@ -209,7 +256,7 @@ async function saveToNewTable(
       .update(payload)
       .eq("id", existing.id)
       .select(
-        "id, employee_id, company_id, account_name, sort_code, account_number, roll_number, building_society, is_primary, created_at, updated_at"
+        "id, employee_id, company_id, payment_method, account_name, sort_code, account_number, roll_number, building_society, is_primary, created_at, updated_at"
       )
       .single();
 
@@ -224,7 +271,7 @@ async function saveToNewTable(
     .from("employee_bank_accounts")
     .insert(payload)
     .select(
-      "id, employee_id, company_id, account_name, sort_code, account_number, roll_number, building_society, is_primary, created_at, updated_at"
+      "id, employee_id, company_id, payment_method, account_name, sort_code, account_number, roll_number, building_society, is_primary, created_at, updated_at"
     )
     .single();
 
@@ -238,14 +285,11 @@ async function saveToNewTable(
 async function saveToLegacyTable(
   supabase: any,
   employeeUuid: string,
-  values: {
-    account_name: string | null;
-    sort_code: string | null;
-    account_number: string | null;
-  }
+  values: BankValues
 ) {
   const payload: LegacyBankRow = {
     employee_id: employeeUuid,
+    payment_method: values.payment_method,
     account_name: values.account_name,
     sort_code: formatSortCodeForUi(values.sort_code),
     account_number: values.account_number,
@@ -342,27 +386,31 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return json(403, { error: "employees/bank disabled on preview" });
   }
 
-  let body: Partial<LegacyBankRow> = {};
+  let body: Partial<BankValues> = {};
   try {
     body = await req.json();
   } catch {
     return json(400, { error: "invalid json" });
   }
 
-  const accountName = trimToNull(body.account_name);
-  const sortCodeDigits = normaliseSortCodeDigits(body.sort_code);
-  const accountNumberDigits = normaliseAccountNumber(body.account_number);
+  const paymentMethod = normalizePaymentMethod(body.payment_method);
+  const bankFieldsLocked =
+    paymentMethod === "cash" || paymentMethod === "cheque" || paymentMethod === "not_confirmed";
 
-  if (!accountName) {
-    return json(400, { error: "account name is required" });
-  }
+  const accountName = bankFieldsLocked ? null : trimToNull(body.account_name);
+  const sortCodeDigits = bankFieldsLocked ? null : normaliseSortCodeDigits(body.sort_code);
+  const accountNumberDigits = bankFieldsLocked ? null : normaliseAccountNumber(body.account_number);
 
-  if (!sortCodeDigits || sortCodeDigits.length !== 6) {
-    return json(400, { error: "sort code must be exactly 6 digits" });
-  }
+  const values: BankValues = {
+    payment_method: paymentMethod,
+    account_name: accountName,
+    sort_code: sortCodeDigits,
+    account_number: accountNumberDigits,
+  };
 
-  if (!accountNumberDigits || accountNumberDigits.length !== 8) {
-    return json(400, { error: "account number must be exactly 8 digits" });
+  const validationError = validateBankValues(values);
+  if (validationError) {
+    return json(400, { error: validationError });
   }
 
   const supabase = getSupabase();
@@ -388,12 +436,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const employee = resolved.data;
-
-  const values = {
-    account_name: accountName,
-    sort_code: sortCodeDigits,
-    account_number: accountNumberDigits,
-  };
 
   const saveNew = await saveToNewTable(supabase, employee, values);
 

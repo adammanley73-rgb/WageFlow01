@@ -20,6 +20,13 @@ type FieldErrors = {
   email: string;
 };
 
+type EmergencyValues = {
+  contactName: string;
+  relationship: string;
+  phone: string;
+  email: string;
+};
+
 function canonPhone(raw: string) {
   const trimmed = String(raw || "").trim();
   const plus = trimmed.startsWith("+") ? "+" : "";
@@ -29,7 +36,7 @@ function canonPhone(raw: string) {
 
 function isValidPhone(raw: string) {
   const trimmed = String(raw || "").trim();
-  if (!trimmed) return false;
+  if (!trimmed) return true;
 
   const digits = trimmed.replace(/\D/g, "");
   return digits.length >= 10 && digits.length <= 15;
@@ -46,22 +53,41 @@ function isJson(res: Response) {
   return ct.includes("application/json");
 }
 
-function getFieldErrors(values: {
-  contactName: string;
-  relationship: string;
-  phone: string;
-  email: string;
-}): FieldErrors {
+function hasAnyEmergencyContactValue(values: EmergencyValues) {
+  return Boolean(
+    String(values.contactName || "").trim() ||
+      String(values.relationship || "").trim() ||
+      String(values.phone || "").trim() ||
+      String(values.email || "").trim()
+  );
+}
+
+function getFieldErrors(values: EmergencyValues): FieldErrors {
   const contactName = String(values.contactName || "").trim();
-  const relationship = String(values.relationship || "").trim();
   const phone = String(values.phone || "").trim();
   const email = String(values.email || "").trim();
 
+  const hasAnyValue = hasAnyEmergencyContactValue(values);
+  const hasContactMethod = Boolean(phone || email);
+
+  if (!hasAnyValue) {
+    return {
+      contact_name: "",
+      relationship: "",
+      phone: "",
+      email: "",
+    };
+  }
+
   return {
-    contact_name: contactName ? "" : "Contact name is required.",
-    relationship: relationship ? "" : "Relationship is required.",
-    phone: !phone ? "Phone is required." : !isValidPhone(phone) ? "Enter a valid phone number." : "",
-    email: !isValidEmail(email) ? "Enter a valid email address." : "",
+    contact_name: contactName ? "" : "Contact name is required when adding an emergency contact.",
+    relationship: "",
+    phone: !hasContactMethod
+      ? "Enter a phone number or email address."
+      : phone && !isValidPhone(phone)
+        ? "Enter a valid phone number."
+        : "",
+    email: email && !isValidEmail(email) ? "Enter a valid email address." : "",
   };
 }
 
@@ -138,16 +164,19 @@ export default function EmergencyContactPage() {
     };
   }, [id]);
 
-  const fieldErrors = useMemo(
-    () =>
-      getFieldErrors({
-        contactName,
-        relationship,
-        phone,
-        email,
-      }),
+  const values = useMemo(
+    () => ({
+      contactName,
+      relationship,
+      phone,
+      email,
+    }),
     [contactName, relationship, phone, email]
   );
+
+  const hasAnyValue = useMemo(() => hasAnyEmergencyContactValue(values), [values]);
+
+  const fieldErrors = useMemo(() => getFieldErrors(values), [values]);
 
   const canSave = useMemo(() => {
     return (
@@ -189,7 +218,7 @@ export default function EmergencyContactPage() {
 
     const name = contactName.trim();
     const rel = relationship.trim();
-    const tel = canonPhone(phone);
+    const tel = phone.trim() ? canonPhone(phone) : "";
     const mail = email.trim();
 
     setBusy(true);
@@ -199,12 +228,22 @@ export default function EmergencyContactPage() {
       const res = await fetch(`/api/employees/${id}/emergency`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contact_name: name,
-          relationship: rel,
-          phone: tel,
-          email: mail || null,
-        }),
+        body: JSON.stringify(
+          hasAnyValue
+            ? {
+                contact_name: name,
+                relationship: rel || null,
+                phone: tel || null,
+                email: mail || null,
+              }
+            : {
+                skip_emergency_contact: true,
+                contact_name: null,
+                relationship: null,
+                phone: null,
+                email: null,
+              }
+        ),
       });
 
       if (!res.ok) {
@@ -212,8 +251,9 @@ export default function EmergencyContactPage() {
 
         if (isJson(res)) {
           const j = await res.json().catch(() => ({} as any));
-          msg = j?.error || msg;
+          msg = j?.message || j?.error || msg;
           if (j?.extra?.details) msg = `${msg}: ${j.extra.details}`;
+          if (j?.details) msg = `${msg}: ${j.details}`;
         } else {
           msg = `${msg} (${res.status})`;
         }
@@ -251,6 +291,13 @@ export default function EmergencyContactPage() {
           <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">{err}</div>
         ) : null}
 
+        <div className="mb-4 rounded-lg border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950">
+          <div className="font-extrabold">Emergency contact is optional.</div>
+          <div className="mt-1">
+            Leave all fields blank to skip this step. If you add a contact, enter a contact name and at least one contact method, phone or email.
+          </div>
+        </div>
+
         <div className="space-y-5">
           <div>
             <label className="mb-1 block text-sm font-medium">Contact name</label>
@@ -265,7 +312,11 @@ export default function EmergencyContactPage() {
             />
             {touched.contact_name && fieldErrors.contact_name ? (
               <div className="mt-1 text-xs text-red-700">{fieldErrors.contact_name}</div>
-            ) : null}
+            ) : (
+              <div className="mt-1 text-xs text-neutral-700">
+                Required only if you add emergency contact details.
+              </div>
+            )}
           </div>
 
           <div>
@@ -281,7 +332,9 @@ export default function EmergencyContactPage() {
             />
             {touched.relationship && fieldErrors.relationship ? (
               <div className="mt-1 text-xs text-red-700">{fieldErrors.relationship}</div>
-            ) : null}
+            ) : (
+              <div className="mt-1 text-xs text-neutral-700">Optional.</div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -301,7 +354,7 @@ export default function EmergencyContactPage() {
                 <div className="mt-1 text-xs text-red-700">{fieldErrors.phone}</div>
               ) : (
                 <div className="mt-1 text-xs text-neutral-700">
-                  Enter a real contact number, 10 to 15 digits.
+                  Optional if email is entered. Phone numbers must be 10 to 15 digits.
                 </div>
               )}
             </div>
@@ -321,7 +374,9 @@ export default function EmergencyContactPage() {
               {touched.email && fieldErrors.email ? (
                 <div className="mt-1 text-xs text-red-700">{fieldErrors.email}</div>
               ) : (
-                <div className="mt-1 text-xs text-neutral-700">Optional, but must be valid if entered.</div>
+                <div className="mt-1 text-xs text-neutral-700">
+                  Optional if phone is entered. Must be valid if entered.
+                </div>
               )}
             </div>
           </div>
@@ -332,7 +387,7 @@ export default function EmergencyContactPage() {
             </Link>
 
             <button type="submit" className={BTN_PRIMARY} disabled={busy || !canSave}>
-              {busy ? "Saving..." : "Save and continue"}
+              {busy ? "Saving..." : hasAnyValue ? "Save and continue" : "Skip and continue"}
             </button>
           </div>
         </div>

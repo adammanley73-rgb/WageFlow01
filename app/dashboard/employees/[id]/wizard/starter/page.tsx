@@ -27,6 +27,7 @@ type EmployeeRow = {
   annual_salary?: number | null;
   hourly_rate?: number | null;
   hours_per_week?: number | null;
+  address?: any | null;
 };
 
 type StarterTaxRow = {
@@ -47,6 +48,12 @@ type FormState = {
   annual_salary: string;
   hours_per_week: string;
   hourly_rate: string;
+  address_line1: string;
+  address_line2: string;
+  town_city: string;
+  county: string;
+  postcode: string;
+  country: string;
 };
 
 type FieldErrors = {
@@ -63,6 +70,12 @@ type FieldErrors = {
   hours_per_week: string;
   hourly_rate: string;
   nmw: string;
+  address_line1: string;
+  address_line2: string;
+  town_city: string;
+  county: string;
+  postcode: string;
+  country: string;
 };
 
 type ToastState = {
@@ -296,6 +309,29 @@ function getApplicableMinimumRate(
   };
 }
 
+function normalizeAddress(raw: unknown) {
+  const a = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const line1 = a.line1 ?? a.address_line1 ?? "";
+  const line2 = a.line2 ?? a.address_line2 ?? "";
+  const townCity = a.town_city ?? a.townCity ?? a.city ?? "";
+  const county = a.county ?? a.region ?? "";
+  const postcode = a.postcode ?? a.post_code ?? a.zip ?? "";
+  const country = a.country ?? "";
+
+  return {
+    address_line1: str(line1),
+    address_line2: str(line2),
+    town_city: str(townCity),
+    county: str(county),
+    postcode: str(postcode),
+    country: str(country) || "United Kingdom",
+  };
+}
+
+function hasAnyText(...values: Array<unknown>) {
+  return values.some((value) => str(value) !== "");
+}
+
 function getFieldErrors(form: FormState): FieldErrors {
   const annualSalary = toNumberOrNull(form.annual_salary);
   const hoursPerWeek = toNumberOrNull(form.hours_per_week);
@@ -351,6 +387,12 @@ function getFieldErrors(form: FormState): FieldErrors {
         ? "Hourly rate must be greater than 0."
         : "",
     nmw: nmwError,
+    address_line1: "",
+    address_line2: "",
+    town_city: "",
+    county: "",
+    postcode: "",
+    country: "",
   };
 }
 
@@ -388,6 +430,12 @@ export default function StarterPage() {
     annual_salary: "",
     hours_per_week: "",
     hourly_rate: "",
+    address_line1: "",
+    address_line2: "",
+    town_city: "",
+    county: "",
+    postcode: "",
+    country: "United Kingdom",
   });
 
   const [touched, setTouched] = useState({
@@ -403,6 +451,12 @@ export default function StarterPage() {
     annual_salary: false,
     hours_per_week: false,
     hourly_rate: false,
+    address_line1: false,
+    address_line2: false,
+    town_city: false,
+    county: false,
+    postcode: false,
+    country: false,
   });
 
   function showToast(message: string, tone: ToastState["tone"] = "info") {
@@ -447,6 +501,7 @@ export default function StarterPage() {
           "annual_salary",
           "hourly_rate",
           "hours_per_week",
+          "address",
         ].join(",");
 
         const byEmployeeId = await supabase
@@ -485,6 +540,8 @@ export default function StarterPage() {
 
         if (!alive) return;
 
+        const address = normalizeAddress(employeeData.address);
+
         setForm({
           employee_number: str(employeeData.employee_number),
           first_name: str(employeeData.first_name),
@@ -501,6 +558,12 @@ export default function StarterPage() {
           annual_salary: moneyToString(employeeData.annual_salary),
           hours_per_week: moneyToString(employeeData.hours_per_week),
           hourly_rate: moneyToString(employeeData.hourly_rate),
+          address_line1: address.address_line1,
+          address_line2: address.address_line2,
+          town_city: address.town_city,
+          county: address.county,
+          postcode: address.postcode,
+          country: address.country,
         });
       } catch (e: any) {
         if (alive) setErr(String(e?.message || e));
@@ -532,7 +595,13 @@ export default function StarterPage() {
       !fieldErrors.annual_salary &&
       !fieldErrors.hours_per_week &&
       !fieldErrors.hourly_rate &&
-      !fieldErrors.nmw
+      !fieldErrors.nmw &&
+      !fieldErrors.address_line1 &&
+      !fieldErrors.address_line2 &&
+      !fieldErrors.town_city &&
+      !fieldErrors.county &&
+      !fieldErrors.postcode &&
+      !fieldErrors.country
     );
   }, [fieldErrors]);
 
@@ -675,6 +744,12 @@ export default function StarterPage() {
       annual_salary: true,
       hours_per_week: true,
       hourly_rate: true,
+      address_line1: true,
+      address_line2: true,
+      town_city: true,
+      county: true,
+      postcode: true,
+      country: true,
     });
 
     if (!canSave) {
@@ -692,6 +767,12 @@ export default function StarterPage() {
         fieldErrors.hours_per_week,
         fieldErrors.hourly_rate,
         fieldErrors.nmw,
+        fieldErrors.address_line1,
+        fieldErrors.address_line2,
+        fieldErrors.town_city,
+        fieldErrors.county,
+        fieldErrors.postcode,
+        fieldErrors.country,
       ]
         .filter(Boolean)
         .join(" ");
@@ -718,6 +799,26 @@ export default function StarterPage() {
       const hoursPerWeek = toNumberOrNull(form.hours_per_week);
       const hourlyRate = toNumberOrNull(form.hourly_rate);
 
+      const addressFilled = hasAnyText(
+        form.address_line1,
+        form.address_line2,
+        form.town_city,
+        form.county,
+        form.postcode,
+        form.country
+      );
+
+      const address = addressFilled
+        ? {
+            line1: str(form.address_line1) || null,
+            line2: str(form.address_line2) || null,
+            town_city: str(form.town_city) || null,
+            county: str(form.county) || null,
+            postcode: str(form.postcode) || null,
+            country: str(form.country) || null,
+          }
+        : null;
+
       const updatePayload = {
         first_name: str(form.first_name),
         last_name: str(form.last_name),
@@ -731,6 +832,7 @@ export default function StarterPage() {
         annual_salary: annualSalary !== null ? moneyRound(annualSalary) : null,
         hours_per_week: hoursPerWeek !== null ? moneyRound(hoursPerWeek) : null,
         hourly_rate: hourlyRate !== null ? rateRound(hourlyRate) : null,
+        address,
       };
 
       const employeeUpdate = await supabase
@@ -999,6 +1101,86 @@ export default function StarterPage() {
               </div>
             </div>
 
+            <div className="mt-6 rounded-lg border border-neutral-400 bg-white p-4 md:col-span-2">
+              <div className="text-sm font-semibold text-neutral-900">Address</div>
+              <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm text-neutral-900">Address line 1</label>
+                  <input
+                    value={form.address_line1}
+                    onChange={(e) => setField("address_line1", e.target.value)}
+                    onBlur={() => markTouched("address_line1")}
+                    className={inputClass(!!(touched.address_line1 && fieldErrors.address_line1))}
+                    name="address_line1"
+                    autoComplete="address-line1"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-900">Address line 2</label>
+                  <input
+                    value={form.address_line2}
+                    onChange={(e) => setField("address_line2", e.target.value)}
+                    onBlur={() => markTouched("address_line2")}
+                    className={inputClass(!!(touched.address_line2 && fieldErrors.address_line2))}
+                    name="address_line2"
+                    autoComplete="address-line2"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-900">Town / City</label>
+                  <input
+                    value={form.town_city}
+                    onChange={(e) => setField("town_city", e.target.value)}
+                    onBlur={() => markTouched("town_city")}
+                    className={inputClass(!!(touched.town_city && fieldErrors.town_city))}
+                    name="town_city"
+                    autoComplete="address-level2"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-900">County</label>
+                  <input
+                    value={form.county}
+                    onChange={(e) => setField("county", e.target.value)}
+                    onBlur={() => markTouched("county")}
+                    className={inputClass(!!(touched.county && fieldErrors.county))}
+                    name="county"
+                    autoComplete="address-level1"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-900">Postcode</label>
+                  <input
+                    value={form.postcode}
+                    onChange={(e) => setField("postcode", e.target.value)}
+                    onBlur={() => markTouched("postcode")}
+                    className={inputClass(!!(touched.postcode && fieldErrors.postcode))}
+                    name="postcode"
+                    autoComplete="postal-code"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-neutral-900">Country</label>
+                  <input
+                    value={form.country}
+                    onChange={(e) => setField("country", e.target.value)}
+                    onBlur={() => markTouched("country")}
+                    className={inputClass(!!(touched.country && fieldErrors.country))}
+                    name="country"
+                    autoComplete="country-name"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-2 text-xs text-neutral-700">
+                Address is optional. If entered here, it will be saved to the employee record.
+              </div>
+            </div>
             <div className="mt-6 rounded-lg border border-neutral-400 bg-white p-4">
               <div className="text-sm font-semibold text-neutral-900">Pay details</div>
               <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">

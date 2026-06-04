@@ -9,13 +9,17 @@ import PageTemplate from "@/components/ui/PageTemplate";
 
 const CARD = "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
 
+type PaymentMethod = "bacs" | "manual_transfer" | "cash" | "cheque" | "not_confirmed";
+
 type BankRow = {
+  payment_method: PaymentMethod;
   account_name: string | null;
   sort_code: string | null;
   account_number: string | null;
 };
 
 type FieldErrors = {
+  payment_method: string;
   account_name: string;
   sort_code: string;
   account_number: string;
@@ -26,6 +30,34 @@ type ToastState = {
   message: string;
   tone: "error" | "success" | "info";
 };
+
+const PAYMENT_METHOD_OPTIONS: Array<{ value: PaymentMethod; label: string; description: string }> = [
+  {
+    value: "not_confirmed",
+    label: "Not confirmed",
+    description: "Use this where payment details are not known yet.",
+  },
+  {
+    value: "bacs",
+    label: "BACS",
+    description: "Requires account name, sort code, and account number.",
+  },
+  {
+    value: "manual_transfer",
+    label: "Manual bank transfer",
+    description: "Bank details are optional here, but must be complete if entered.",
+  },
+  {
+    value: "cash",
+    label: "Cash",
+    description: "No bank details required.",
+  },
+  {
+    value: "cheque",
+    label: "Cheque",
+    description: "No bank details required.",
+  },
+];
 
 function isJson(res: Response) {
   const ct = res.headers.get("content-type") || "";
@@ -59,23 +91,52 @@ function isValidAccountNumber(s: string) {
   return /^\d{8}$/.test(String(s || "").trim());
 }
 
+function normalizePaymentMethod(value: unknown): PaymentMethod {
+  const raw = String(value || "").trim().toLowerCase();
+
+  if (raw === "bacs") return "bacs";
+  if (raw === "manual_transfer") return "manual_transfer";
+  if (raw === "cash") return "cash";
+  if (raw === "cheque") return "cheque";
+  return "not_confirmed";
+}
+
+function hasAnyBankDetail(form: BankRow) {
+  return Boolean(
+    String(form.account_name || "").trim() ||
+      String(form.sort_code || "").trim() ||
+      String(form.account_number || "").trim()
+  );
+}
+
 function getFieldErrors(form: BankRow): FieldErrors {
+  const paymentMethod = normalizePaymentMethod(form.payment_method);
   const accountName = String(form.account_name || "").trim();
   const sortCode = String(form.sort_code || "").trim();
   const accountNumber = String(form.account_number || "").trim();
 
+  const requiresBankDetails = paymentMethod === "bacs";
+  const validatesOptionalBankDetails =
+    paymentMethod === "manual_transfer" && hasAnyBankDetail(form);
+
+  const shouldValidateBankDetails = requiresBankDetails || validatesOptionalBankDetails;
+
   return {
-    account_name: accountName ? "" : "Account name is required.",
-    sort_code: !sortCode
-      ? "Sort code is required."
-      : !isValidSortCode(sortCode)
-        ? "Sort code must be in format xx-xx-xx."
-        : "",
-    account_number: !accountNumber
-      ? "Account number is required."
-      : !isValidAccountNumber(accountNumber)
-        ? "Account number must be exactly 8 digits."
-        : "",
+    payment_method: paymentMethod ? "" : "Payment method is required.",
+    account_name:
+      shouldValidateBankDetails && !accountName ? "Account name is required for this payment method." : "",
+    sort_code:
+      shouldValidateBankDetails && !sortCode
+        ? "Sort code is required for this payment method."
+        : sortCode && !isValidSortCode(sortCode)
+          ? "Sort code must be in format xx-xx-xx."
+          : "",
+    account_number:
+      shouldValidateBankDetails && !accountNumber
+        ? "Account number is required for this payment method."
+        : accountNumber && !isValidAccountNumber(accountNumber)
+          ? "Account number must be exactly 8 digits."
+          : "",
   };
 }
 
@@ -97,12 +158,14 @@ export default function BankPage() {
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [form, setForm] = useState<BankRow>({
+    payment_method: "not_confirmed",
     account_name: "",
     sort_code: "",
     account_number: "",
   });
 
   const [touched, setTouched] = useState({
+    payment_method: false,
     account_name: false,
     sort_code: false,
     account_number: false,
@@ -147,7 +210,10 @@ export default function BankPage() {
           const d = (j?.data ?? j ?? null) as Partial<BankRow> | null;
 
           if (alive && d) {
+            const loadedPaymentMethod = normalizePaymentMethod(d.payment_method);
+
             setForm({
+              payment_method: loadedPaymentMethod,
               account_name: d.account_name ?? "",
               sort_code: d.sort_code ?? "",
               account_number: d.account_number ?? "",
@@ -171,8 +237,37 @@ export default function BankPage() {
     };
   }, [id]);
 
-  function onChange(e: React.ChangeEvent<HTMLInputElement>) {
+  const paymentMethod = normalizePaymentMethod(form.payment_method);
+  const bankFieldsLocked =
+    paymentMethod === "cash" || paymentMethod === "cheque" || paymentMethod === "not_confirmed";
+
+  function onChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = e.target;
+
+    if (name === "payment_method") {
+      const nextPaymentMethod = normalizePaymentMethod(value);
+
+      setForm((prev) => ({
+        ...prev,
+        payment_method: nextPaymentMethod,
+        account_name:
+          nextPaymentMethod === "cash" || nextPaymentMethod === "cheque" || nextPaymentMethod === "not_confirmed"
+            ? ""
+            : prev.account_name,
+        sort_code:
+          nextPaymentMethod === "cash" || nextPaymentMethod === "cheque" || nextPaymentMethod === "not_confirmed"
+            ? ""
+            : prev.sort_code,
+        account_number:
+          nextPaymentMethod === "cash" || nextPaymentMethod === "cheque" || nextPaymentMethod === "not_confirmed"
+            ? ""
+            : prev.account_number,
+      }));
+
+      return;
+    }
+
+    if (bankFieldsLocked) return;
 
     if (name === "sort_code") {
       setForm((prev) => ({ ...prev, sort_code: formatSortCode(value) }));
@@ -187,10 +282,15 @@ export default function BankPage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  function onBlur(e: React.FocusEvent<HTMLInputElement>) {
+  function onBlur(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name } = e.target;
 
-    if (name === "account_name" || name === "sort_code" || name === "account_number") {
+    if (
+      name === "payment_method" ||
+      name === "account_name" ||
+      name === "sort_code" ||
+      name === "account_number"
+    ) {
       setTouched((prev) => ({ ...prev, [name]: true }));
     }
   }
@@ -198,11 +298,17 @@ export default function BankPage() {
   const fieldErrors = useMemo(() => getFieldErrors(form), [form]);
 
   const canSave = useMemo(() => {
-    return !fieldErrors.account_name && !fieldErrors.sort_code && !fieldErrors.account_number;
+    return (
+      !fieldErrors.payment_method &&
+      !fieldErrors.account_name &&
+      !fieldErrors.sort_code &&
+      !fieldErrors.account_number
+    );
   }, [fieldErrors]);
 
   async function onSave() {
     const nextTouched = {
+      payment_method: true,
       account_name: true,
       sort_code: true,
       account_number: true,
@@ -213,6 +319,7 @@ export default function BankPage() {
     if (!canSave) {
       const parts: string[] = [];
 
+      if (fieldErrors.payment_method) parts.push(fieldErrors.payment_method);
       if (fieldErrors.account_name) parts.push(fieldErrors.account_name);
       if (fieldErrors.sort_code) parts.push(fieldErrors.sort_code);
       if (fieldErrors.account_number) parts.push(fieldErrors.account_number);
@@ -226,9 +333,10 @@ export default function BankPage() {
       setErr(null);
 
       const payload: BankRow = {
-        account_name: String(form.account_name || "").trim(),
-        sort_code: String(form.sort_code || "").trim(),
-        account_number: String(form.account_number || "").trim(),
+        payment_method: paymentMethod,
+        account_name: bankFieldsLocked ? null : String(form.account_name || "").trim() || null,
+        sort_code: bankFieldsLocked ? null : String(form.sort_code || "").trim() || null,
+        account_number: bankFieldsLocked ? null : String(form.account_number || "").trim() || null,
       };
 
       const res = await fetch(`/api/employees/${id}/bank`, {
@@ -247,7 +355,7 @@ export default function BankPage() {
         await res.json().catch(() => null);
       }
 
-      showToast("Bank details saved.", "success");
+      showToast("Bank and payment details saved.", "success");
       router.push(`/dashboard/employees/${id}/wizard/emergency`);
     } catch (e: any) {
       const msg = String(e?.message || e);
@@ -266,9 +374,11 @@ export default function BankPage() {
         : "bg-neutral-900 text-white";
 
   const inputClass = (hasError: boolean) =>
-    `mt-1 w-full rounded-md border bg-white p-2 outline-none ${
+    `mt-1 w-full rounded-md border bg-white p-2 outline-none disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-700 ${
       hasError ? "border-red-600 ring-2 ring-red-200" : "border-neutral-400"
     }`;
+
+  const selectedPaymentMethod = PAYMENT_METHOD_OPTIONS.find((opt) => opt.value === paymentMethod);
 
   return (
     <PageTemplate
@@ -305,7 +415,39 @@ export default function BankPage() {
               <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">{err}</div>
             ) : null}
 
+            <div className="mb-4 rounded-lg border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950">
+              <div className="font-extrabold">Payment method controls whether bank details are required.</div>
+              <div className="mt-1">
+                BACS requires full bank details. Cash, cheque, and not confirmed do not require bank details.
+                Manual transfer allows bank details, but they must be complete if entered.
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label htmlFor="payment_method" className="block text-sm text-neutral-900">
+                  Payment method
+                </label>
+                <select
+                  id="payment_method"
+                  name="payment_method"
+                  value={paymentMethod}
+                  onChange={onChange}
+                  onBlur={onBlur}
+                  className={inputClass(!!(touched.payment_method && fieldErrors.payment_method))}
+                  aria-invalid={touched.payment_method && !!fieldErrors.payment_method}
+                >
+                  {PAYMENT_METHOD_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-1 text-xs text-neutral-700">
+                  {selectedPaymentMethod?.description || "Select how this employee will be paid."}
+                </div>
+              </div>
+
               <div>
                 <label htmlFor="account_name" className="block text-sm text-neutral-900">
                   Account name
@@ -316,12 +458,17 @@ export default function BankPage() {
                   value={form.account_name || ""}
                   onChange={onChange}
                   onBlur={onBlur}
+                  disabled={bankFieldsLocked}
                   className={inputClass(!!(touched.account_name && fieldErrors.account_name))}
                   placeholder="Name on the account"
                   aria-invalid={touched.account_name && !!fieldErrors.account_name}
                 />
                 {touched.account_name && fieldErrors.account_name ? (
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.account_name}</div>
+                ) : bankFieldsLocked ? (
+                  <div className="mt-1 text-xs text-neutral-700">
+                    Not required for this payment method.
+                  </div>
                 ) : null}
               </div>
 
@@ -335,6 +482,7 @@ export default function BankPage() {
                   value={form.sort_code || ""}
                   onChange={onChange}
                   onBlur={onBlur}
+                  disabled={bankFieldsLocked}
                   className={inputClass(!!(touched.sort_code && fieldErrors.sort_code))}
                   inputMode="numeric"
                   placeholder="12-34-56"
@@ -342,6 +490,10 @@ export default function BankPage() {
                 />
                 {touched.sort_code && fieldErrors.sort_code ? (
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.sort_code}</div>
+                ) : bankFieldsLocked ? (
+                  <div className="mt-1 text-xs text-neutral-700">
+                    Not required for this payment method.
+                  </div>
                 ) : (
                   <div className="mt-1 text-xs text-neutral-700">Format: xx-xx-xx</div>
                 )}
@@ -357,6 +509,7 @@ export default function BankPage() {
                   value={form.account_number || ""}
                   onChange={onChange}
                   onBlur={onBlur}
+                  disabled={bankFieldsLocked}
                   className={inputClass(!!(touched.account_number && fieldErrors.account_number))}
                   inputMode="numeric"
                   placeholder="12345678"
@@ -364,6 +517,10 @@ export default function BankPage() {
                 />
                 {touched.account_number && fieldErrors.account_number ? (
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.account_number}</div>
+                ) : bankFieldsLocked ? (
+                  <div className="mt-1 text-xs text-neutral-700">
+                    Not required for this payment method.
+                  </div>
                 ) : (
                   <div className="mt-1 text-xs text-neutral-700">Exactly 8 digits</div>
                 )}

@@ -1,4 +1,4 @@
-// C:\Projects\wageflow01\app\dashboard\employees\[id]\wizard\tax\page.tsx
+﻿// C:\Projects\wageflow01\app\dashboard\employees\[id]\wizard\tax\page.tsx
 
 "use client";
 
@@ -11,6 +11,7 @@ const CARD = "rounded-xl bg-neutral-300 ring-1 ring-neutral-400 shadow-sm p-6";
 
 type TaxCodeBasis = "cumulative" | "week1_month1";
 type StarterDeclaration = "A" | "B" | "C" | null;
+type DirectorNicMethod = "AN" | "AL";
 
 type NiCategory =
   | "A"
@@ -30,21 +31,40 @@ type NiCategory =
   | "D"
   | "K";
 
-type TaxRow = {
+type TaxForm = {
   tax_code: string;
   tax_code_basis: TaxCodeBasis;
   ni_category: NiCategory;
   is_director: boolean;
+  director_nic_method: DirectorNicMethod | "";
+  director_appointment_week: string;
 };
 
-type ApiTaxRow = Partial<TaxRow> & {
-  tax_basis?: TaxCodeBasis;
+type TaxPayload = {
+  tax_code: string;
+  tax_code_basis: TaxCodeBasis;
+  ni_category: NiCategory;
+  is_director: boolean;
+  director_nic_method: DirectorNicMethod | null;
+  director_appointment_week: number | null;
 };
+
+type ApiTaxRow = Partial<{
+  tax_code: string;
+  tax_code_basis: TaxCodeBasis;
+  tax_basis: TaxCodeBasis;
+  ni_category: NiCategory;
+  is_director: boolean;
+  director_nic_method: DirectorNicMethod | null;
+  director_appointment_week: number | null;
+}>;
 
 type FieldErrors = {
   tax_code: string;
   tax_code_basis: string;
   ni_category: string;
+  director_nic_method: string;
+  director_appointment_week: string;
 };
 
 type ToastState = {
@@ -112,7 +132,22 @@ const NI_CATEGORIES: NiCategory[] = [
   "K",
 ];
 
-function getFieldErrors(form: TaxRow): FieldErrors {
+const DIRECTOR_NIC_METHODS: DirectorNicMethod[] = ["AN", "AL"];
+
+const DIRECTOR_NIC_METHOD_LABELS: Record<DirectorNicMethod, string> = {
+  AN: "AN - Annual earnings period",
+  AL: "AL - Alternative method",
+};
+
+function isValidDirectorAppointmentWeek(raw: string): boolean {
+  const v = raw.trim();
+  if (!v) return false;
+
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= 53;
+}
+
+function getFieldErrors(form: TaxForm): FieldErrors {
   return {
     tax_code: isValidTaxCode(form.tax_code)
       ? ""
@@ -122,6 +157,14 @@ function getFieldErrors(form: TaxRow): FieldErrors {
         ? ""
         : "Select a tax basis.",
     ni_category: NI_CATEGORIES.includes(form.ni_category) ? "" : "Select an NI category.",
+    director_nic_method:
+      !form.is_director || DIRECTOR_NIC_METHODS.includes(form.director_nic_method as DirectorNicMethod)
+        ? ""
+        : "Select the Director NIC method, AN or AL.",
+    director_appointment_week:
+      !form.is_director || isValidDirectorAppointmentWeek(form.director_appointment_week)
+        ? ""
+        : "Enter the director appointment week as a whole number from 1 to 53.",
   };
 }
 
@@ -139,17 +182,21 @@ export default function TaxPage() {
   const [toast, setToast] = useState<ToastState>({ open: false, message: "", tone: "info" });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [form, setForm] = useState<TaxRow>({
+  const [form, setForm] = useState<TaxForm>({
     tax_code: "1257L",
     tax_code_basis: "cumulative",
     ni_category: "A",
     is_director: false,
+    director_nic_method: "",
+    director_appointment_week: "",
   });
 
   const [touched, setTouched] = useState({
     tax_code: false,
     tax_code_basis: false,
     ni_category: false,
+    director_nic_method: false,
+    director_appointment_week: false,
   });
 
   function showToast(message: string, tone: ToastState["tone"] = "info") {
@@ -160,9 +207,10 @@ export default function TaxPage() {
     }, 4500);
   }
 
-  const backHref = p45Provided === true
-    ? `/dashboard/employees/${id}/wizard/p45`
-    : `/dashboard/employees/${id}/wizard/declaration`;
+  const backHref =
+    p45Provided === true
+      ? `/dashboard/employees/${id}/wizard/p45`
+      : `/dashboard/employees/${id}/wizard/declaration`;
 
   useEffect(() => {
     let alive = true;
@@ -205,6 +253,17 @@ export default function TaxPage() {
                 ? "week1_month1"
                 : "cumulative";
 
+            const incomingDirectorMethod = DIRECTOR_NIC_METHODS.includes(
+              d.director_nic_method as DirectorNicMethod
+            )
+              ? (d.director_nic_method as DirectorNicMethod)
+              : "";
+
+            const incomingDirectorWeek =
+              d.director_appointment_week === null || d.director_appointment_week === undefined
+                ? ""
+                : String(d.director_appointment_week);
+
             setForm({
               tax_code: String(d.tax_code || "1257L").trim().toUpperCase(),
               tax_code_basis: incomingBasis,
@@ -212,6 +271,8 @@ export default function TaxPage() {
                 ? (d.ni_category as NiCategory)
                 : "A",
               is_director: d.is_director === true,
+              director_nic_method: d.is_director === true ? incomingDirectorMethod : "",
+              director_appointment_week: d.is_director === true ? incomingDirectorWeek : "",
             });
           }
         }
@@ -231,27 +292,43 @@ export default function TaxPage() {
   const fieldErrors = useMemo(() => getFieldErrors(form), [form]);
 
   const canSave = useMemo(
-    () => !fieldErrors.tax_code && !fieldErrors.tax_code_basis && !fieldErrors.ni_category,
+    () =>
+      !fieldErrors.tax_code &&
+      !fieldErrors.tax_code_basis &&
+      !fieldErrors.ni_category &&
+      !fieldErrors.director_nic_method &&
+      !fieldErrors.director_appointment_week,
     [fieldErrors]
   );
 
-  const taxLockedByStarterDeclaration =
-    p45Provided === false && Boolean(starterDeclaration);
+  const taxLockedByStarterDeclaration = p45Provided === false && Boolean(starterDeclaration);
 
   const starterDeclarationLabel =
     starterDeclaration === "A"
       ? "Statement A"
       : starterDeclaration === "B"
-      ? "Statement B"
-      : starterDeclaration === "C"
-      ? "Statement C"
-      : "";
+        ? "Statement B"
+        : starterDeclaration === "C"
+          ? "Statement C"
+          : "";
 
   async function onSave() {
-    setTouched({ tax_code: true, tax_code_basis: true, ni_category: true });
+    setTouched({
+      tax_code: true,
+      tax_code_basis: true,
+      ni_category: true,
+      director_nic_method: true,
+      director_appointment_week: true,
+    });
 
     if (!canSave) {
-      const msg = [fieldErrors.tax_code, fieldErrors.tax_code_basis, fieldErrors.ni_category]
+      const msg = [
+        fieldErrors.tax_code,
+        fieldErrors.tax_code_basis,
+        fieldErrors.ni_category,
+        fieldErrors.director_nic_method,
+        fieldErrors.director_appointment_week,
+      ]
         .filter(Boolean)
         .join(" ");
       showToast(msg, "error");
@@ -262,11 +339,15 @@ export default function TaxPage() {
       setSaving(true);
       setErr(null);
 
-      const payload: TaxRow = {
+      const directorWeek = form.is_director ? Number(form.director_appointment_week.trim()) : null;
+
+      const payload: TaxPayload = {
         tax_code: form.tax_code.trim().toUpperCase(),
         tax_code_basis: form.tax_code_basis,
         ni_category: form.ni_category,
         is_director: form.is_director,
+        director_nic_method: form.is_director ? (form.director_nic_method as DirectorNicMethod) : null,
+        director_appointment_week: form.is_director && Number.isInteger(directorWeek) ? directorWeek : null,
       };
 
       const res = await fetch(`/api/employees/${id}/tax`, {
@@ -277,7 +358,8 @@ export default function TaxPage() {
 
       if (!res.ok) {
         const j = isJson(res) ? await res.json().catch(() => ({})) : {};
-        throw new Error(j?.error || j?.detail || `save ${res.status}`);
+        const details = Array.isArray(j?.details) ? j.details.join(" ") : "";
+        throw new Error(details || j?.message || j?.error || j?.detail || `save ${res.status}`);
       }
 
       showToast("Tax and NI details saved.", "success");
@@ -377,8 +459,7 @@ export default function TaxPage() {
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.tax_code}</div>
                 ) : (
                   <div className="mt-1 text-xs text-neutral-700">
-                    Enter the code from the employee&apos;s P45 or HMRC notification. Default is
-                    1257L.
+                    Enter the code from the employee&apos;s P45 or HMRC notification. Default is 1257L.
                   </div>
                 )}
               </div>
@@ -464,7 +545,14 @@ export default function TaxPage() {
                     <button
                       key={String(opt.value)}
                       type="button"
-                      onClick={() => setForm((prev) => ({ ...prev, is_director: opt.value }))}
+                      onClick={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          is_director: opt.value,
+                          director_nic_method: opt.value ? prev.director_nic_method : "",
+                          director_appointment_week: opt.value ? prev.director_appointment_week : "",
+                        }))
+                      }
                       className={`inline-flex items-center gap-2 rounded-md border border-neutral-400 bg-white px-3 py-2 text-sm text-neutral-900 ${
                         form.is_director === opt.value ? "ring-2 ring-blue-600" : ""
                       }`}
@@ -474,10 +562,98 @@ export default function TaxPage() {
                   ))}
                 </div>
                 <div className="mt-1 text-xs text-neutral-700">
-                  Directors use the annual NI calculation method. Select Yes only for company
-                  directors.
+                  Select Yes only for company directors. Director NIC settings are stored now, but the NI calculation engine will be wired separately.
                 </div>
               </div>
+
+              {form.is_director ? (
+                <div className="rounded-lg border border-neutral-400 bg-white/60 p-4">
+                  <div className="text-sm font-extrabold text-neutral-900">Director NIC settings</div>
+                  <div className="mt-1 text-xs text-neutral-700">
+                    These settings will be snapshotted onto payroll runs so the calculation engine can use them later.
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <label htmlFor="director_nic_method" className="block text-sm font-medium text-neutral-900">
+                        Director NIC method
+                      </label>
+                      <select
+                        id="director_nic_method"
+                        value={form.director_nic_method}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            director_nic_method: e.target.value as DirectorNicMethod | "",
+                          }))
+                        }
+                        onBlur={() => setTouched((prev) => ({ ...prev, director_nic_method: true }))}
+                        className={inputClass(
+                          !!(touched.director_nic_method && fieldErrors.director_nic_method)
+                        )}
+                        aria-invalid={touched.director_nic_method && !!fieldErrors.director_nic_method}
+                      >
+                        <option value="">Select method</option>
+                        {DIRECTOR_NIC_METHODS.map((method) => (
+                          <option key={method} value={method}>
+                            {DIRECTOR_NIC_METHOD_LABELS[method]}
+                          </option>
+                        ))}
+                      </select>
+                      {touched.director_nic_method && fieldErrors.director_nic_method ? (
+                        <div className="mt-1 text-xs text-red-700">{fieldErrors.director_nic_method}</div>
+                      ) : (
+                        <div className="mt-1 text-xs text-neutral-700">
+                          Use AN for annual earnings period or AL for the alternative method.
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="director_appointment_week"
+                        className="block text-sm font-medium text-neutral-900"
+                      >
+                        Director appointment week
+                      </label>
+                      <input
+                        id="director_appointment_week"
+                        name="director_appointment_week"
+                        type="number"
+                        min="1"
+                        max="53"
+                        step="1"
+                        value={form.director_appointment_week}
+                        onChange={(e) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            director_appointment_week: e.target.value,
+                          }))
+                        }
+                        onBlur={() =>
+                          setTouched((prev) => ({ ...prev, director_appointment_week: true }))
+                        }
+                        className={inputClass(
+                          !!(touched.director_appointment_week && fieldErrors.director_appointment_week)
+                        )}
+                        placeholder="1 to 53"
+                        aria-invalid={
+                          touched.director_appointment_week && !!fieldErrors.director_appointment_week
+                        }
+                      />
+                      {touched.director_appointment_week && fieldErrors.director_appointment_week ? (
+                        <div className="mt-1 text-xs text-red-700">
+                          {fieldErrors.director_appointment_week}
+                        </div>
+                      ) : (
+                        <div className="mt-1 text-xs text-neutral-700">
+                          Enter the tax week the employee became a director. Use 1 to 53.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-6 flex justify-end gap-3">

@@ -1,4 +1,4 @@
-/* C:\Projects\wageflow01\app\dashboard\employees\[id]\edit\page.tsx */
+﻿/* C:\Projects\wageflow01\app\dashboard\employees\[id]\edit\page.tsx */
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -43,6 +43,8 @@ type EmployeeRow = {
   tax_basis?: string | null;
   ni_category?: string | null;
   is_director?: boolean | null;
+  director_nic_method?: string | null;
+  director_appointment_week?: any | null;
 
   pension_status?: string | null;
   pension_scheme_name?: string | null;
@@ -92,6 +94,8 @@ type FormState = {
   tax_code_basis: string;
   ni_category: string;
   is_director: boolean;
+  director_nic_method: string;
+  director_appointment_week: string;
 
   pension_status: string;
   pension_scheme_name: string;
@@ -115,6 +119,27 @@ const BTN_SECONDARY =
 
 const WEEKS_PER_YEAR = 52.14285714;
 const OVERRIDE_DIFF_THRESHOLD = 0.05;
+
+const DIRECTOR_NIC_METHODS = ["AN", "AL"] as const;
+
+const NI_CATEGORIES = [
+  "A",
+  "B",
+  "C",
+  "H",
+  "J",
+  "M",
+  "V",
+  "Z",
+  "F",
+  "I",
+  "L",
+  "S",
+  "N",
+  "E",
+  "D",
+  "K",
+];
 
 function isUuid(s: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(
@@ -176,6 +201,14 @@ function toNumberOrNull(v: any) {
   if (!s) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
+}
+
+function toWholeNumberOrNull(v: any) {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  const n = Number(s);
+  if (!Number.isInteger(n)) return null;
+  return n;
 }
 
 function roundTo(n: number, dp: number) {
@@ -245,6 +278,16 @@ function isAllowedPayFrequency(v: string) {
   return ["weekly", "fortnightly", "four_weekly", "monthly"].includes(String(v || "").trim());
 }
 
+function normalizeDirectorNicMethod(v: any) {
+  const s = String(v ?? "").trim().toUpperCase();
+  return DIRECTOR_NIC_METHODS.includes(s as any) ? s : "";
+}
+
+function isValidDirectorAppointmentWeek(v: string) {
+  const n = toWholeNumberOrNull(v);
+  return n !== null && n >= 1 && n <= 53;
+}
+
 function extractMissingColumn(message: string): string | null {
   const msg = String(message || "");
 
@@ -293,6 +336,7 @@ export default function EditEmployeePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const [employee, setEmployee] = useState<EmployeeRow | null>(null);
 
@@ -330,6 +374,8 @@ export default function EditEmployeePage() {
     tax_code_basis: "cumulative",
     ni_category: "A",
     is_director: false,
+    director_nic_method: "",
+    director_appointment_week: "",
 
     pension_status: "not_assessed",
     pension_scheme_name: "",
@@ -518,6 +564,8 @@ export default function EditEmployeePage() {
           .trim()
           .toLowerCase();
 
+        const isDirector = (data as any).is_director === true;
+
         const nextForm: FormState = {
           employee_number: String((data as any).employee_number || "").trim(),
 
@@ -560,7 +608,14 @@ export default function EditEmployeePage() {
           tax_code: String((data as any).tax_code || "1257L").trim().toUpperCase() || "1257L",
           tax_code_basis: rawTaxCodeBasis === "week1_month1" ? "week1_month1" : "cumulative",
           ni_category: String((data as any).ni_category || "A").trim().toUpperCase() || "A",
-          is_director: (data as any).is_director === true,
+          is_director: isDirector,
+          director_nic_method: isDirector ? normalizeDirectorNicMethod((data as any).director_nic_method) : "",
+          director_appointment_week:
+            isDirector &&
+            (data as any).director_appointment_week !== null &&
+            (data as any).director_appointment_week !== undefined
+              ? String((data as any).director_appointment_week)
+              : "",
 
           pension_status: String((data as any).pension_status || "not_assessed").trim() || "not_assessed",
           pension_scheme_name: String((data as any).pension_scheme_name || "").trim(),
@@ -639,6 +694,7 @@ export default function EditEmployeePage() {
 
   async function onSave(target: "details" | "wizard") {
     setErr(null);
+    setSaveMessage(null);
 
     const companyId = company?.id ? String(company.id) : "";
     if (companyErr || !companyId) {
@@ -660,8 +716,8 @@ export default function EditEmployeePage() {
     const last = form.last_name.trim();
     const email = form.email.trim();
 
-    if (!first || !last || !email) {
-      setErr("First name, last name, and email are required.");
+    if (!first || !last) {
+      setErr("First name and last name are required.");
       return;
     }
 
@@ -714,6 +770,20 @@ export default function EditEmployeePage() {
       return;
     }
 
+    const isDirector = form.is_director === true;
+    const directorNicMethod = isDirector ? normalizeDirectorNicMethod(form.director_nic_method) : "";
+    const directorAppointmentWeek = isDirector ? toWholeNumberOrNull(form.director_appointment_week) : null;
+
+    if (isDirector && !directorNicMethod) {
+      setErr("Director NIC method is required when Director is Yes. Select AN or AL.");
+      return;
+    }
+
+    if (isDirector && (directorAppointmentWeek === null || directorAppointmentWeek < 1 || directorAppointmentWeek > 53)) {
+      setErr("Director appointment week is required when Director is Yes. Enter a whole number from 1 to 53.");
+      return;
+    }
+
     const addressFilled = [
       form.address_line1,
       form.address_line2,
@@ -739,7 +809,7 @@ export default function EditEmployeePage() {
 
       first_name: first,
       last_name: last,
-      email,
+      email: email || null,
 
       job_title: form.job_title.trim() || null,
       employment_type: form.employment_type.trim() || null,
@@ -759,7 +829,9 @@ export default function EditEmployeePage() {
       tax_code: form.tax_code.trim().toUpperCase() || null,
       tax_code_basis: form.tax_code_basis === "week1_month1" ? "week1_month1" : "cumulative",
       ni_category: form.ni_category.trim().toUpperCase() || null,
-      is_director: form.is_director,
+      is_director: isDirector,
+      director_nic_method: isDirector ? directorNicMethod : null,
+      director_appointment_week: isDirector ? directorAppointmentWeek : null,
 
       pension_status: form.pension_status.trim() || "not_assessed",
       pension_scheme_name: form.pension_scheme_name.trim() || null,
@@ -808,13 +880,20 @@ export default function EditEmployeePage() {
 
         if (!res.error) {
           const nextId = matchVal || routeId;
+          const destination =
+            target === "wizard"
+              ? `/dashboard/employees/${nextId}/wizard/starter`
+              : `/dashboard/employees/${nextId}`;
 
-          if (target === "wizard") {
-            router.push(`/dashboard/employees/${nextId}/wizard/starter`);
-            return;
-          }
+          setSaveMessage(
+            target === "wizard"
+              ? "Employee saved. Opening starter wizard..."
+              : "Employee saved. Opening employee record..."
+          );
 
-          router.push(`/dashboard/employees/${nextId}`);
+          router.refresh();
+          await new Promise<void>((resolve) => setTimeout(resolve, 350));
+          router.push(destination);
           return;
         }
 
@@ -916,6 +995,12 @@ export default function EditEmployeePage() {
             <div className="rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">{err}</div>
           ) : (
             <>
+              {saveMessage ? (
+                <div className="mb-4 rounded-md bg-emerald-100 px-3 py-2 text-sm text-emerald-900">
+                  {saveMessage}
+                </div>
+              ) : null}
+
               <div className="text-xl font-semibold text-neutral-900">Core details</div>
               <div className="mt-1 text-sm text-neutral-700">
                 This edits the employee record directly. Wizard edits stay available for the wider onboarding steps.
@@ -1051,7 +1136,7 @@ export default function EditEmployeePage() {
 
                     <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
                       <div>
-                        <label className="block text-sm text-neutral-800">Annual salary (£)</label>
+                        <label className="block text-sm text-neutral-800">Annual salary (GBP)</label>
                         <input
                           value={form.annual_salary}
                           onChange={(e) => setField("annual_salary", e.target.value)}
@@ -1063,7 +1148,7 @@ export default function EditEmployeePage() {
                       </div>
 
                       <div>
-                        <label className="block text-sm text-neutral-800">Hourly rate (£)</label>
+                        <label className="block text-sm text-neutral-800">Hourly rate (GBP)</label>
                         <input
                           value={form.hourly_rate}
                           onChange={(e) => {
@@ -1100,7 +1185,7 @@ export default function EditEmployeePage() {
                           <div className="mt-2 flex flex-col gap-2">
                             <div className="text-xs text-neutral-600">
                               Derived equivalent hourly rate:{" "}
-                              <span className="font-semibold text-neutral-900">£{derivedHourlyStr}</span> (uses 52.14285714
+                              <span className="font-semibold text-neutral-900">GBP {derivedHourlyStr}</span> (uses 52.14285714
                               weeks per year)
                             </div>
 
@@ -1161,7 +1246,7 @@ export default function EditEmployeePage() {
                     </div>
 
                     <div className="mt-3 text-xs text-neutral-600">
-                      If you leave these blank, they will be saved as empty (null) values.
+                      If you leave these blank, they will be saved as empty values.
                     </div>
                   </div>
                 </div>
@@ -1197,14 +1282,22 @@ export default function EditEmployeePage() {
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="ni_category"
                         >
-                          <option value="A">A – Standard rate</option>
-                          <option value="B">B – Married women / widows (reduced rate)</option>
-                          <option value="C">C – Over State Pension age</option>
-                          <option value="H">H – Apprentice under 25</option>
-                          <option value="J">J – Deferred NI</option>
-                          <option value="M">M – Under 21</option>
-                          <option value="V">V – Veteran</option>
-                          <option value="Z">Z – Under 21, deferred NI</option>
+                          <option value="A">A - Standard rate</option>
+                          <option value="B">B - Married women / widows reduced rate</option>
+                          <option value="C">C - Over State Pension age</option>
+                          <option value="H">H - Apprentice under 25</option>
+                          <option value="J">J - Deferred NI</option>
+                          <option value="M">M - Under 21</option>
+                          <option value="V">V - Veteran</option>
+                          <option value="Z">Z - Under 21, deferred NI</option>
+                          <option value="F">F - Freeport standard equivalent</option>
+                          <option value="I">I - Freeport reduced rate</option>
+                          <option value="L">L - Freeport deferred NI</option>
+                          <option value="S">S - Freeport over State Pension age</option>
+                          <option value="N">N - Investment Zone standard equivalent</option>
+                          <option value="E">E - Investment Zone reduced rate</option>
+                          <option value="D">D - Investment Zone deferred NI</option>
+                          <option value="K">K - Investment Zone over State Pension age</option>
                         </select>
                       </div>
 
@@ -1228,14 +1321,64 @@ export default function EditEmployeePage() {
                         <label className="block text-sm text-neutral-800">Director</label>
                         <select
                           value={form.is_director ? "yes" : "no"}
-                          onChange={(e) => setField("is_director", e.target.value === "yes")}
+                          onChange={(e) => {
+                            const nextIsDirector = e.target.value === "yes";
+                            setForm((prev) => ({
+                              ...prev,
+                              is_director: nextIsDirector,
+                              director_nic_method: nextIsDirector ? prev.director_nic_method : "",
+                              director_appointment_week: nextIsDirector ? prev.director_appointment_week : "",
+                            }));
+                          }}
                           className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
                           name="is_director"
                         >
                           <option value="no">No</option>
-                          <option value="yes">Yes – annual NI method applies</option>
+                          <option value="yes">Yes</option>
                         </select>
+                        <div className="mt-1 text-xs text-neutral-600">
+                          Director NIC settings are saved here for future payroll calculation support.
+                        </div>
                       </div>
+
+                      {form.is_director ? (
+                        <>
+                          <div>
+                            <label className="block text-sm text-neutral-800">Director NIC method</label>
+                            <select
+                              value={form.director_nic_method}
+                              onChange={(e) => setField("director_nic_method", e.target.value)}
+                              className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                              name="director_nic_method"
+                            >
+                              <option value="">Select method</option>
+                              <option value="AN">AN - Annual earnings period</option>
+                              <option value="AL">AL - Alternative method</option>
+                            </select>
+                            <div className="mt-1 text-xs text-neutral-600">
+                              Required when Director is Yes.
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm text-neutral-800">Director appointment week</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="53"
+                              step="1"
+                              value={form.director_appointment_week}
+                              onChange={(e) => setField("director_appointment_week", e.target.value)}
+                              className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
+                              name="director_appointment_week"
+                              placeholder="1 to 53"
+                            />
+                            <div className="mt-1 text-xs text-neutral-600">
+                              Enter the tax week the employee became a director. Required when Director is Yes.
+                            </div>
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </div>

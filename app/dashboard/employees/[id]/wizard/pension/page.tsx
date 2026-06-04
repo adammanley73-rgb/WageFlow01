@@ -295,6 +295,32 @@ export default function PensionPage() {
   ) {
     const { name, value } = e.target;
 
+    if (
+      form.pension_status === "opted_out" &&
+      name !== "pension_status" &&
+      name !== "pension_opt_out_date"
+    ) {
+      return;
+    }
+
+    if (name === "pension_status" && value === "opted_out") {
+      setForm((prev) => ({
+        ...prev,
+        pension_status: "opted_out",
+        pension_scheme_name: "",
+        pension_reference: "",
+        pension_contribution_method: "",
+        pension_earnings_basis: "",
+        pension_employee_rate: null,
+        pension_employer_rate: null,
+        pension_enrolment_date: "",
+        pension_opt_in_date: "",
+        pension_postponement_date: "",
+        pension_worker_category: "",
+      }));
+      return;
+    }
+
     setForm((prev) => ({
       ...prev,
       [name]:
@@ -430,11 +456,12 @@ export default function PensionPage() {
         : "bg-neutral-900 text-white";
 
   const inputClass = (hasError: boolean) =>
-    `mt-1 w-full rounded-md border bg-white p-2 outline-none ${
+    `mt-1 w-full rounded-md border bg-white p-2 outline-none disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-700 ${
       hasError ? "border-red-600 ring-2 ring-red-200" : "border-neutral-400"
     }`;
 
   const status = String(form.pension_status || "").trim();
+  const isOptedOut = status === "opted_out";
   const showSchemeFields = status === "enrolled" || status === "opted_in";
 
   return (
@@ -470,6 +497,15 @@ export default function PensionPage() {
           <>
             {err ? (
               <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">{err}</div>
+            ) : null}
+
+            {isOptedOut ? (
+              <div className="mb-4 rounded-lg border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950">
+                <div className="font-extrabold">Pension details are locked because this employee is opted out.</div>
+                <div className="mt-1">
+                  Only the opt-out date can be edited while the pension status is Opted out. Change the pension status first if the employee later opts in or is enrolled again.
+                </div>
+              </div>
             ) : null}
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -511,6 +547,7 @@ export default function PensionPage() {
                 <select
                   id="pension_worker_category"
                   name="pension_worker_category"
+                  disabled={isOptedOut}
                   value={form.pension_worker_category || ""}
                   onChange={onTextChange}
                   onBlur={onBlur}
@@ -537,6 +574,7 @@ export default function PensionPage() {
                 <input
                   id="pension_scheme_name"
                   name="pension_scheme_name"
+                  disabled={isOptedOut}
                   value={form.pension_scheme_name || ""}
                   onChange={onTextChange}
                   onBlur={onBlur}
@@ -555,6 +593,7 @@ export default function PensionPage() {
                 <input
                   id="pension_reference"
                   name="pension_reference"
+                  disabled={isOptedOut}
                   value={form.pension_reference || ""}
                   onChange={onTextChange}
                   onBlur={onBlur}
@@ -573,6 +612,7 @@ export default function PensionPage() {
                 <select
                   id="pension_contribution_method"
                   name="pension_contribution_method"
+                  disabled={isOptedOut}
                   value={form.pension_contribution_method}
                   onChange={onTextChange}
                   onBlur={onBlur}
@@ -615,6 +655,7 @@ export default function PensionPage() {
                 <select
                   id="pension_earnings_basis"
                   name="pension_earnings_basis"
+                  disabled={isOptedOut}
                   value={form.pension_earnings_basis}
                   onChange={onTextChange}
                   onBlur={onBlur}
@@ -652,6 +693,7 @@ export default function PensionPage() {
                 <input
                   id="pension_employee_rate"
                   name="pension_employee_rate"
+                  disabled={isOptedOut}
                   type="number"
                   step="0.01"
                   min="0"
@@ -687,6 +729,7 @@ export default function PensionPage() {
                 <input
                   id="pension_employer_rate"
                   name="pension_employer_rate"
+                  disabled={isOptedOut}
                   type="number"
                   step="0.01"
                   min="0"
@@ -722,6 +765,7 @@ export default function PensionPage() {
                 <input
                   id="pension_enrolment_date"
                   name="pension_enrolment_date"
+                  disabled={isOptedOut}
                   type="date"
                   value={form.pension_enrolment_date || ""}
                   onChange={onTextChange}
@@ -754,6 +798,7 @@ export default function PensionPage() {
                 <input
                   id="pension_opt_in_date"
                   name="pension_opt_in_date"
+                  disabled={isOptedOut}
                   type="date"
                   value={form.pension_opt_in_date || ""}
                   onChange={onTextChange}
@@ -810,6 +855,7 @@ export default function PensionPage() {
                 <input
                   id="pension_postponement_date"
                   name="pension_postponement_date"
+                  disabled={isOptedOut}
                   type="date"
                   value={form.pension_postponement_date || ""}
                   onChange={onTextChange}

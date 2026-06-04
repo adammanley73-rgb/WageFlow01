@@ -38,6 +38,21 @@ function canonPhone(raw: unknown) {
   return plus + digits;
 }
 
+function isValidPhone(raw: unknown) {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return true;
+
+  const digits = trimmed.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+}
+
+function isValidEmail(raw: unknown) {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return true;
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+}
+
 async function resolveEmployee(supabase: any, rawId: unknown): Promise<EmployeeRef | null> {
   const rid = String(rawId ?? "").trim();
   if (!rid) return null;
@@ -114,12 +129,56 @@ export async function POST(req: Request, ctx: RouteContext) {
 
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
+    const skipRequested =
+      body?.skip_emergency_contact === true ||
+      body?.skip_emergency_contact === "true" ||
+      body?.skip_emergency_contact === 1 ||
+      body?.skip_emergency_contact === "1";
+
     const contact_name = String(body?.contact_name ?? "").trim();
     const relationship = String(body?.relationship ?? "").trim();
-    const phone = canonPhone(body?.phone);
+    const rawPhone = String(body?.phone ?? "").trim();
+    const phone = rawPhone ? canonPhone(rawPhone) : "";
     const email = String(body?.email ?? "").trim();
 
-    if (!contact_name) return json(400, { ok: false, error: "VALIDATION_ERROR", message: "Contact name is required." });
+    const hasAnyValue = Boolean(contact_name || relationship || rawPhone || email);
+    const hasContactMethod = Boolean(rawPhone || email);
+
+    if (skipRequested || !hasAnyValue) {
+      return json(200, { ok: true, skipped: true });
+    }
+
+    if (!contact_name) {
+      return json(400, {
+        ok: false,
+        error: "VALIDATION_ERROR",
+        message: "Contact name is required when adding an emergency contact.",
+      });
+    }
+
+    if (!hasContactMethod) {
+      return json(400, {
+        ok: false,
+        error: "VALIDATION_ERROR",
+        message: "Enter a phone number or email address for the emergency contact.",
+      });
+    }
+
+    if (rawPhone && !isValidPhone(rawPhone)) {
+      return json(400, {
+        ok: false,
+        error: "VALIDATION_ERROR",
+        message: "Enter a valid phone number.",
+      });
+    }
+
+    if (email && !isValidEmail(email)) {
+      return json(400, {
+        ok: false,
+        error: "VALIDATION_ERROR",
+        message: "Enter a valid email address.",
+      });
+    }
 
     const payload: Record<string, unknown> = {
       employee_id: emp.id,
