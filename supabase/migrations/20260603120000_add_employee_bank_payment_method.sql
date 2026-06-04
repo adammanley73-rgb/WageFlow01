@@ -4,23 +4,6 @@ add column if not exists payment_method text;
 alter table if exists public.employee_bank_accounts
 add column if not exists payment_method text;
 
-update public.employee_bank_accounts
-set payment_method = case
-  when nullif(trim(coalesce(account_name, '')), '') is not null
-    or nullif(trim(coalesce(sort_code, '')), '') is not null
-    or nullif(trim(coalesce(account_number, '')), '') is not null
-    then 'bacs'
-  else 'not_confirmed'
-end
-where payment_method is null
-   or payment_method not in (
-    'bacs',
-    'manual_transfer',
-    'cash',
-    'cheque',
-    'not_confirmed'
-  );
-
 alter table if exists public.employee_bank
 alter column payment_method set default 'not_confirmed';
 
