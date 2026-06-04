@@ -412,17 +412,30 @@ function validatePensionBody(body: PensionBody): { ok: boolean; errors: string[]
   const errors: string[] = [];
 
   const pension_status = normalizePensionStatus(body.pension_status);
-  const pension_scheme_name = normalizeNullableString(body.pension_scheme_name);
-  const pension_reference = normalizeNullableUpperString(body.pension_reference);
-  const pension_contribution_method = normalizeContributionMethod(body.pension_contribution_method);
-  const pension_earnings_basis = normalizeEarningsBasis(body.pension_earnings_basis);
-  const pension_employee_rate = normalizeRate(body.pension_employee_rate);
-  const pension_employer_rate = normalizeRate(body.pension_employer_rate);
-  const pension_enrolment_date = normalizeNullableString(body.pension_enrolment_date);
-  const pension_opt_in_date = normalizeNullableString(body.pension_opt_in_date);
+  const raw_pension_scheme_name = normalizeNullableString(body.pension_scheme_name);
+  const raw_pension_reference = normalizeNullableUpperString(body.pension_reference);
+  const raw_pension_contribution_method = normalizeContributionMethod(body.pension_contribution_method);
+  const raw_pension_earnings_basis = normalizeEarningsBasis(body.pension_earnings_basis);
+  const raw_pension_employee_rate = normalizeRate(body.pension_employee_rate);
+  const raw_pension_employer_rate = normalizeRate(body.pension_employer_rate);
+  const raw_pension_enrolment_date = normalizeNullableString(body.pension_enrolment_date);
+  const raw_pension_opt_in_date = normalizeNullableString(body.pension_opt_in_date);
   const pension_opt_out_date = normalizeNullableString(body.pension_opt_out_date);
-  const pension_postponement_date = normalizeNullableString(body.pension_postponement_date);
-  const pension_worker_category = normalizeWorkerCategory(body.pension_worker_category);
+  const raw_pension_postponement_date = normalizeNullableString(body.pension_postponement_date);
+  const raw_pension_worker_category = normalizeWorkerCategory(body.pension_worker_category);
+
+  const isOptedOut = pension_status === "opted_out";
+
+  const pension_scheme_name = isOptedOut ? null : raw_pension_scheme_name;
+  const pension_reference = isOptedOut ? null : raw_pension_reference;
+  const pension_contribution_method = isOptedOut ? null : raw_pension_contribution_method;
+  const pension_earnings_basis = isOptedOut ? null : raw_pension_earnings_basis;
+  const pension_employee_rate = isOptedOut ? null : raw_pension_employee_rate;
+  const pension_employer_rate = isOptedOut ? null : raw_pension_employer_rate;
+  const pension_enrolment_date = isOptedOut ? null : raw_pension_enrolment_date;
+  const pension_opt_in_date = isOptedOut ? null : raw_pension_opt_in_date;
+  const pension_postponement_date = isOptedOut ? null : raw_pension_postponement_date;
+  const pension_worker_category = isOptedOut ? null : raw_pension_worker_category;
 
   const rowWithoutEnabled: Omit<PensionRow, "pension_enabled"> = {
     pension_status,
@@ -439,20 +452,20 @@ function validatePensionBody(body: PensionBody): { ok: boolean; errors: string[]
     pension_worker_category,
   };
 
-  const pension_enabled = derivePensionEnabled(body.pension_enabled, rowWithoutEnabled);
+  const pension_enabled = isOptedOut ? false : derivePensionEnabled(body.pension_enabled, rowWithoutEnabled);
 
-  const requiresSchemeDetails = pension_enabled;
+  const requiresSchemeDetails = pension_status === "enrolled" || pension_status === "opted_in";
 
   if (requiresSchemeDetails && !pension_contribution_method) {
-    errors.push("pension_contribution_method is required when pension is enabled.");
+    errors.push("pension_contribution_method is required for enrolled or opted-in workers.");
   }
 
   if (requiresSchemeDetails && !pension_earnings_basis) {
-    errors.push("pension_earnings_basis is required when pension is enabled.");
+    errors.push("pension_earnings_basis is required for enrolled or opted-in workers.");
   }
 
   if (requiresSchemeDetails && !pension_scheme_name) {
-    errors.push("pension_scheme_name is required when pension is enabled.");
+    errors.push("pension_scheme_name is required for enrolled or opted-in workers.");
   }
 
   if (pension_employee_rate !== null && (pension_employee_rate < 0 || pension_employee_rate > 100)) {
@@ -463,11 +476,7 @@ function validatePensionBody(body: PensionBody): { ok: boolean; errors: string[]
     errors.push("pension_employer_rate must be between 0 and 100.");
   }
 
-  if (
-    pension_enabled &&
-    (pension_status === "enrolled" || pension_status === "opted_in") &&
-    !pension_enrolment_date
-  ) {
+  if (requiresSchemeDetails && !pension_enrolment_date) {
     errors.push("pension_enrolment_date is required for enrolled or opted-in workers.");
   }
 

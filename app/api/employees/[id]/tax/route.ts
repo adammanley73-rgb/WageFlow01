@@ -1,4 +1,4 @@
-// C:\Projects\wageflow01\app\api\employees\[id]\tax\route.ts
+﻿// C:\Projects\wageflow01\app\api\employees\[id]\tax\route.ts
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -9,15 +9,54 @@ export const revalidate = 0;
 type RouteContext = { params: Promise<{ id: string }> };
 
 type TaxCodeBasis = "cumulative" | "week1_month1";
-type NiCategory = "A" | "B" | "C" | "H" | "J" | "M" | "V" | "Z" | "F" | "I" | "L" | "S" | "N" | "E" | "D" | "K";type StarterDeclaration = "A" | "B" | "C" | null;
+type NiCategory =
+  | "A"
+  | "B"
+  | "C"
+  | "H"
+  | "J"
+  | "M"
+  | "V"
+  | "Z"
+  | "F"
+  | "I"
+  | "L"
+  | "S"
+  | "N"
+  | "E"
+  | "D"
+  | "K";
+type StarterDeclaration = "A" | "B" | "C" | null;
+type DirectorNicMethod = "AN" | "AL";
 
-const VALID_NI_CATEGORIES: NiCategory[] = ["A", "B", "C", "H", "J", "M", "V", "Z", "F", "I", "L", "S", "N", "E", "D", "K"];
+const VALID_NI_CATEGORIES: NiCategory[] = [
+  "A",
+  "B",
+  "C",
+  "H",
+  "J",
+  "M",
+  "V",
+  "Z",
+  "F",
+  "I",
+  "L",
+  "S",
+  "N",
+  "E",
+  "D",
+  "K",
+];
+
+const VALID_DIRECTOR_NIC_METHODS: DirectorNicMethod[] = ["AN", "AL"];
 
 type TaxRow = {
   tax_code: string;
   tax_code_basis: TaxCodeBasis;
   ni_category: NiCategory;
   is_director: boolean;
+  director_nic_method: DirectorNicMethod | null;
+  director_appointment_week: number | null;
 };
 
 type TaxBody = Partial<TaxRow> & {
@@ -94,6 +133,24 @@ function normalizeTaxCodeBasis(v: unknown): TaxCodeBasis {
 function normalizeNiCategory(v: unknown): NiCategory | null {
   const s = String(v ?? "").trim().toUpperCase() as NiCategory;
   return VALID_NI_CATEGORIES.includes(s) ? s : null;
+}
+
+function normalizeDirectorNicMethod(v: unknown): DirectorNicMethod | null {
+  const s = String(v ?? "").trim().toUpperCase() as DirectorNicMethod;
+  return VALID_DIRECTOR_NIC_METHODS.includes(s) ? s : null;
+}
+
+function normalizeDirectorAppointmentWeek(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+
+  const raw = String(v).trim();
+  if (!raw) return null;
+
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return null;
+  if (n < 1 || n > 53) return null;
+
+  return n;
 }
 
 function normalizeBoolean(v: unknown): boolean {
@@ -195,6 +252,23 @@ function validateTaxBody(body: TaxBody): { ok: boolean; errors: string[]; row: T
   }
 
   const taxCodeBasis = normalizeTaxCodeBasis(body.tax_code_basis ?? body.tax_basis);
+  const isDirector = normalizeBoolean(body.is_director);
+
+  let directorNicMethod: DirectorNicMethod | null = null;
+  let directorAppointmentWeek: number | null = null;
+
+  if (isDirector) {
+    directorNicMethod = normalizeDirectorNicMethod(body.director_nic_method);
+    directorAppointmentWeek = normalizeDirectorAppointmentWeek(body.director_appointment_week);
+
+    if (!directorNicMethod) {
+      errors.push("director_nic_method is required when the employee is a director. Use AN or AL.");
+    }
+
+    if (directorAppointmentWeek === null) {
+      errors.push("director_appointment_week is required when the employee is a director. Use a whole number from 1 to 53.");
+    }
+  }
 
   return {
     ok: errors.length === 0,
@@ -203,7 +277,9 @@ function validateTaxBody(body: TaxBody): { ok: boolean; errors: string[]; row: T
       tax_code: rawTaxCode || "1257L",
       tax_code_basis: taxCodeBasis,
       ni_category: niCategory ?? "A",
-      is_director: normalizeBoolean(body.is_director),
+      is_director: isDirector,
+      director_nic_method: isDirector ? directorNicMethod : null,
+      director_appointment_week: isDirector ? directorAppointmentWeek : null,
     },
   };
 }
@@ -230,7 +306,7 @@ export async function GET(_req: Request, ctx: RouteContext) {
   try {
     const { data, error } = await supabase
       .from("employees")
-      .select("tax_code, tax_code_basis, ni_category, is_director")
+      .select("tax_code, tax_code_basis, ni_category, is_director, director_nic_method, director_appointment_week")
       .eq("id", employeeKeys.uuid)
       .maybeSingle();
 
@@ -334,9 +410,11 @@ export async function POST(req: Request, ctx: RouteContext) {
         tax_code_basis: taxBasisToSave,
         ni_category: validated.row.ni_category,
         is_director: validated.row.is_director,
+        director_nic_method: validated.row.director_nic_method,
+        director_appointment_week: validated.row.director_appointment_week,
       })
       .eq("id", employeeKeys.uuid)
-      .select("tax_code, tax_code_basis, ni_category, is_director")
+      .select("tax_code, tax_code_basis, ni_category, is_director, director_nic_method, director_appointment_week")
       .maybeSingle();
 
     if (updateError) {

@@ -1,10 +1,9 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { loadInsertedRunEmployeeRows, seedInitialBasicPayElements } from "@/lib/payroll/basicPaySeeding";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
 
 type RouteContext = {
   params: Promise<{
@@ -51,6 +50,11 @@ type EmployeeRow = {
   taxBasis?: unknown;
   ni_category?: unknown;
   niCategory?: unknown;
+  is_director?: unknown;
+  director_nic_method?: unknown;
+  directorNicMethod?: unknown;
+  director_appointment_week?: unknown;
+  directorAppointmentWeek?: unknown;
   student_loan?: unknown;
   loan_plan?: unknown;
   studentLoan?: unknown;
@@ -92,6 +96,13 @@ type ContractEmployeeRow = {
 
   ni_category?: unknown;
   niCategory?: unknown;
+
+  is_director?: unknown;
+  isDirector?: unknown;
+  director_nic_method?: unknown;
+  directorNicMethod?: unknown;
+  director_appointment_week?: unknown;
+  directorAppointmentWeek?: unknown;
 
   student_loan?: unknown;
   loan_plan?: unknown;
@@ -191,6 +202,28 @@ function normalizeTaxCodeBasis(v: unknown): "cumulative" | "week1_month1" {
     return "week1_month1";
   }
   return "cumulative";
+}
+
+function normalizeBoolean(v: unknown): boolean {
+  if (v === true || v === "true" || v === "yes" || v === "1" || v === 1) return true;
+  return false;
+}
+
+function normalizeDirectorNicMethod(v: unknown): "AN" | "AL" | null {
+  const s = String(v ?? "").trim().toUpperCase();
+  if (s === "AN" || s === "AL") return s;
+  return null;
+}
+
+function normalizeDirectorAppointmentWeek(v: unknown): number | null {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+
+  const n = Number(s);
+  if (!Number.isInteger(n)) return null;
+  if (n < 1 || n > 53) return null;
+
+  return n;
 }
 
 function isMissingColumnError(err: unknown): boolean {
@@ -506,6 +539,12 @@ export async function POST(_req: Request, { params }: RouteContext) {
       taxBasis: employee?.tax_basis,
       ni_category: employee?.ni_category,
       niCategory: employee?.ni_category,
+      is_director: employee?.is_director,
+      isDirector: employee?.is_director,
+      director_nic_method: employee?.director_nic_method,
+      directorNicMethod: employee?.director_nic_method,
+      director_appointment_week: employee?.director_appointment_week,
+      directorAppointmentWeek: employee?.director_appointment_week,
       student_loan: employee?.student_loan,
       loan_plan: employee?.loan_plan,
       studentLoan: employee?.student_loan,
@@ -762,6 +801,12 @@ export async function POST(_req: Request, { params }: RouteContext) {
     const empTaxCodeBasis = pickFirst(row.tax_code_basis, row.tax_basis, row.taxBasis);
     const empNiCat = pickFirst(row.ni_category, row.niCategory);
 
+    const empIsDirector = normalizeBoolean(row.is_director ?? row.isDirector ?? false);
+    const empDirectorNicMethod = normalizeDirectorNicMethod(row.director_nic_method ?? row.directorNicMethod);
+    const empDirectorAppointmentWeek = normalizeDirectorAppointmentWeek(
+      row.director_appointment_week ?? row.directorAppointmentWeek
+    );
+
     const empLoan = pickFirst(row.student_loan, row.loan_plan, row.studentLoan, row.student_loan_plan);
     const empPg = row.postgraduate_loan ?? row.has_pgl ?? row.postgrad_loan ?? null;
 
@@ -769,6 +814,10 @@ export async function POST(_req: Request, { params }: RouteContext) {
     const taxCodeBasisUsed = normalizeTaxCodeBasis(applied?.tax_code_basis ?? applied?.tax_basis ?? empTaxCodeBasis);
     const niCategoryUsed =
       String(applied?.ni_category ?? empNiCat ?? defaultNiCategory(row)).trim().toUpperCase() || defaultNiCategory(row);
+
+    const isDirectorUsed = empIsDirector;
+    const directorNicMethodUsed = isDirectorUsed ? empDirectorNicMethod : null;
+    const directorAppointmentWeekUsed = isDirectorUsed ? empDirectorAppointmentWeek : null;
 
     const studentLoanUsed = normalizeLoanPlan(applied?.student_loan_plan ?? empLoan ?? "none");
     const pgLoanUsed = Boolean(applied?.postgrad_loan ?? empPg ?? false);
@@ -795,6 +844,9 @@ export async function POST(_req: Request, { params }: RouteContext) {
       tax_code_used: taxCodeUsed,
       tax_code_basis_used: taxCodeBasisUsed,
       ni_category_used: niCategoryUsed,
+      is_director_used: isDirectorUsed,
+      director_nic_method_used: directorNicMethodUsed,
+      director_appointment_week_used: directorAppointmentWeekUsed,
       student_loan_used: studentLoanUsed,
       pg_loan_used: pgLoanUsed,
 
@@ -836,6 +888,9 @@ export async function POST(_req: Request, { params }: RouteContext) {
         settings_source: settingsHistoryIdUsed ? "history" : "defaults_or_employee",
         as_of_date: asOfDate,
         tax_code_basis_used: taxCodeBasisUsed,
+        is_director_used: isDirectorUsed,
+        director_nic_method_used: directorNicMethodUsed,
+        director_appointment_week_used: directorAppointmentWeekUsed,
         employee_key: employeeKey,
         attach_mode: "due",
         contract_id: contractUuid,
