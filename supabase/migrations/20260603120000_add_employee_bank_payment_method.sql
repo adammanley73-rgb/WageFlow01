@@ -1,4 +1,4 @@
-﻿alter table if exists public.employee_bank
+alter table if exists public.employee_bank
 add column if not exists payment_method text;
 
 alter table if exists public.employee_bank_accounts
