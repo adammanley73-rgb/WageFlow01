@@ -989,6 +989,7 @@ type DirectorNicOverlayInput = {
   isDirector: boolean;
   method: any;
   appointmentWeek: any;
+  finalPaymentForTaxYear: boolean;
   priorNiableEmployee: number;
   priorNiableEmployer: number;
   priorEmployeeNi: number;
@@ -1246,9 +1247,13 @@ function computeDirectorNicForOverlay(args: {
 
   const method = normalizeDirectorNicCalculationMethod(director?.method);
   const appointmentWeek = normalizeDirectorAppointmentWeekNumber(director?.appointmentWeek);
+  const finalPaymentForTaxYear = Boolean(director?.finalPaymentForTaxYear ?? false);
   const payFrequency = String(args.payFrequency ?? "").trim().toLowerCase();
 
-  if (method !== "AN") {
+  const applyAnnualRecalculation =
+    method === "AN" || (method === "AL" && finalPaymentForTaxYear);
+
+  if (!applyAnnualRecalculation) {
     return null;
   }
 
@@ -1284,13 +1289,24 @@ function computeDirectorNicForOverlay(args: {
   const employee = round2(Math.max(0, cumulativeEmployeeResult.employee - priorEmployeeNi));
   const employer = round2(Math.max(0, cumulativeEmployerResult.employer - priorEmployerNi));
 
+  const auditCalculation =
+    method === "AL"
+      ? "director_alternative_final_payment_reconciliation"
+      : "director_annual_earnings_period";
+
+  const auditNote =
+    method === "AL"
+      ? "AL Director NIC uses normal period NIC until the director final payment for the tax year is marked, then performs an annual or pro-rated annual recalculation less NI already deducted earlier in the tax year."
+      : "AN Director NIC uses annual or pro-rated annual thresholds, less NI already deducted in earlier approved, RTI-submitted, or completed runs in this tax year. For pro-rata directors, prior earnings are filtered from the appointment week onwards.";
+
   return {
     employee,
     employer,
     audit: {
       applied: true,
-      method: "AN",
-      calculation: "director_annual_earnings_period",
+      method,
+      calculation: auditCalculation,
+      final_payment_for_tax_year: finalPaymentForTaxYear,
       tax_year_start: args.taxYear ?? null,
       appointment_week: appointmentWeek,
       weeks_in_annual_period: weeksInAnnualPeriod,
@@ -1311,7 +1327,7 @@ function computeDirectorNicForOverlay(args: {
       current_employee_ni: employee,
       current_employer_ni: employer,
       prior_earnings_source: "gross_pay",
-      note: "AN Director NIC uses annual or pro-rated annual thresholds, less NI already deducted in earlier approved, RTI-submitted, or completed runs in this tax year. For pro-rata directors, prior earnings are filtered from the appointment week onwards.",
+      note: auditNote,
     },
   };
 }
@@ -2437,9 +2453,19 @@ async function updateRunEmployeeRow(
   rowId: string,
   gross: number,
   deductions: number,
-  net: number
+  net: number,
+  directorFinalPaymentForTaxYear: boolean | null = null
 ) {
-  const patch = { gross_pay: gross, net_pay: net, other_deductions: deductions, manual_override: true };
+  const patch: Record<string, any> = {
+    gross_pay: gross,
+    net_pay: net,
+    other_deductions: deductions,
+    manual_override: true,
+  };
+
+  if (typeof directorFinalPaymentForTaxYear === "boolean") {
+    patch.director_final_payment_for_tax_year = directorFinalPaymentForTaxYear;
+  }
 
   const { error } = await supabase
     .from("payroll_run_employees")
@@ -3531,9 +3557,22 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
     };
 
     const priorNiRowsForEmployee = priorNiRowsByEmployeeId.get(employeeId) || [];
-    const directorUsesProRataFilter =
+    const directorFinalPaymentForTaxYear =
+      parseBoolStrict(
+        pickFirst(
+          att?.director_final_payment_for_tax_year,
+          att?.directorFinalPaymentForTaxYear,
+          false
+        )
+      ) === true;
+
+    const directorAnnualRecalculationApplies =
       isDirectorUsed &&
-      directorNicMethodUsed === "AN" &&
+      (directorNicMethodUsed === "AN" ||
+        (directorNicMethodUsed === "AL" && directorFinalPaymentForTaxYear));
+
+    const directorUsesProRataFilter =
+      directorAnnualRecalculationApplies &&
       directorAppointmentWeekUsed !== null &&
       directorAppointmentWeekUsed > 1;
 
@@ -3571,6 +3610,7 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
         priorNiableEmployer: priorNiYtd.niableEmployer,
         priorEmployeeNi: priorNiYtd.employeeNi,
         priorEmployerNi: priorNiYtd.employerNi,
+        finalPaymentForTaxYear: directorFinalPaymentForTaxYear,
       },
     });
 
@@ -5081,8 +5121,23 @@ export async function PATCH(req: Request, { params }: Ctx) {
     const gross = Number(toNumberSafe(it?.gross).toFixed(2));
     const deductions = Number(toNumberSafe(it?.deductions).toFixed(2));
     const net = Number(toNumberSafe(it?.net).toFixed(2));
+    const directorFinalPaymentForTaxYear =
+      typeof it?.director_final_payment_for_tax_year === "boolean"
+        ? it.director_final_payment_for_tax_year
+        : typeof it?.directorFinalPaymentForTaxYear === "boolean"
+          ? it.directorFinalPaymentForTaxYear
+          : null;
 
-    const r = await updateRunEmployeeRow(supabase, id, companyId, rowId, gross, deductions, net);
+    const r = await updateRunEmployeeRow(
+      supabase,
+      id,
+      companyId,
+      rowId,
+      gross,
+      deductions,
+      net,
+      directorFinalPaymentForTaxYear
+    );
     results.push({ id: rowId, ok: r.ok, ...(r.ok ? {} : { error: (r as any).error }) });
   }
 

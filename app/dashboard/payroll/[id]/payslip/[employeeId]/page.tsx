@@ -754,9 +754,33 @@ export default function PayslipPage() {
     return round2(gross);
   }, [contractCards, gross]);
 
+  const payslipCalculatedNet = useMemo(() => {
+    if (contractCards.length > 0) {
+      return round2(contractCards.reduce((sum, card) => sum + toNumberSafe(card.calculatedNetPay), 0));
+    }
+
+    return round2(net);
+  }, [contractCards, net]);
+
+  const payslipAmountPayable = useMemo(() => {
+    if (contractCards.length > 0) {
+      return round2(contractCards.reduce((sum, card) => sum + toNumberSafe(card.payableNetPay), 0));
+    }
+
+    return round2(Math.max(0, net));
+  }, [contractCards, net]);
+
+  const payslipRecoveryApplied = useMemo(() => {
+    return round2(contractCards.reduce((sum, card) => sum + toNumberSafe(card.recoveryAppliedAmount), 0));
+  }, [contractCards]);
+
+  const payslipRecoveryCreated = useMemo(() => {
+    return round2(contractCards.reduce((sum, card) => sum + toNumberSafe(card.recoveryCreatedAmount), 0));
+  }, [contractCards]);
+
   const payslipTotalDeductions = useMemo(() => {
-    return round2(payslipGross - net);
-  }, [payslipGross, net]);
+    return round2(payslipGross - payslipCalculatedNet);
+  }, [payslipGross, payslipCalculatedNet]);
 
   const rawEarnings = useMemo(() => {
     const directEarnings = nonZeroElements(payslip?.payElements?.earnings).filter(
@@ -1269,15 +1293,15 @@ export default function PayslipPage() {
           <div style={S.block}>
             <div style={S.label}>Calculated net pay</div>
             <div className="wf-num" style={S.num}>
-              {formatMoney(contractCards.length > 0 ? contractCards.reduce((sum, card) => sum + card.calculatedNetPay, 0) : net)}
+              {formatMoney(payslipCalculatedNet)}
             </div>
           </div>
 
-          {contractCards.reduce((sum, card) => sum + card.recoveryAppliedAmount, 0) > 0 ? (
+          {payslipRecoveryApplied > 0 ? (
             <div style={S.block}>
               <div style={S.label}>Recovery deducted</div>
               <div className="wf-num" style={S.num}>
-                -{formatMoney(contractCards.reduce((sum, card) => sum + card.recoveryAppliedAmount, 0))}
+                -{formatMoney(payslipRecoveryApplied)}
               </div>
             </div>
           ) : null}
@@ -1285,15 +1309,15 @@ export default function PayslipPage() {
           <div style={S.block}>
             <div style={S.label}>Amount payable</div>
             <div className="wf-num" style={S.num}>
-              {formatMoney(contractCards.length > 0 ? contractCards.reduce((sum, card) => sum + card.payableNetPay, 0) : Math.max(0, net))}
+              {formatMoney(payslipAmountPayable)}
             </div>
           </div>
 
-          {contractCards.reduce((sum, card) => sum + card.recoveryCreatedAmount, 0) > 0 ? (
+          {payslipRecoveryCreated > 0 ? (
             <div style={S.block}>
               <div style={S.label}>Recovery balance created</div>
               <div className="wf-num" style={S.num}>
-                {formatMoney(contractCards.reduce((sum, card) => sum + card.recoveryCreatedAmount, 0))}
+                {formatMoney(payslipRecoveryCreated)}
               </div>
             </div>
           ) : null}
@@ -1351,11 +1375,11 @@ export default function PayslipPage() {
               <div style={S.breakdownRow}>
                 <div style={{ fontWeight: 900 }}>Calculated net pay</div>
                 <div className="wf-num" style={{ fontWeight: 900 }}>
-                  {formatMoney(contractCards.length > 0 ? contractCards.reduce((sum, card) => sum + card.calculatedNetPay, 0) : net)}
+                  {formatMoney(payslipCalculatedNet)}
                 </div>
               </div>
 
-              {contractCards.reduce((sum, card) => sum + card.recoveryAppliedAmount, 0) > 0 ? (
+              {payslipRecoveryApplied > 0 ? (
                 <div style={S.breakdownRow}>
                   <div style={S.breakdownLabelWrap}>
                     <div style={{ fontWeight: 900 }}>Recovery of previous overpayment</div>
@@ -1364,7 +1388,7 @@ export default function PayslipPage() {
                     </div>
                   </div>
                   <div className="wf-num" style={{ fontWeight: 900, color: "#047857" }}>
-                    -{formatMoney(contractCards.reduce((sum, card) => sum + card.recoveryAppliedAmount, 0))}
+                    -{formatMoney(payslipRecoveryApplied)}
                   </div>
                 </div>
               ) : null}
@@ -1372,11 +1396,11 @@ export default function PayslipPage() {
               <div style={S.breakdownRow}>
                 <div style={{ fontWeight: 900 }}>Amount payable this period</div>
                 <div className="wf-num" style={{ fontWeight: 900 }}>
-                  {formatMoney(contractCards.length > 0 ? contractCards.reduce((sum, card) => sum + card.payableNetPay, 0) : Math.max(0, net))}
+                  {formatMoney(payslipAmountPayable)}
                 </div>
               </div>
 
-              {contractCards.reduce((sum, card) => sum + card.recoveryCreatedAmount, 0) > 0 ? (
+              {payslipRecoveryCreated > 0 ? (
                 <div style={S.breakdownRow}>
                   <div style={S.breakdownLabelWrap}>
                     <div style={{ fontWeight: 900 }}>Employee recovery balance created</div>
@@ -1385,7 +1409,7 @@ export default function PayslipPage() {
                     </div>
                   </div>
                   <div className="wf-num" style={{ fontWeight: 900, color: "#991b1b" }}>
-                    {formatMoney(contractCards.reduce((sum, card) => sum + card.recoveryCreatedAmount, 0))}
+                    {formatMoney(payslipRecoveryCreated)}
                   </div>
                 </div>
               ) : null}

@@ -40,6 +40,10 @@ type Row = {
   recoveryApplicationStatus: string;
   recoveryApplicationNote: string | null;
   calcMode: string;
+  isDirectorUsed: boolean;
+  directorNicMethodUsed: string | null;
+  directorAppointmentWeekUsed: number | null;
+  directorFinalPaymentForTaxYear: boolean;
 };
 
 type Candidate = {
@@ -340,6 +344,30 @@ function mapEmployees(raw: any[]): Row[] {
       pickFirst(r.pension_employee, r.pensionEmployee, r.employee_pension, r.ee_pen, r.eePen, 0) as any
     );
     const calcMode = String(pickFirst(r.calc_mode, r.calcMode, "uncomputed") || "uncomputed");
+    const isDirectorUsedRaw = pickFirst(r.is_director_used, r.isDirectorUsed, false);
+    const isDirectorUsed = isDirectorUsedRaw === true || String(isDirectorUsedRaw ?? "").trim().toLowerCase() === "true";
+    const directorNicMethodUsedRaw = pickFirst(r.director_nic_method_used, r.directorNicMethodUsed, null);
+    const directorNicMethodUsed =
+      directorNicMethodUsedRaw === null || directorNicMethodUsedRaw === undefined
+        ? null
+        : String(directorNicMethodUsedRaw).trim().toUpperCase() || null;
+    const directorAppointmentWeekUsedRaw = pickFirst(
+      r.director_appointment_week_used,
+      r.directorAppointmentWeekUsed,
+      null
+    );
+    const directorAppointmentWeekUsed =
+      directorAppointmentWeekUsedRaw === null || directorAppointmentWeekUsedRaw === undefined
+        ? null
+        : toNumberSafe(directorAppointmentWeekUsedRaw);
+    const directorFinalPaymentRaw = pickFirst(
+      r.director_final_payment_for_tax_year,
+      r.directorFinalPaymentForTaxYear,
+      false
+    );
+    const directorFinalPaymentForTaxYear =
+      directorFinalPaymentRaw === true ||
+      String(directorFinalPaymentRaw ?? "").trim().toLowerCase() === "true";
 
     return {
       id: String(pickFirst(r.id, r.pay_run_employee_id, "") || ""),
@@ -363,6 +391,10 @@ function mapEmployees(raw: any[]): Row[] {
       recoveryApplicationStatus,
       recoveryApplicationNote,
       calcMode,
+      isDirectorUsed,
+      directorNicMethodUsed,
+      directorAppointmentWeekUsed: Number.isFinite(directorAppointmentWeekUsed) ? directorAppointmentWeekUsed : null,
+      directorFinalPaymentForTaxYear,
     };
   });
 }
@@ -684,6 +716,14 @@ export default function PayrollRunDetailPage() {
     setDirty(true);
   };
 
+  const onToggleDirectorFinalPayment = (id: string, checked: boolean) => {
+    if (!canEditRun) return;
+    setRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, directorFinalPaymentForTaxYear: checked } : r))
+    );
+    setDirty(true);
+  };
+
   useEffect(() => {
     const v: Record<string, string> = {};
     for (const r of rows) {
@@ -734,7 +774,15 @@ export default function PayrollRunDetailPage() {
     try {
       setActionBusy("save");
       setErr(null);
-      const payload = { items: rows.map((r) => ({ id: r.id, gross: Number(toNumberSafe(r.gross).toFixed(2)), deductions: Number(toNumberSafe(r.deductions).toFixed(2)), net: Number(toNumberSafe(r.net).toFixed(2)) })) };
+      const payload = {
+        items: rows.map((r) => ({
+          id: r.id,
+          gross: Number(toNumberSafe(r.gross).toFixed(2)),
+          deductions: Number(toNumberSafe(r.deductions).toFixed(2)),
+          net: Number(toNumberSafe(r.net).toFixed(2)),
+          director_final_payment_for_tax_year: Boolean(r.directorFinalPaymentForTaxYear),
+        })),
+      };
       const res = await fetch(`/api/payroll/${runId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -1234,8 +1282,10 @@ export default function PayrollRunDetailPage() {
                   const rowError = validation?.[r.id];
                   const badge = calcBadgeStyles(r.calcMode);
                   const canOpenPayItems = canEditRun && !dirty && !saving && Boolean(r.id);
+                  const showDirectorFinalPaymentControl =
+                    r.isDirectorUsed && String(r.directorNicMethodUsed || "").toUpperCase() === "AL";
                   return <tr key={r.id} className="bg-white">
-                    <td className="sticky left-0 z-0 bg-white px-3 py-3 text-sm text-slate-900 border-b border-neutral-200"><div className="flex flex-col gap-2"><span className="block truncate">{r.employeeName || MISSING}</span><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold" style={badge} title="Calculation state for this employee in this run">{calcBadgeLabel(r.calcMode)}</span><button type="button" onClick={() => openPayItemsModal(r.id)} disabled={!canOpenPayItems} className="inline-flex h-8 items-center justify-center rounded-xl px-3 text-xs font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE, opacity: !canOpenPayItems ? 0.6 : 1, cursor: !canOpenPayItems ? "not-allowed" : "pointer" }} title={dirty ? "Save or discard row edits before editing pay items." : !canEditRun ? "Pay items can only be edited while the run is Draft or Processing." : "Edit extra pay items for this employee"}>Edit pay items</button></div></div></td>
+                    <td className="sticky left-0 z-0 bg-white px-3 py-3 text-sm text-slate-900 border-b border-neutral-200"><div className="flex flex-col gap-2"><span className="block truncate">{r.employeeName || MISSING}</span><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold" style={badge} title="Calculation state for this employee in this run">{calcBadgeLabel(r.calcMode)}</span><button type="button" onClick={() => openPayItemsModal(r.id)} disabled={!canOpenPayItems} className="inline-flex h-8 items-center justify-center rounded-xl px-3 text-xs font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_BLUE, opacity: !canOpenPayItems ? 0.6 : 1, cursor: !canOpenPayItems ? "not-allowed" : "pointer" }} title={dirty ? "Save or discard row edits before editing pay items." : !canEditRun ? "Pay items can only be edited while the run is Draft or Processing." : "Edit extra pay items for this employee"}>Edit pay items</button>{showDirectorFinalPaymentControl ? <label className="inline-flex min-h-8 items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-extrabold text-amber-900" title="Tick this on the director's final payment for the tax year so WageFlow can run the Director NIC Alternative Method annual reconciliation."><input type="checkbox" className="h-4 w-4" checked={r.directorFinalPaymentForTaxYear} disabled={!canEditRun} onChange={(e) => onToggleDirectorFinalPayment(r.id, e.currentTarget.checked)} />Director final payment</label> : null}</div></div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><span className="block truncate">{r.employeeNumber || MISSING}</span></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="Gross pay is calculated from pay elements and cannot be edited directly">{formatMoney(r.gross)}</div></td>
                     <td className="px-2 py-3 text-sm text-slate-700 border-b border-neutral-200"><div className={`${inter.className} mx-auto flex h-10 w-full max-w-[8.5rem] items-center justify-end rounded-xl border border-slate-300 bg-white px-2 text-[13px] font-extrabold`} style={{ color: WF_BLUE }} title="PAYE for this employee in this run">{formatMoney(r.tax)}</div></td>
