@@ -2013,6 +2013,38 @@ function buildEmployeeRow(
       emp?.hoursPerWeek,
       null
     ),
+
+    is_director_used: Boolean(pickFirst(att?.is_director_used, att?.isDirectorUsed, false)),
+    isDirectorUsed: Boolean(pickFirst(att?.is_director_used, att?.isDirectorUsed, false)),
+
+    director_nic_method_used: pickFirst(
+      att?.director_nic_method_used,
+      att?.directorNicMethodUsed,
+      null
+    ),
+    directorNicMethodUsed: pickFirst(
+      att?.director_nic_method_used,
+      att?.directorNicMethodUsed,
+      null
+    ),
+
+    director_appointment_week_used: pickFirst(
+      att?.director_appointment_week_used,
+      att?.directorAppointmentWeekUsed,
+      null
+    ),
+    directorAppointmentWeekUsed: pickFirst(
+      att?.director_appointment_week_used,
+      att?.directorAppointmentWeekUsed,
+      null
+    ),
+
+    director_final_payment_for_tax_year: Boolean(
+      pickFirst(att?.director_final_payment_for_tax_year, att?.directorFinalPaymentForTaxYear, false)
+    ),
+    directorFinalPaymentForTaxYear: Boolean(
+      pickFirst(att?.director_final_payment_for_tax_year, att?.directorFinalPaymentForTaxYear, false)
+    ),
   };
 }
 
