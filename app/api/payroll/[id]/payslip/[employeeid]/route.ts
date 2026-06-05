@@ -141,6 +141,62 @@ function getCorrectedRowEmployerNi(row: CorrectedRunDetailRow): number {
   return round2(firstFiniteNumber(row?.ni_employer, row?.employer_ni, 0) ?? 0);
 }
 
+function asPlainObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function isTruthyDatabaseFlag(value: unknown): boolean {
+  if (value === true) return true;
+  const s = String(value ?? "").trim().toLowerCase();
+  return s === "true" || s === "t" || s === "1" || s === "yes";
+}
+
+function isDirectorAnnualNiAppliedPayrollRow(row: DbRow | null | undefined): boolean {
+  if (!row) return false;
+
+  const metadata = asPlainObject(row["metadata"]);
+  const directorCalc = asPlainObject(metadata?.["director_nic_calculation"]);
+
+  const calculationApplied = isTruthyDatabaseFlag(directorCalc?.["applied"]);
+  const isDirector = isTruthyDatabaseFlag(row["is_director_used"]);
+  const method = String(row["director_nic_method_used"] ?? directorCalc?.["method"] ?? "")
+    .trim()
+    .toUpperCase();
+
+  return calculationApplied || (isDirector && method === "AN");
+}
+
+function getDirectPayrollRowEmployeeNi(row: DbRow | null | undefined): number {
+  return round2(firstFiniteNumber(row?.["ni_employee"], row?.["employee_ni"], 0) ?? 0);
+}
+
+function getDirectPayrollRowEmployerNi(row: DbRow | null | undefined): number {
+  return round2(firstFiniteNumber(row?.["ni_employer"], row?.["employer_ni"], 0) ?? 0);
+}
+
+function getPayslipRowEmployeeNi(
+  directRow: DbRow | null | undefined,
+  correctedRow: CorrectedRunDetailRow | null | undefined
+): number {
+  if (isDirectorAnnualNiAppliedPayrollRow(directRow)) {
+    return getDirectPayrollRowEmployeeNi(directRow);
+  }
+
+  return correctedRow ? getCorrectedRowEmployeeNi(correctedRow) : getDirectPayrollRowEmployeeNi(directRow);
+}
+
+function getPayslipRowEmployerNi(
+  directRow: DbRow | null | undefined,
+  correctedRow: CorrectedRunDetailRow | null | undefined
+): number {
+  if (isDirectorAnnualNiAppliedPayrollRow(directRow)) {
+    return getDirectPayrollRowEmployerNi(directRow);
+  }
+
+  return correctedRow ? getCorrectedRowEmployerNi(correctedRow) : getDirectPayrollRowEmployerNi(directRow);
+}
+
 function getCorrectedRowNet(row: CorrectedRunDetailRow): number {
   const rowAny = row as any;
   return round2(firstFiniteNumber(rowAny?.calculated_net_pay, rowAny?.calculatedNetPay, rowAny?.net_pay, rowAny?.net, 0) ?? 0);
@@ -550,7 +606,7 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
 
   const { data: preRowByIdRaw, error: preRowByIdError } = await supabase
     .from("payroll_run_employees")
-    .select("id, run_id, employee_id, gross_pay, net_pay, tax, ni_employee, ni_employer, pay_after_leaving")
+    .select("id, run_id, employee_id, gross_pay, net_pay, tax, ni_employee, employee_ni, ni_employer, employer_ni, calculated_net_pay, payable_net_pay, pay_after_leaving, is_director_used, director_nic_method_used, director_appointment_week_used, metadata")
     .eq("run_id", runId)
     .eq("id", payslipLookupId)
     .maybeSingle();
@@ -562,11 +618,17 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
 
   const { data: preRowsRaw, error: preRowsError } = await supabase
     .from("payroll_run_employees")
-    .select("id, run_id, employee_id, gross_pay, net_pay, tax, ni_employee, ni_employer, pay_after_leaving")
+    .select("id, run_id, employee_id, gross_pay, net_pay, tax, ni_employee, employee_ni, ni_employer, employer_ni, calculated_net_pay, payable_net_pay, pay_after_leaving, is_director_used, director_nic_method_used, director_appointment_week_used, metadata")
     .eq("run_id", runId)
     .eq("employee_id", resolvedEmployeeId);
 
   const preRows = (Array.isArray(preRowsRaw) ? preRowsRaw : []) as DbRow[];
+
+  const preRowById = new Map<string, DbRow>();
+  for (const row of preRows) {
+    const rowId = String(row["id"] ?? "").trim();
+    if (rowId) preRowById.set(rowId, row);
+  }
 
   if (preRowsError || preRows.length === 0) {
     return {
@@ -999,14 +1061,14 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
     preRows.reduce((sum, row) => {
       const rowId = String(row["id"] ?? "").trim();
       const corrected = correctedEmployeeRowMap.get(rowId);
-      return sum + (corrected ? getCorrectedRowEmployeeNi(corrected) : Number(row["ni_employee"] ?? 0));
+      return sum + getPayslipRowEmployeeNi(row, corrected);
     }, 0)
   );
   const storedEmployerNi = round2(
     preRows.reduce((sum, row) => {
       const rowId = String(row["id"] ?? "").trim();
       const corrected = correctedEmployeeRowMap.get(rowId);
-      return sum + (corrected ? getCorrectedRowEmployerNi(corrected) : Number(row["ni_employer"] ?? 0));
+      return sum + getPayslipRowEmployerNi(row, corrected);
     }, 0)
   );
 
@@ -1254,6 +1316,9 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
             ...rowSalarySacrificeElements.map((item) => toSalarySacrificeEarning(item)),
           ];
           const rowDeductions = elementsForPayrollRow(visibleDeductions, rowKey);
+          const directPayrollRow = preRowById.get(rowKey) ?? null;
+          const rowEmployeeNi = getPayslipRowEmployeeNi(directPayrollRow, row);
+          const rowEmployerNi = getPayslipRowEmployerNi(directPayrollRow, row);
 
           return {
             payrollRunEmployeeId: rowKey,
@@ -1266,8 +1331,8 @@ async function loadPayslipPayload(supabase: any, runId: string, payslipLookupKey
             contractPayAfterLeaving: parseBooleanStrict(contractPayAfterLeavingRaw),
             gross: getCorrectedRowGross(row),
             tax: getCorrectedRowTax(row),
-            employeeNi: getCorrectedRowEmployeeNi(row),
-            employerNi: getCorrectedRowEmployerNi(row),
+            employeeNi: rowEmployeeNi,
+            employerNi: rowEmployerNi,
             net: getCorrectedRowNet(row),
             calculatedNetPay: getCorrectedRowCalculatedNet(row),
             payableNetPay: getCorrectedRowPayableNet(row),

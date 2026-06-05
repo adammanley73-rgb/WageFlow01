@@ -316,6 +316,7 @@ type PensionOverlayResult = {
   employeeNi: number;
   employerNi: number;
   employeePensionCode: "EE_PEN" | "EE_PEN_RAS" | "EE_PEN_SAL_SAC";
+  directorNicAudit: Record<string, any> | null;
 };
 
 function resolveBooleanOverride(overrideValue: any, defaultValue: any): boolean {
@@ -984,6 +985,337 @@ function computeApproxMonthlyNi(gross: number, niCategory: any, taxYear?: number
   };
 }
 
+type DirectorNicOverlayInput = {
+  isDirector: boolean;
+  method: any;
+  appointmentWeek: any;
+  priorNiableEmployee: number;
+  priorNiableEmployer: number;
+  priorEmployeeNi: number;
+  priorEmployerNi: number;
+};
+
+type DirectorNicOverlayResult = {
+  employee: number;
+  employer: number;
+  audit: Record<string, any>;
+};
+
+type PriorNiRowForDirector = {
+  payDate: string;
+  niableEmployee: number;
+  niableEmployer: number;
+  employeeNi: number;
+  employerNi: number;
+};
+
+type PriorNiSummaryForDirector = {
+  niableEmployee: number;
+  niableEmployer: number;
+  employeeNi: number;
+  employerNi: number;
+  includedRows: number;
+  excludedRows: number;
+};
+
+function getTaxWeekNumberFromPayDate(payDateIso: any, taxYear?: number): number | null {
+  const s = String(payDateIso ?? "").trim().slice(0, 10);
+  if (!isIsoDateOnly(s) || !taxYear) return null;
+
+  const payDate = new Date(s + "T00:00:00.000Z");
+  const taxYearStart = new Date(String(taxYear) + "-04-06T00:00:00.000Z");
+
+  if (Number.isNaN(payDate.getTime()) || Number.isNaN(taxYearStart.getTime())) return null;
+  if (payDate < taxYearStart) return null;
+
+  const dayDiff = Math.floor((payDate.getTime() - taxYearStart.getTime()) / 86400000);
+  return Math.floor(dayDiff / 7) + 1;
+}
+
+function summarisePriorNiRowsForDirector(args: {
+  rows: PriorNiRowForDirector[];
+  taxYear?: number;
+  appointmentWeek: number | null;
+}): PriorNiSummaryForDirector {
+  const appointmentWeek =
+    args.appointmentWeek === null || args.appointmentWeek <= 1
+      ? 1
+      : Math.min(53, Math.max(1, args.appointmentWeek));
+
+  const summary: PriorNiSummaryForDirector = {
+    niableEmployee: 0,
+    niableEmployer: 0,
+    employeeNi: 0,
+    employerNi: 0,
+    includedRows: 0,
+    excludedRows: 0,
+  };
+
+  for (const row of Array.isArray(args.rows) ? args.rows : []) {
+    const week = getTaxWeekNumberFromPayDate(row.payDate, args.taxYear);
+
+    if (appointmentWeek > 1 && (week === null || week < appointmentWeek)) {
+      summary.excludedRows += 1;
+      continue;
+    }
+
+    summary.niableEmployee = round2(summary.niableEmployee + round2(toNumberSafe(row.niableEmployee)));
+    summary.niableEmployer = round2(summary.niableEmployer + round2(toNumberSafe(row.niableEmployer)));
+    summary.employeeNi = round2(summary.employeeNi + round2(toNumberSafe(row.employeeNi)));
+    summary.employerNi = round2(summary.employerNi + round2(toNumberSafe(row.employerNi)));
+    summary.includedRows += 1;
+  }
+
+  return summary;
+}
+
+function normalizeDirectorNicCalculationMethod(value: any): "AN" | "AL" | null {
+  const s = String(value ?? "").trim().toUpperCase();
+  if (s === "AN" || s === "AL") return s;
+  return null;
+}
+
+function normalizeDirectorAppointmentWeekNumber(value: any): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  const n = Number(raw);
+  if (!Number.isInteger(n)) return null;
+  if (n < 1 || n > 53) return null;
+
+  return n;
+}
+
+function getDirectorWeeksInAnnualPeriod(appointmentWeek: any): number {
+  const week = normalizeDirectorAppointmentWeekNumber(appointmentWeek);
+  if (week === null || week <= 1) return 52;
+  if (week >= 53) return 1;
+  return Math.max(1, 53 - week);
+}
+
+function computeNiForThresholds(gross: number, niCategory: any, thresholds: any) {
+  const pay = Math.max(0, Number(gross || 0));
+  const cat = String(niCategory ?? "A").trim().toUpperCase();
+
+  const PT = Number(thresholds.PT ?? 0);
+  const UEL = Number(thresholds.UEL ?? 0);
+  const ST = Number(thresholds.ST ?? 0);
+  const employeeMain = Number(thresholds.employeeMain ?? 0.08);
+  const employeeUpper = Number(thresholds.employeeUpper ?? 0.02);
+  const employeeReducedMain = Number(thresholds.employeeReducedMain ?? 0.0185);
+  const employeeDeferred = Number(thresholds.employeeDeferred ?? employeeUpper);
+  const employerRate = Number(thresholds.employerRate ?? 0.15);
+
+  const UST = Number(thresholds.UST ?? UEL);
+  const AUST = Number(thresholds.AUST ?? UST);
+  const VUST = Number(thresholds.VUST ?? UST);
+  const FUST = Number(thresholds.FUST ?? 25000);
+  const IZUST = Number(thresholds.IZUST ?? 25000);
+
+  const statePensionAgeCategories = new Set(["C", "S", "K"]);
+  const reducedRateCategories = new Set(["B", "I", "E"]);
+  const deferredCategories = new Set(["J", "Z", "L", "D"]);
+  const under21EmployerReliefCategories = new Set(["M", "Z"]);
+  const apprenticeEmployerReliefCategories = new Set(["H"]);
+  const veteranEmployerReliefCategories = new Set(["V"]);
+  const freeportEmployerReliefCategories = new Set(["F", "I", "L", "S"]);
+  const investmentZoneEmployerReliefCategories = new Set(["N", "E", "D", "K"]);
+
+  let employee = 0;
+  let employer = 0;
+
+  if (pay > 0) {
+    if (!statePensionAgeCategories.has(cat)) {
+      const employeeMainBand = Math.max(Math.min(pay, UEL) - PT, 0);
+      const employeeUpperBand = Math.max(pay - UEL, 0);
+
+      if (deferredCategories.has(cat)) {
+        employee = Math.max(pay - PT, 0) * employeeDeferred;
+      } else if (reducedRateCategories.has(cat)) {
+        employee = employeeMainBand * employeeReducedMain + employeeUpperBand * employeeUpper;
+      } else {
+        employee = employeeMainBand * employeeMain + employeeUpperBand * employeeUpper;
+      }
+    }
+
+    let employerThreshold = ST;
+
+    if (freeportEmployerReliefCategories.has(cat)) {
+      employerThreshold = FUST;
+    } else if (investmentZoneEmployerReliefCategories.has(cat)) {
+      employerThreshold = IZUST;
+    } else if (veteranEmployerReliefCategories.has(cat)) {
+      employerThreshold = VUST;
+    } else if (apprenticeEmployerReliefCategories.has(cat)) {
+      employerThreshold = AUST;
+    } else if (under21EmployerReliefCategories.has(cat)) {
+      employerThreshold = UST;
+    }
+
+    employer = Math.max(pay - employerThreshold, 0) * employerRate;
+  }
+
+  return {
+    employee: round2(employee),
+    employer: round2(employer),
+  };
+}
+
+function getDirectorAnnualNiThresholds(taxYear?: number): any {
+  const monthly = getNiThresholds(taxYear);
+
+  if (!taxYear || taxYear >= 2025) {
+    return {
+      PT: 12570,
+      UEL: 50270,
+      ST: 5000,
+      UST: 50270,
+      AUST: 50270,
+      VUST: 50270,
+      FUST: 25000,
+      IZUST: 25000,
+      employeeMain: monthly.employeeMain,
+      employeeUpper: monthly.employeeUpper,
+      employeeReducedMain: (monthly as any).employeeReducedMain ?? 0.0185,
+      employeeDeferred: (monthly as any).employeeDeferred ?? monthly.employeeUpper,
+      employerRate: monthly.employerRate,
+    };
+  }
+
+  if (taxYear === 2024 || taxYear === 2023) {
+    return {
+      PT: 12570,
+      UEL: 50270,
+      ST: 9100,
+      UST: 50270,
+      AUST: 50270,
+      VUST: 50270,
+      FUST: 25000,
+      IZUST: 25000,
+      employeeMain: monthly.employeeMain,
+      employeeUpper: monthly.employeeUpper,
+      employeeReducedMain: (monthly as any).employeeReducedMain ?? 0.0185,
+      employeeDeferred: (monthly as any).employeeDeferred ?? monthly.employeeUpper,
+      employerRate: monthly.employerRate,
+    };
+  }
+
+  return {
+    PT: 12570,
+    UEL: 50270,
+    ST: 9100,
+    UST: 50270,
+    AUST: 50270,
+    VUST: 50270,
+    FUST: 25000,
+    IZUST: 25000,
+    employeeMain: monthly.employeeMain,
+    employeeUpper: monthly.employeeUpper,
+    employeeReducedMain: (monthly as any).employeeReducedMain ?? 0.0185,
+    employeeDeferred: (monthly as any).employeeDeferred ?? monthly.employeeUpper,
+    employerRate: monthly.employerRate,
+  };
+}
+
+function prorateDirectorAnnualThresholds(thresholds: any, weeksInAnnualPeriod: number): any {
+  const weeks = Math.max(1, Math.min(52, Math.trunc(Number(weeksInAnnualPeriod || 52))));
+  const factor = weeks / 52;
+  const prorated: any = { ...thresholds };
+
+  for (const key of ["PT", "UEL", "ST", "UST", "AUST", "VUST", "FUST", "IZUST"]) {
+    if (thresholds[key] !== undefined && thresholds[key] !== null) {
+      prorated[key] = round2(Number(thresholds[key]) * factor);
+    }
+  }
+
+  return prorated;
+}
+
+function computeDirectorNicForOverlay(args: {
+  grossForEmployeeNi: number;
+  grossForEmployerNi: number;
+  niCategory: any;
+  taxYear?: number;
+  payFrequency: any;
+  directorNic?: DirectorNicOverlayInput | null;
+}): DirectorNicOverlayResult | null {
+  const director = args.directorNic;
+  const isDirector = Boolean(director?.isDirector);
+
+  if (!isDirector) return null;
+
+  const method = normalizeDirectorNicCalculationMethod(director?.method);
+  const appointmentWeek = normalizeDirectorAppointmentWeekNumber(director?.appointmentWeek);
+  const payFrequency = String(args.payFrequency ?? "").trim().toLowerCase();
+
+  if (method !== "AN") {
+    return null;
+  }
+
+  if (payFrequency !== "monthly") {
+    return null;
+  }
+
+  const weeksInAnnualPeriod = getDirectorWeeksInAnnualPeriod(appointmentWeek);
+  const annualThresholds = getDirectorAnnualNiThresholds(args.taxYear);
+  const proratedThresholds = prorateDirectorAnnualThresholds(annualThresholds, weeksInAnnualPeriod);
+
+  const currentEmployeeNiable = round2(Math.max(0, args.grossForEmployeeNi || 0));
+  const currentEmployerNiable = round2(Math.max(0, args.grossForEmployerNi || 0));
+  const priorEmployeeNiable = round2(Math.max(0, director?.priorNiableEmployee || 0));
+  const priorEmployerNiable = round2(Math.max(0, director?.priorNiableEmployer || 0));
+  const priorEmployeeNi = round2(Math.max(0, director?.priorEmployeeNi || 0));
+  const priorEmployerNi = round2(Math.max(0, director?.priorEmployerNi || 0));
+
+  const cumulativeEmployeeNiable = round2(priorEmployeeNiable + currentEmployeeNiable);
+  const cumulativeEmployerNiable = round2(priorEmployerNiable + currentEmployerNiable);
+
+  const cumulativeEmployeeResult = computeNiForThresholds(
+    cumulativeEmployeeNiable,
+    args.niCategory,
+    proratedThresholds
+  );
+  const cumulativeEmployerResult = computeNiForThresholds(
+    cumulativeEmployerNiable,
+    args.niCategory,
+    proratedThresholds
+  );
+
+  const employee = round2(Math.max(0, cumulativeEmployeeResult.employee - priorEmployeeNi));
+  const employer = round2(Math.max(0, cumulativeEmployerResult.employer - priorEmployerNi));
+
+  return {
+    employee,
+    employer,
+    audit: {
+      applied: true,
+      method: "AN",
+      calculation: "director_annual_earnings_period",
+      tax_year_start: args.taxYear ?? null,
+      appointment_week: appointmentWeek,
+      weeks_in_annual_period: weeksInAnnualPeriod,
+      pay_frequency: payFrequency,
+      ni_category: String(args.niCategory ?? "A").trim().toUpperCase(),
+      thresholds: proratedThresholds,
+      annual_thresholds: annualThresholds,
+      prior_niable_employee_earnings: priorEmployeeNiable,
+      prior_niable_employer_earnings: priorEmployerNiable,
+      current_niable_employee_earnings: currentEmployeeNiable,
+      current_niable_employer_earnings: currentEmployerNiable,
+      cumulative_niable_employee_earnings: cumulativeEmployeeNiable,
+      cumulative_niable_employer_earnings: cumulativeEmployerNiable,
+      prior_employee_ni: priorEmployeeNi,
+      prior_employer_ni: priorEmployerNi,
+      cumulative_employee_ni: cumulativeEmployeeResult.employee,
+      cumulative_employer_ni: cumulativeEmployerResult.employer,
+      current_employee_ni: employee,
+      current_employer_ni: employer,
+      prior_earnings_source: "gross_pay",
+      note: "AN Director NIC uses annual or pro-rated annual thresholds, less NI already deducted in earlier approved, RTI-submitted, or completed runs in this tax year. For pro-rata directors, prior earnings are filtered from the appointment week onwards.",
+    },
+  };
+}
+
 function computeMonthlyPayeAndNiFromGross(args: {
   grossForTax: number;
   grossForEmployeeNi: number;
@@ -1050,6 +1382,7 @@ function overlayPensionFromEmployeeSettings(args: {
   taxBasis: any;
   niCategory: any;
   settings: EmployeePensionSettings;
+  directorNic?: DirectorNicOverlayInput | null;
 }): PensionOverlayResult {
   const gross = round2(Math.max(0, args.gross || 0));
   const basicPay = round2(Math.max(0, args.basicPay || 0));
@@ -1107,6 +1440,18 @@ function overlayPensionFromEmployeeSettings(args: {
     niCategory: args.niCategory,
   });
 
+  const directorNic = computeDirectorNicForOverlay({
+    grossForEmployeeNi,
+    grossForEmployerNi,
+    niCategory: args.niCategory,
+    taxYear: args.taxYear,
+    payFrequency: args.payFrequency,
+    directorNic: args.directorNic ?? null,
+  });
+
+  const finalEmployeeNi = directorNic ? directorNic.employee : computed.employeeNi;
+  const finalEmployerNi = directorNic ? directorNic.employer : computed.employerNi;
+
   return {
     pensionBasisAmount: round2(pensionBasisAmount),
     qualifyingEarnings: round2(qualifyingEarnings),
@@ -1116,9 +1461,10 @@ function overlayPensionFromEmployeeSettings(args: {
     grossForEmployeeNi: round2(grossForEmployeeNi),
     grossForEmployerNi: round2(grossForEmployerNi),
     paye: round2(computed.paye),
-    employeeNi: round2(computed.employeeNi),
-    employerNi: round2(computed.employerNi),
+    employeeNi: round2(finalEmployeeNi),
+    employerNi: round2(finalEmployerNi),
     employeePensionCode,
+    directorNicAudit: directorNic?.audit ?? null,
   };
 }
 
@@ -1327,6 +1673,10 @@ function buildEmployeeRow(att: any, emp: any, contract: any, run: any, isPrimary
   let usedTaxFallback = false;
   let usedNiFallback = false;
 
+  const calcMode = String(pickFirst(att?.calc_mode, "uncomputed") || "uncomputed")
+    .trim()
+    .toLowerCase();
+
   const taxCodeUsedRaw = pickFirst(
     att?.tax_code_used,
     att?.taxCodeUsed,
@@ -1398,6 +1748,26 @@ function buildEmployeeRow(att: any, emp: any, contract: any, run: any, isPrimary
   const grossForTaxFallback = round2(Math.max(0, gross - taxReductionFromPension));
   const grossForNiFallback = round2(Math.max(0, gross - niReductionFromPension));
 
+  const directorNicMeta = getObjectSafe(meta?.director_nic_calculation);
+  const directorNicApplied = parseBoolStrict(directorNicMeta?.applied) === true;
+  const directorAnSnapshot =
+    parseBoolStrict(
+      pickFirst(att?.is_director_used, att?.isDirectorUsed, meta?.is_director_used, null)
+    ) === true &&
+    normalizeDirectorNicCalculationMethod(
+      pickFirst(
+        att?.director_nic_method_used,
+        att?.directorNicMethodUsed,
+        meta?.director_nic_method_used,
+        null
+      )
+    ) === "AN";
+
+  const allowNiDisplayFallback =
+    calcMode !== "full" &&
+    !directorNicApplied &&
+    !directorAnSnapshot;
+
   if (tax <= 0 && gross > 0 && runFrequency === "monthly" && taxCodeUsed) {
     try {
       const periodStartSrc = String(pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || "");
@@ -1424,7 +1794,13 @@ function buildEmployeeRow(att: any, emp: any, contract: any, run: any, isPrimary
     }
   }
 
-  if (gross > 0 && runFrequency === "monthly" && niCategoryUsed && (employeeNi <= 0 || employerNi <= 0)) {
+  if (
+    allowNiDisplayFallback &&
+    gross > 0 &&
+    runFrequency === "monthly" &&
+    niCategoryUsed &&
+    (employeeNi <= 0 || employerNi <= 0)
+  ) {
     try {
       const periodStartSrc = String(pickFirst(run?.period_start, run?.pay_period_start, run?.start_date, "") || "");
       const taxYearForNi = parseInt(periodStartSrc.slice(0, 4), 10);
@@ -1470,7 +1846,6 @@ function buildEmployeeRow(att: any, emp: any, contract: any, run: any, isPrimary
   const net = round2(netShouldBeDerived ? derivedNet : storedNet);
 
   const safeId = String(pickFirst(att?.id, "") || "");
-  const calcMode = String(pickFirst(att?.calc_mode, "uncomputed") || "uncomputed");
 
   return {
     ...(att && typeof att === "object" ? att : {}),
@@ -2766,6 +3141,16 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
   const taxPeriodNumber = payeTaxMonthNumber(payDateForTaxIso);
 
   const priorYtdByEmployeeId = new Map<string, { taxable: number; taxPaid: number }>();
+  const priorNiYtdByEmployeeId = new Map<
+    string,
+    {
+      niableEmployee: number;
+      niableEmployer: number;
+      employeeNi: number;
+      employerNi: number;
+    }
+  >();
+  const priorNiRowsByEmployeeId = new Map<string, PriorNiRowForDirector[]>();
 
   function addPriorYtdBase(employeeIdValue: any, taxableValue: any, taxPaidValue: any) {
     const baseEmployeeId = String(employeeIdValue ?? "").trim();
@@ -2867,7 +3252,7 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
 
     const { data: priorRunsRaw, error: priorRunsErr } = await supabase
       .from("payroll_runs")
-      .select("id")
+      .select("id, pay_date")
       .eq("company_id", companyId)
       .gte("pay_date", taxYearStartIso)
       .lt("pay_date", payDateForTaxIso)
@@ -2889,10 +3274,19 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
       )
     );
 
+    const priorRunPayDateById = new Map<string, string>();
+    for (const priorRun of Array.isArray(priorRunsRaw) ? priorRunsRaw : []) {
+      const priorRunId = String((priorRun as any)?.id || "").trim();
+      const priorRunPayDate = String((priorRun as any)?.pay_date || "").trim().slice(0, 10);
+      if (priorRunId && isIsoDateOnly(priorRunPayDate)) {
+        priorRunPayDateById.set(priorRunId, priorRunPayDate);
+      }
+    }
+
     if (priorRunIds.length > 0) {
       const { data: priorPayRowsRaw, error: priorPayRowsErr } = await supabase
         .from("payroll_run_employees")
-        .select("employee_id, taxable_pay, gross_pay, tax")
+        .select("run_id, employee_id, taxable_pay, gross_pay, tax, ni_employee, ni_employer, employee_ni, employer_ni")
         .eq("company_id", companyId)
         .in("run_id", priorRunIds)
         .in("employee_id", employeeIds);
@@ -2916,6 +3310,36 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
         );
         current.taxPaid = round2(current.taxPaid + round2(toNumberSafe((priorRow as any)?.tax)));
         priorYtdByEmployeeId.set(priorEmployeeId, current);
+
+        const currentNi = priorNiYtdByEmployeeId.get(priorEmployeeId) ?? {
+          niableEmployee: 0,
+          niableEmployer: 0,
+          employeeNi: 0,
+          employerNi: 0,
+        };
+        const priorNiable = round2(toNumberSafe(pickFirst((priorRow as any)?.gross_pay, (priorRow as any)?.taxable_pay, 0)));
+        const priorEmployeeNi = round2(toNumberSafe(pickFirst((priorRow as any)?.ni_employee, (priorRow as any)?.employee_ni, 0)));
+        const priorEmployerNi = round2(toNumberSafe(pickFirst((priorRow as any)?.ni_employer, (priorRow as any)?.employer_ni, 0)));
+
+        currentNi.niableEmployee = round2(currentNi.niableEmployee + priorNiable);
+        currentNi.niableEmployer = round2(currentNi.niableEmployer + priorNiable);
+        currentNi.employeeNi = round2(currentNi.employeeNi + priorEmployeeNi);
+        currentNi.employerNi = round2(currentNi.employerNi + priorEmployerNi);
+        priorNiYtdByEmployeeId.set(priorEmployeeId, currentNi);
+
+        const priorRunId = String((priorRow as any)?.run_id || "").trim();
+        const priorPayDate = priorRunId ? priorRunPayDateById.get(priorRunId) || "" : "";
+        if (isIsoDateOnly(priorPayDate)) {
+          const list = priorNiRowsByEmployeeId.get(priorEmployeeId) || [];
+          list.push({
+            payDate: priorPayDate,
+            niableEmployee: priorNiable,
+            niableEmployer: priorNiable,
+            employeeNi: priorEmployeeNi,
+            employerNi: priorEmployerNi,
+          });
+          priorNiRowsByEmployeeId.set(priorEmployeeId, list);
+        }
       }
     }
   }
@@ -3063,11 +3487,67 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
         null
       )
     );
-    const niCategory = String(pickFirst(emp?.ni_category, emp?.niCategory, att?.ni_category_used, "A") || "A")
+    const niCategory = String(pickFirst(att?.ni_category_used, emp?.ni_category, emp?.niCategory, "A") || "A")
       .trim()
       .toUpperCase();
 
+    const isDirectorUsed =
+      parseBoolStrict(
+        pickFirst(
+          att?.is_director_used,
+          att?.isDirectorUsed,
+          emp?.is_director,
+          emp?.isDirector,
+          null
+        )
+      ) === true;
+
+    const directorNicMethodUsed = normalizeDirectorNicCalculationMethod(
+      pickFirst(
+        att?.director_nic_method_used,
+        att?.directorNicMethodUsed,
+        emp?.director_nic_method,
+        emp?.directorNicMethod,
+        null
+      )
+    );
+
+    const directorAppointmentWeekUsed = normalizeDirectorAppointmentWeekNumber(
+      pickFirst(
+        att?.director_appointment_week_used,
+        att?.directorAppointmentWeekUsed,
+        emp?.director_appointment_week,
+        emp?.directorAppointmentWeek,
+        null
+      )
+    );
+
     const priorYtd = priorYtdByEmployeeId.get(employeeId) ?? { taxable: 0, taxPaid: 0 };
+    const priorNiYtdAllRows = priorNiYtdByEmployeeId.get(employeeId) ?? {
+      niableEmployee: 0,
+      niableEmployer: 0,
+      employeeNi: 0,
+      employerNi: 0,
+    };
+
+    const priorNiRowsForEmployee = priorNiRowsByEmployeeId.get(employeeId) || [];
+    const directorUsesProRataFilter =
+      isDirectorUsed &&
+      directorNicMethodUsed === "AN" &&
+      directorAppointmentWeekUsed !== null &&
+      directorAppointmentWeekUsed > 1;
+
+    const priorNiYtd = directorUsesProRataFilter
+      ? summarisePriorNiRowsForDirector({
+          rows: priorNiRowsForEmployee,
+          taxYear,
+          appointmentWeek: directorAppointmentWeekUsed,
+        })
+      : {
+          ...priorNiYtdAllRows,
+          includedRows: priorNiRowsForEmployee.length,
+          excludedRows: 0,
+        };
 
     const pensionOverlay = overlayPensionFromEmployeeSettings({
       gross,
@@ -3083,6 +3563,15 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
       taxBasis: rawTaxBasis,
       niCategory,
       settings: pensionSettings,
+      directorNic: {
+        isDirector: isDirectorUsed,
+        method: directorNicMethodUsed,
+        appointmentWeek: directorAppointmentWeekUsed,
+        priorNiableEmployee: priorNiYtd.niableEmployee,
+        priorNiableEmployer: priorNiYtd.niableEmployer,
+        priorEmployeeNi: priorNiYtd.employeeNi,
+        priorEmployerNi: priorNiYtd.employerNi,
+      },
     });
 
     const paye = round2(pensionOverlay.paye);
@@ -3250,6 +3739,13 @@ async function localComputeFullFromElements(supabase: any, runId: string, compan
       tax_code_used: rawTaxCode ? String(rawTaxCode).trim().toUpperCase() : null,
       tax_code_basis_used: rawTaxBasis,
       ni_category_used: niCategory,
+      is_director_used: isDirectorUsed,
+      director_nic_method_used: isDirectorUsed ? directorNicMethodUsed : null,
+      director_appointment_week_used: isDirectorUsed ? directorAppointmentWeekUsed : null,
+      metadata: {
+        ...(getObjectSafe(att?.metadata) ?? {}),
+        director_nic_calculation: pensionOverlay.directorNicAudit,
+      },
       recovery_created_amount: recoveryCreatedAmount,
       recovery_status: recoveryStatus,
       recovery_note: recoveryNote,
