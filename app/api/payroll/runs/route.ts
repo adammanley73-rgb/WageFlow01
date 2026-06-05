@@ -546,26 +546,42 @@ function mapCreateSupplementaryRpcErrorToResponse(err: any, parentRunId: string)
 async function findExistingRunByRunNumber(
   client: any,
   companyId: string,
-  runNumber: string
+  runNumber: string,
+  taxYearStartIso: string | null,
+  taxYearEndIso: string | null
 ): Promise<{ row: any | null; error: any | null }> {
-  const tryWithKind = await client
+  let tryWithKindQuery = client
     .from("payroll_runs")
     .select("id, pay_date, frequency, status, run_kind")
     .eq("company_id", companyId)
     .eq("run_number", runNumber)
-    .eq("run_kind", "primary")
-    .limit(1);
+    .eq("run_kind", "primary");
+
+  if (taxYearStartIso && taxYearEndIso) {
+    tryWithKindQuery = tryWithKindQuery
+      .gte("pay_date", taxYearStartIso)
+      .lte("pay_date", taxYearEndIso);
+  }
+
+  const tryWithKind = await tryWithKindQuery.limit(1);
 
   let existing = Array.isArray(tryWithKind.data) ? tryWithKind.data[0] : null;
   let existingErr: any = tryWithKind.error;
 
   if (existingErr && isMissingColumnError(existingErr, ["run_kind"])) {
-    const tryWithoutKind = await client
+    let tryWithoutKindQuery = client
       .from("payroll_runs")
       .select("id, pay_date, frequency, status")
       .eq("company_id", companyId)
-      .eq("run_number", runNumber)
-      .limit(1);
+      .eq("run_number", runNumber);
+
+    if (taxYearStartIso && taxYearEndIso) {
+      tryWithoutKindQuery = tryWithoutKindQuery
+        .gte("pay_date", taxYearStartIso)
+        .lte("pay_date", taxYearEndIso);
+    }
+
+    const tryWithoutKind = await tryWithoutKindQuery.limit(1);
 
     existing = Array.isArray(tryWithoutKind.data) ? tryWithoutKind.data[0] : null;
     existingErr = tryWithoutKind.error;
@@ -1445,7 +1461,7 @@ export async function POST(req: Request) {
 
     const runNumberReferenceDateIso =
       derivedFrequency === "monthly" ? pay_date_input : period.startIso;
-    const { taxYearStartIso } = getUkTaxYearBoundsForReferenceDate(runNumberReferenceDateIso);
+    const { taxYearStartIso, taxYearEndIso } = getUkTaxYearBoundsForReferenceDate(runNumberReferenceDateIso);
     const computedRunNumber = makeRunNumberForDate(
       derivedFrequency,
       runNumberReferenceDateIso,
@@ -1491,7 +1507,9 @@ export async function POST(req: Request) {
       const existingRes = await findExistingRunByRunNumber(
         client,
         companyIdStr,
-        computedRunNumber
+        computedRunNumber,
+        taxYearStartIso,
+        taxYearEndIso
       );
 
       if (existingRes.error) {
@@ -1696,7 +1714,9 @@ export async function POST(req: Request) {
           const existingRes = await findExistingRunByRunNumber(
             client,
             companyIdStr,
-            computedRunNumber
+            computedRunNumber,
+            taxYearStartIso,
+            taxYearEndIso
           );
 
           if (existingRes.error) {
