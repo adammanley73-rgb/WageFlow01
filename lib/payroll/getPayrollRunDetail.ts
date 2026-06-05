@@ -1694,6 +1694,37 @@ function buildEmployeeRow(
   const grossForTaxFallback = round2(Math.max(0, gross - taxReductionFromPension));
   const grossForNiFallback = round2(Math.max(0, gross - niReductionFromPension));
 
+  const directorNicMeta = getObjectSafe(meta?.director_nic_calculation);
+  const directorNicApplied =
+    String(pickFirst(directorNicMeta?.applied, "") || "").trim().toLowerCase() === "true";
+
+  const directorFlagValue = String(
+    pickFirst(att?.is_director_used, att?.isDirectorUsed, meta?.is_director_used, "") || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const directorMethodValue = String(
+    pickFirst(
+      att?.director_nic_method_used,
+      att?.directorNicMethodUsed,
+      meta?.director_nic_method_used,
+      directorNicMeta?.method,
+      ""
+    ) || ""
+  )
+    .trim()
+    .toUpperCase();
+
+  const directorAnSnapshot =
+    (directorFlagValue === "true" ||
+      directorFlagValue === "t" ||
+      directorFlagValue === "1" ||
+      directorFlagValue === "yes") &&
+    directorMethodValue === "AN";
+
+  const allowNiDisplayFallback = !directorNicApplied && !directorAnSnapshot;
+
   const shouldRecomputeTax =
     taxCodeUsed &&
     gross > 0 &&
@@ -1733,6 +1764,7 @@ function buildEmployeeRow(
   }
 
   const shouldRecomputeNi =
+    allowNiDisplayFallback &&
     gross > 0 &&
     runFrequency === "monthly" &&
     niCategoryUsed &&
