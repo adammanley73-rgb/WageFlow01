@@ -6,6 +6,7 @@ import { WorkflowService } from "@/lib/services/workflow.service";
 import { calculatePay } from "@/lib/payroll/calculatePay";
 import { syncAbsencePayToRun } from "@/lib/payroll/syncAbsencePayToRun";
 import { getPayrollRunDetail } from "@/lib/payroll/getPayrollRunDetail";
+import { seedInitialBasicPayElements } from "@/lib/payroll/basicPaySeeding";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -2642,6 +2643,195 @@ async function loadContracts(
   };
 }
 
+async function resetCancelledPayrollRunPayDataToDefaults(supabase: any, runRow: any) {
+  const runId = String(pickFirst(runRow?.id, "") || "").trim();
+  const companyId = String(pickFirst(runRow?.company_id, runRow?.companyId, "") || "").trim();
+  const runFrequency = String(
+    pickFirst(runRow?.frequency, runRow?.pay_frequency, runRow?.payFrequency, "") || ""
+  ).trim();
+
+  if (!runId || !companyId) {
+    return {
+      ok: false as const,
+      status: 400,
+      error: "Cannot reset cancelled payroll run because the run ID or company ID is missing.",
+    };
+  }
+
+  const recoveryReset = await resetProposedPayrollRecoveryApplications(supabase, runId, companyId);
+  if (!recoveryReset.ok) return recoveryReset;
+
+  const attachTry = await loadAttachments(supabase, runId, companyId);
+  if (!attachTry.ok) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: "Failed to load attached payroll rows before resetting cancelled run pay data.",
+      debug: { attempts: attachTry.attempts },
+    };
+  }
+
+  const attachedRows = Array.isArray(attachTry.rows) ? attachTry.rows : [];
+  const attachedRowIds = attachedRows
+    .map((row: any) => String(pickFirst(row?.id, "") || "").trim())
+    .filter(Boolean);
+
+  if (attachedRowIds.length === 0) {
+    const totalsRefresh = await refreshRunTotalsFromAttachments(supabase, runId, companyId);
+    if (!totalsRefresh.ok) return totalsRefresh;
+    return {
+      ok: true as const,
+      status: 200,
+      resetRows: 0,
+      seededCount: 0,
+      skippedCount: 0,
+    };
+  }
+
+  const payElementsDelete = await supabase
+    .from("payroll_run_pay_elements")
+    .delete()
+    .in("payroll_run_employee_id", attachedRowIds);
+
+  if (payElementsDelete.error) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to clear payroll run pay elements: ${payElementsDelete.error.message}`,
+    };
+  }
+
+  const hasColumn = (columnName: string) =>
+    attachedRows.some((row: any) => row && typeof row === "object" && Object.prototype.hasOwnProperty.call(row, columnName));
+
+  const patch: Record<string, any> = {};
+
+  for (const columnName of [
+    "gross_pay",
+    "basic_pay",
+    "overtime_pay",
+    "bonus_pay",
+    "other_earnings",
+    "taxable_pay",
+    "tax",
+    "ni_employee",
+    "employee_ni",
+    "ni_employer",
+    "employer_ni",
+    "pension_employee",
+    "employee_pension",
+    "pension_employer",
+    "employer_pension",
+    "other_deductions",
+    "deductions",
+    "student_loan",
+    "pg_loan",
+    "postgrad_loan",
+    "net_pay",
+    "calculated_net_pay",
+    "payable_net_pay",
+    "recovery_applied_amount",
+  ]) {
+    if (hasColumn(columnName)) patch[columnName] = 0;
+  }
+
+  for (const columnName of [
+    "recovery_balance_after_amount",
+    "recovery_application_note",
+  ]) {
+    if (hasColumn(columnName)) patch[columnName] = null;
+  }
+
+  if (hasColumn("manual_override")) patch.manual_override = false;
+  if (hasColumn("calc_mode")) patch.calc_mode = "uncomputed";
+  if (hasColumn("recovery_application_status")) patch.recovery_application_status = "none";
+
+  const rowReset = await supabase
+    .from("payroll_run_employees")
+    .update(patch)
+    .eq("company_id", companyId)
+    .eq("run_id", runId)
+    .in("id", attachedRowIds);
+
+  if (rowReset.error) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to reset attached payroll rows: ${rowReset.error.message}`,
+    };
+  }
+
+  const contractIds = Array.from(
+    new Set(
+      attachedRows
+        .map((row: any) => getAttachmentContractId(row))
+        .map((value: any) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const contracts = await loadContracts(supabase, companyId, contractIds);
+  if (!contracts.ok) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: `Failed to load employee contracts for BASIC pay reseeding: ${contracts.error}`,
+    };
+  }
+
+  const contractById = new Map<string, any>();
+  for (const contract of contracts.rows) {
+    const contractId = String(pickFirst(contract?.id, contract?.contract_id, "") || "").trim();
+    if (contractId) {
+      contractById.set(contractId, {
+        ...contract,
+        contract_id: contractId,
+        contract_pay_frequency: pickFirst(contract?.contract_pay_frequency, contract?.pay_frequency, ""),
+        contract_pay_basis: pickFirst(contract?.contract_pay_basis, contract?.pay_basis, ""),
+        contract_annual_salary: pickFirst(contract?.contract_annual_salary, contract?.annual_salary, null),
+        contract_hourly_rate: pickFirst(contract?.contract_hourly_rate, contract?.hourly_rate, null),
+        contract_hours_per_week: pickFirst(contract?.contract_hours_per_week, contract?.hours_per_week, null),
+      });
+    }
+  }
+
+  const insertedRows = attachedRows
+    .map((row: any) => ({
+      id: String(pickFirst(row?.id, "") || "").trim(),
+      employee_id: String(pickFirst(row?.employee_id, row?.employeeId, "") || "").trim(),
+      contract_id: String(getAttachmentContractId(row) || "").trim(),
+    }))
+    .filter((row: any) => row.id && row.employee_id && row.contract_id);
+
+  const seedResult = await seedInitialBasicPayElements({
+    supabase,
+    runRow,
+    companyId,
+    runFrequency,
+    insertedRows,
+    contractById,
+  });
+
+  if (!seedResult.ok) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: seedResult.details || seedResult.error,
+    };
+  }
+
+  const totalsRefresh = await refreshRunTotalsFromAttachments(supabase, runId, companyId);
+  if (!totalsRefresh.ok) return totalsRefresh;
+
+  return {
+    ok: true as const,
+    status: 200,
+    resetRows: insertedRows.length,
+    seededCount: seedResult.seededCount,
+    skippedCount: seedResult.skippedCount,
+  };
+}
+
 type OpenPayrollRecoveryBalance = {
   id: string;
   employee_id: string;
@@ -4219,6 +4409,14 @@ export async function PATCH(req: Request, { params }: Ctx) {
     "mark-cancelled",
   ].includes(action);
 
+  const isReopenCancelledRun = [
+    "reopen_cancelled_run",
+    "reopen-cancelled-run",
+    "reopen_cancelled",
+    "reopen-cancelled",
+    "reopen",
+  ].includes(action);
+
   const isSetAttachedAllDue = [
     "set_attached_all_due_employees",
     "set-attached-all-due-employees",
@@ -4642,6 +4840,111 @@ export async function PATCH(req: Request, { params }: Ctx) {
       ok: true,
       debugSource: "payroll_run_route_rls_v2",
       action: "cancel_run",
+      run: post.run,
+      employees: post.employees,
+      totals: post.totals,
+      seededMode: post.seededMode,
+      exceptions: post.exceptions,
+    });
+  }
+
+  if (isReopenCancelledRun) {
+    if (!isConfirmTrue(body?.confirm)) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        code: "CONFIRM_REQUIRED",
+        message: "Confirmation required to reopen a cancelled payroll run.",
+        action: "reopen_cancelled_run",
+        required: true,
+      });
+    }
+
+    const reopenModeRaw = String(body?.mode ?? body?.reopenMode ?? "keep_existing_data").trim().toLowerCase();
+    const reopenMode = reopenModeRaw === "reset_to_defaults" ? "reset_to_defaults" : "keep_existing_data";
+
+    if (statusNow !== "cancelled") {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        error: "Only cancelled payroll runs can be reopened.",
+        runStatus: statusNow,
+      });
+    }
+
+    const runKind = String(pickFirst(run?.run_kind, run?.kind, "primary") || "primary").trim().toLowerCase();
+    const parentRunId = String(pickFirst(run?.parent_run_id, run?.parentRunId, "") || "").trim();
+
+    if (runKind === "supplementary" || parentRunId) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        error: "Only primary payroll runs can be reopened from cancelled status.",
+        runKind,
+      });
+    }
+
+    const submittedToHmrcAt = String(pickFirst(run?.submitted_to_hmrc_at, run?.submittedToHmrcAt, "") || "").trim();
+
+    if (submittedToHmrcAt) {
+      return json(409, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        error: "This payroll run cannot be reopened because it has already been submitted to HMRC.",
+      });
+    }
+
+    const wf = await WorkflowService.changeStatus({
+      client: supabase,
+      runId: id,
+      companyId,
+      newStatus: "draft",
+      userId,
+      comment:
+        reopenMode === "reset_to_defaults"
+          ? "Reopened cancelled payroll run and reset pay data to defaults"
+          : "Reopened cancelled payroll run and kept existing payroll data",
+      automated: false,
+    });
+
+    if (!wf.success) {
+      const msg = String(wf.error || "Failed to reopen cancelled run");
+      const isTransition = msg.toLowerCase().includes("cannot change");
+      return json(isTransition ? 409 : 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        error: msg,
+      });
+    }
+
+    if (reopenMode === "reset_to_defaults") {
+      const resetResult = await resetCancelledPayrollRunPayDataToDefaults(supabase, run);
+      if (!resetResult.ok) {
+        return json(resetResult.status || 500, {
+          ok: false,
+          debugSource: "payroll_run_route_rls_v2",
+          action: "reopen_cancelled_run",
+          mode: reopenMode,
+          error: resetResult.error,
+          debug: (resetResult as any).debug,
+        });
+      }
+    }
+
+    const post = await getRunAndEmployees(supabase, id, false);
+    if (!post.ok) {
+      return json(post.status || 500, {
+        ok: false,
+        debugSource: "payroll_run_route_rls_v2",
+        error: post.error,
+      });
+    }
+
+    return json(200, {
+      ok: true,
+      debugSource: "payroll_run_route_rls_v2",
+      action: "reopen_cancelled_run",
+      mode: reopenMode,
       run: post.run,
       employees: post.employees,
       totals: post.totals,

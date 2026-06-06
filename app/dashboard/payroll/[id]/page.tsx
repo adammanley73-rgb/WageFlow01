@@ -69,7 +69,7 @@ type ApiResponse = {
   };
 };
 
-type ConfirmAction = "mark_rti_submitted" | "mark_completed" | "cancel_run";
+type ConfirmAction = "mark_rti_submitted" | "mark_completed" | "cancel_run" | "reopen_cancelled_run";
 
 type ConfirmConfig = {
   action: ConfirmAction;
@@ -77,6 +77,7 @@ type ConfirmConfig = {
   message: string;
   confirmLabel: string;
   danger?: boolean;
+  extras?: Record<string, any>;
 };
 
 type StepButtonSize = "sm" | "lg";
@@ -463,6 +464,7 @@ export default function PayrollRunDetailPage() {
     | "mark_rti_submitted"
     | "mark_completed"
     | "cancel_run"
+    | "reopen_cancelled_run"
     | "set_attached_all_due_employees"
     | "set_pay_date"
   >(null);
@@ -883,7 +885,7 @@ export default function PayrollRunDetailPage() {
       setActionBusy(cfg.action);
       setErr(null);
       setApprovedMsg(null);
-      const j = await patchRunAction(cfg.action, { confirm: true });
+      const j = await patchRunAction(cfg.action, { confirm: true, ...(cfg.extras || {}) });
       setData(j);
       setRows(mapEmployees(j?.employees));
       setDirty(false);
@@ -891,6 +893,10 @@ export default function PayrollRunDetailPage() {
       if (cfg.action === "mark_rti_submitted") setApprovedMsg("Marked RTI submitted.");
       if (cfg.action === "mark_completed") setApprovedMsg("Marked completed.");
       if (cfg.action === "cancel_run") setApprovedMsg("Run cancelled.");
+      if (cfg.action === "reopen_cancelled_run") {
+        const mode = String(cfg.extras?.mode ?? "keep_existing_data");
+        setApprovedMsg(mode === "reset_to_defaults" ? "Cancelled run reopened and pay data reset to defaults." : "Cancelled run reopened. Existing payroll data kept.");
+      }
       setConfirmOpen(false);
       setConfirmCfg(null);
     } catch (e: any) {
@@ -904,7 +910,7 @@ export default function PayrollRunDetailPage() {
 
   const openConfirm = (cfg: ConfirmConfig) => { setConfirmCfg(cfg); setConfirmOpen(true); };
   const closeConfirm = () => {
-    if (actionBusy === "mark_rti_submitted" || actionBusy === "mark_completed" || actionBusy === "cancel_run") return;
+    if (actionBusy === "mark_rti_submitted" || actionBusy === "mark_completed" || actionBusy === "cancel_run" || actionBusy === "reopen_cancelled_run") return;
     setConfirmOpen(false); setConfirmCfg(null);
   };
 
@@ -1179,6 +1185,8 @@ export default function PayrollRunDetailPage() {
 
               <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <Link href="/dashboard/payroll" className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: "#000000" }}>Back to Runs</Link>
+                {statusLower === "cancelled" ? <button type="button" onClick={() => openConfirm({ action: "reopen_cancelled_run", title: "Reopen cancelled run", message: "This will return the cancelled payroll run to Draft and keep the existing attached employees, pay items, calculations, and payroll data.", confirmLabel: "Reopen and keep data", danger: false, extras: { mode: "keep_existing_data" } })} disabled={saving || !runId} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: WF_GREEN, opacity: saving || !runId ? 0.6 : 1, cursor: saving || !runId ? "not-allowed" : "pointer" }} title="Reopen this cancelled run and keep the existing payroll data.">{actionBusy === "reopen_cancelled_run" ? "Working..." : "Reopen, keep pay data"}</button> : null}
+                {statusLower === "cancelled" ? <button type="button" onClick={() => openConfirm({ action: "reopen_cancelled_run", title: "Reopen cancelled run and reset pay data", message: "This will return the cancelled payroll run to Draft, keep the same run period and run number, but clear run-specific pay entries and reseed basic pay from employee contract defaults.", confirmLabel: "Reopen and reset pay data", danger: true, extras: { mode: "reset_to_defaults" } })} disabled={saving || !runId} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: "#000000", border: "1px solid #991b1b", opacity: saving || !runId ? 0.6 : 1, cursor: saving || !runId ? "not-allowed" : "pointer" }} title="Reopen this cancelled run and reset run-specific pay data to defaults.">{actionBusy === "reopen_cancelled_run" ? "Working..." : "Reopen, reset pay data"}</button> : null}
                 {showOpenSupplementaryButton ? <Link href={`/dashboard/payroll/${suppCheck.openId}`} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: "#000000" }} title={suppCheck.openStatus ? `A supplementary run already exists (${String(suppCheck.openStatus).toUpperCase()}). Open it.` : "A supplementary run already exists. Open it."}>Open supplementary run</Link> : null}
                 {showCreateSupplementaryButton ? <button type="button" onClick={createSupplementaryRun} disabled={saving || !runId} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: "#000000", opacity: saving || !runId ? 0.6 : 1, cursor: saving || !runId ? "not-allowed" : "pointer" }} title="Create a supplementary run (manual attach). Pay date can be edited in Draft.">{actionBusy === "supp" ? "Creating..." : "Create supplementary run"}</button> : null}
                 {canShowAttachButtons ? <button type="button" onClick={openAttachModal} disabled={saving || !runId} className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition hover:opacity-95" style={{ backgroundColor: "#000000", opacity: saving || !runId ? 0.6 : 1, cursor: saving || !runId ? "not-allowed" : "pointer" }} title={manualAttachTitle}>Manual attach</button> : null}
@@ -1198,7 +1206,7 @@ export default function PayrollRunDetailPage() {
           {seededMode ? <div className="mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold" style={{ borderColor: "#f59e0b", backgroundColor: "rgba(245,158,11,0.12)", color: "#92400e" }}>Seeded mode. This run is not fully calculated yet. Approval is disabled until seededMode is false and there are no blocking exceptions.</div> : null}
           {hasBlockingExceptions ? <div className="mt-4 rounded-2xl border px-4 py-3 text-sm font-semibold" style={{ borderColor: "#fecaca", backgroundColor: "rgba(239,68,68,0.10)", color: "#991b1b" }}>Approval blocked. Blocking exceptions found: {blockingCount}. Review the Exceptions panel to fix them.</div> : null}
           {showDataMismatchNote ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">This run has totals but no employee rows were returned by the API. The run details still show correctly. Approve stays disabled until employees load.</div> : null}
-          {!canEditRun && !loading ? <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold text-slate-700">This run is locked because it is {statusText}. Edits are disabled.</div> : null}
+          {!canEditRun && !loading ? statusLower === "cancelled" ? <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold text-slate-700">This run is cancelled. If it was cancelled by mistake, reopen it using one of the options above.</div> : <div className="mt-4 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold text-slate-700">This run is locked because it is {statusText}. Edits are disabled.</div> : null}
         </div>
 
         <div ref={exceptionsAnchorRef} className="rounded-3xl bg-white/95 shadow-sm ring-1 ring-neutral-300 overflow-hidden">
