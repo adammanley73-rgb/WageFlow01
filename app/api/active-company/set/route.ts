@@ -1,5 +1,6 @@
-﻿// C:\Users\adamm\Projects\wageflow01\app\api\active-company\set\route.ts
+﻿// C:\Projects\wageflow01\app\api\active-company\set\route.ts
 import { NextResponse } from "next/server";
+import { getServerSupabase } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -19,18 +20,38 @@ export async function POST(req: Request) {
     }
 
     if (!isUuid(companyId)) {
-      return NextResponse.json({ ok: false, error: "Invalid companyId (must be UUID)" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid companyId. Choose a company from the list." }, { status: 400 });
+    }
+
+    const supabase = await getServerSupabase();
+
+    const { data, error } = await supabase
+      .from("vw_member_companies")
+      .select("id")
+      .eq("id", companyId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("active-company/set membership check failed:", error.message);
+      return NextResponse.json({ ok: false, error: "Could not confirm company access" }, { status: 500 });
+    }
+
+    if (!data?.id) {
+      return NextResponse.json({ ok: false, error: "Company is not available to this account" }, { status: 403 });
     }
 
     const res = NextResponse.json({ ok: true }, { status: 200 });
 
-    res.cookies.set("active_company_id", companyId, {
+    const cookieOptions = {
       path: "/",
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: "lax" as const,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 365,
-    });
+      maxAge: 60 * 60 * 24 * 30,
+    };
+
+    res.cookies.set("active_company_id", companyId, cookieOptions);
+    res.cookies.set("company_id", companyId, cookieOptions);
 
     return res;
   } catch (e) {

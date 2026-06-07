@@ -1,15 +1,11 @@
-/* app/api/clear-company/route.ts */
+﻿// C:\Projects\wageflow01\app\api\clear-company\route.ts
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(_request: Request) {
-  // Clear both cookies used by the app
-  const res = new NextResponse(JSON.stringify({ success: true }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+type CookieResponse = ReturnType<typeof NextResponse.json>;
 
+function clearCompanyCookies(res: CookieResponse) {
   res.cookies.set("active_company_id", "", {
     path: "/",
     httpOnly: true,
@@ -20,15 +16,19 @@ export async function POST(_request: Request) {
 
   res.cookies.set("company_id", "", {
     path: "/",
+    httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     maxAge: 0,
   });
+}
 
+export async function POST() {
+  const res = NextResponse.json({ ok: true, success: true }, { status: 200 });
+  clearCompanyCookies(res);
   return res;
 }
 
 export async function GET() {
-  // Handy ping for debugging
   return NextResponse.json({ status: "ready" });
 }

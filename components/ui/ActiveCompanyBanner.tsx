@@ -1,4 +1,4 @@
-// C:\Users\adamm\Projects\wageflow01\components\ui\ActiveCompanyBanner.tsx
+﻿// C:\Projects\wageflow01\components\ui\ActiveCompanyBanner.tsx
 
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -48,7 +48,7 @@ async function tryGetCompanyName(companyId: string, jar: ReadonlyRequestCookies)
     });
 
     const { data, error } = await supabase
-      .from("companies")
+      .from("vw_member_companies")
       .select("id, name")
       .eq("id", companyId)
       .maybeSingle();
@@ -70,12 +70,12 @@ export default async function ActiveCompanyBanner() {
     return (
       <div className="rounded-2xl bg-white/80 px-4 py-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm sm:text-base text-neutral-800">
+          <p className="text-sm text-neutral-800 sm:text-base">
             No active company selected. Go to the Companies page to choose one.
           </p>
           <Link
             href="/dashboard/companies"
-            className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+            className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3c85] focus-visible:ring-offset-2"
           >
             Select company
           </Link>
@@ -86,27 +86,43 @@ export default async function ActiveCompanyBanner() {
 
   const companyName = await tryGetCompanyName(companyId, jar);
 
-  const showName = companyName || "Selected";
+  if (!companyName) {
+    return (
+      <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-lg text-amber-950 sm:text-xl">
+              <span className="font-semibold">Company selection needs attention</span>
+            </p>
+            <p className="mt-1 text-xs text-amber-900 sm:text-sm">
+              WageFlow has an active company ID, but the company details could not be loaded. Select the company again, or log out and sign in if the list is empty.
+            </p>
+          </div>
+
+          <Link
+            href="/dashboard/companies"
+            className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3c85] focus-visible:ring-offset-2"
+          >
+            Review company
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl bg-white/80 px-4 py-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="text-lg sm:text-xl text-[#0f3c85]">
+          <p className="text-lg text-[#0f3c85] sm:text-xl">
             <span className="font-semibold">Active company:</span>{" "}
-            <span className="font-bold">{showName}</span>
+            <span className="font-bold">{companyName}</span>
           </p>
-
-          {!companyName ? (
-            <p className="mt-1 text-xs sm:text-sm text-neutral-600">
-              Active company is selected, but details could not be loaded.
-            </p>
-          ) : null}
         </div>
 
         <Link
           href="/dashboard/companies"
-          className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0f3c85]"
+          className="inline-flex items-center justify-center rounded-full bg-[#0f3c85] px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0c2f68] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f3c85] focus-visible:ring-offset-2"
         >
           Change company
         </Link>
