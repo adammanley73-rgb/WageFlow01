@@ -1,6 +1,5 @@
+﻿// C:\Projects\wageflow01\components\ui\LogoutButton.tsx
 "use client";
-
-// C:\Users\adamm\Projects\wageflow01\components\ui\LogoutButton.tsx
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,6 +8,27 @@ import { createClient } from "@/lib/supabase/client";
 type Props = {
   className?: string;
 };
+
+async function clearCompanySelection() {
+  try {
+    await fetch("/api/clear-company", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+    });
+  } catch {
+    // Logout should continue even if the cleanup endpoint is unavailable.
+  }
+
+  try {
+    localStorage.removeItem("activeCompanyId");
+    localStorage.removeItem("activeCompanyName");
+    localStorage.removeItem("companyId");
+    localStorage.removeItem("companyName");
+  } catch {
+    // Ignore storage errors.
+  }
+}
 
 export default function LogoutButton({ className = "" }: Props) {
   const router = useRouter();
@@ -19,17 +39,18 @@ export default function LogoutButton({ className = "" }: Props) {
     setBusy(true);
 
     try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
+      await clearCompanySelection();
 
       try {
-        localStorage.removeItem("activeCompanyId");
-        localStorage.removeItem("activeCompanyName");
-      } catch {
-        // ignore storage errors
+        const supabase = createClient();
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.warn("Supabase sign out failed, redirecting to login anyway:", e);
       }
 
-      router.push("/login");
+      await clearCompanySelection();
+
+      router.replace("/login");
       router.refresh();
     } catch {
       setBusy(false);
@@ -47,7 +68,7 @@ export default function LogoutButton({ className = "" }: Props) {
         "bg-rose-600 text-white uppercase tracking-wide",
         "hover:bg-rose-700",
         "focus:outline-none focus:ring-2 focus:ring-rose-300",
-        busy ? "opacity-70 cursor-not-allowed" : "",
+        busy ? "cursor-not-allowed opacity-70" : "",
         className,
       ].join(" ")}
       aria-label="Log out"
