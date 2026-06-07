@@ -1,4 +1,4 @@
-﻿create or replace function public.guard_last_owner()
+create or replace function public.guard_last_owner()
 returns trigger
 language plpgsql
 set search_path to 'pg_catalog, public, extensions, auth, wf_util'
