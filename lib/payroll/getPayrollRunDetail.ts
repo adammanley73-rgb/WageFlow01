@@ -2119,7 +2119,7 @@ function deriveSeededMode(run: any, attachments: any[]): boolean {
   return runTax === 0 && runNi === 0 && allGrossOnly;
 }
 
-function computeExceptions(attachments: any[], empById: Map<string, any>) {
+function computeExceptions(attachments: any[], empById: Map<string, any>, seededMode = false) {
   const items: any[] = [];
   let blockingCount = 0;
   let warningCount = 0;
@@ -2127,6 +2127,8 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
   for (const att of attachments || []) {
     const employeeId = String(pickFirst(att?.employee_id, "") || "").trim();
     const gross = toNumberSafe(pickFirst(att?.gross_pay, att?.grossPay, 0));
+    const calcMode = String(pickFirst(att?.calc_mode, att?.calcMode, "") || "").trim().toLowerCase();
+    const rowIsFullyCalculated = calcMode ? calcMode === "full" : !seededMode;
     const emp = employeeId ? empById.get(employeeId) : null;
 
     const employeeName = String(
@@ -2170,7 +2172,7 @@ function computeExceptions(attachments: any[], empById: Map<string, any>) {
       payBasisUsed === "hourly" &&
       (hoursPerWeekUsed === null || hoursPerWeekUsed <= 0);
 
-    if (gross <= 0 && !isValidZeroHoursRow) codes.push("GROSS_ZERO");
+    if (gross <= 0 && !isValidZeroHoursRow && rowIsFullyCalculated) codes.push("GROSS_ZERO");
 
     const taxCode = pickFirst(
       att?.tax_code_used,
@@ -2504,7 +2506,7 @@ export async function getPayrollRunDetail(
   };
 
   const seededMode = deriveSeededMode(run, attachments);
-  const exceptions = computeExceptions(attachments, empById);
+  const exceptions = computeExceptions(attachments, empById, seededMode);
   const effectivePayDate = deriveRunPayDate(run);
 
   return {
