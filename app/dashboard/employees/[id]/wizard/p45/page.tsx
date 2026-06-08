@@ -83,13 +83,58 @@ function normalizeTaxCodeBasis(input: string | null | undefined): TaxCodeBasis |
   return null;
 }
 
-function addMonths(dateOnlyIso: string, months: number) {
+function parseIsoDateParts(dateOnlyIso: string) {
   if (!isIsoDateOnly(dateOnlyIso)) return null;
-  const dt = new Date(dateOnlyIso + "T00:00:00.000Z");
-  if (Number.isNaN(dt.getTime())) return null;
-  const out = new Date(dt);
-  out.setUTCMonth(out.getUTCMonth() + months);
-  return out;
+
+  const [yearRaw, monthRaw, dayRaw] = dateOnlyIso.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  if (month < 1 || month > 12) return null;
+
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day < 1 || day > daysInMonth) return null;
+
+  return { year, month, day };
+}
+
+function toUtcDateValue(dateOnlyIso: string) {
+  const parts = parseIsoDateParts(dateOnlyIso);
+  if (!parts) return null;
+
+  return Date.UTC(parts.year, parts.month - 1, parts.day);
+}
+
+function addCalendarMonthsClamped(dateOnlyIso: string, monthsToAdd: number) {
+  const parts = parseIsoDateParts(dateOnlyIso);
+  if (!parts) return null;
+
+  const startMonthIndex = parts.year * 12 + (parts.month - 1);
+  const targetMonthIndex = startMonthIndex + monthsToAdd;
+  const targetYear = Math.floor(targetMonthIndex / 12);
+  const targetMonth = (targetMonthIndex % 12) + 1;
+  const targetDaysInMonth = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  const targetDay = Math.min(parts.day, targetDaysInMonth);
+
+  return Date.UTC(targetYear, targetMonth - 1, targetDay);
+}
+
+function isLeavingDateMoreThanThreeMonthsBeforeStart(leavingDateIso: string, startDateIso: string) {
+  const startValue = toUtcDateValue(startDateIso);
+  const leavingPlusThreeMonthsValue = addCalendarMonthsClamped(leavingDateIso, 3);
+
+  if (startValue === null || leavingPlusThreeMonthsValue === null) return false;
+
+  return startValue > leavingPlusThreeMonthsValue;
+}
+
+function isReasonableP45DateForRule(dateOnlyIso: string) {
+  const parts = parseIsoDateParts(dateOnlyIso);
+  if (!parts) return false;
+
+  return parts.year >= 1900 && parts.year <= 2100;
 }
 
 function readStartDateFromJson(j: any): string | null {
@@ -98,10 +143,14 @@ function readStartDateFromJson(j: any): string | null {
     j?.employee?.startDate,
     j?.employee?.employment_start_date,
     j?.employee?.employmentStartDate,
+    j?.employee_start_date,
+    j?.employeeStartDate,
     j?.data?.start_date,
     j?.data?.startDate,
     j?.data?.employment_start_date,
     j?.data?.employmentStartDate,
+    j?.data?.employee_start_date,
+    j?.data?.employeeStartDate,
     j?.start_date,
     j?.startDate,
     j?.employment_start_date,
@@ -241,7 +290,10 @@ export default function P45Page() {
 
         if (isJson(r)) {
           const j = await r.json().catch(() => null);
-          const d = (j?.data ?? j ?? null) as ApiP45Row | null;
+          const sd = readStartDateFromJson(j);
+          if (alive && sd) setEmployeeStartDate(sd);
+
+          const d = (j?.data ?? null) as ApiP45Row | null;
 
           if (alive && d) {
             const incomingBasis = normalizeTaxCodeBasis(
@@ -314,19 +366,11 @@ export default function P45Page() {
       return;
     }
 
-    const leavePlus3 = addMonths(leave, 3);
-    if (!leavePlus3) {
+    if (!isReasonableP45DateForRule(leave) || !isReasonableP45DateForRule(start)) {
       setTaxRuleForced(false);
       return;
     }
-
-    const startDt = new Date(start + "T00:00:00.000Z");
-    if (Number.isNaN(startDt.getTime())) {
-      setTaxRuleForced(false);
-      return;
-    }
-
-    const isMoreThan3Months = startDt.getTime() > leavePlus3.getTime();
+    const isMoreThan3Months = isLeavingDateMoreThanThreeMonthsBeforeStart(leave, start);
 
     if (isMoreThan3Months) {
       setTaxRuleForced(true);
@@ -344,39 +388,6 @@ export default function P45Page() {
       setTaxRuleForced(false);
     }
   }, [form.leaving_date, employeeStartDate]);
-
-  async function tryUpdateEmployeeTaxCode() {
-    const payload = { tax_code: "1257L", tax_code_basis: "week1_month1" };
-
-    try {
-      const r1 = await fetch(`/api/employees/${id}/tax`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (r1.ok) return true;
-    } catch {}
-
-    try {
-      const r2 = await fetch(`/api/employees/${id}/details`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (r2.ok) return true;
-    } catch {}
-
-    try {
-      const r3 = await fetch(`/api/employees/${id}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (r3.ok) return true;
-    } catch {}
-
-    return false;
-  }
 
   const fieldErrors = useMemo(() => getFieldErrors(form), [form]);
 
@@ -459,17 +470,6 @@ export default function P45Page() {
         throw new Error(`save ${res.status}`);
       }
 
-      if (taxRuleForced) {
-        const ok = await tryUpdateEmployeeTaxCode();
-        if (!ok) {
-          showToast(
-            "error",
-            "Tax rule applied, but WageFlow could not update the employee tax code record automatically. Fix the employee tax code to 1257L Week 1 / Month 1 before continuing."
-          );
-          setSaving(false);
-          return;
-        }
-      }
 
       showToast("success", "P45 details saved.");
       router.push(`/dashboard/employees/${id}/wizard/tax`);
