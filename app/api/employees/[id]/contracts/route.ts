@@ -508,13 +508,6 @@ export async function POST(req: Request, { params }: RouteContext) {
     const pension_opt_out_date = strOrNull(body?.pension_opt_out_date);
     const pension_postponement_date = strOrNull(body?.pension_postponement_date);
 
-    if (!job_title) {
-      return json(400, {
-        ok: false,
-        code: "MISSING_JOB_TITLE",
-        error: "job_title is required.",
-      });
-    }
 
     if (!start_date) {
       return json(400, {

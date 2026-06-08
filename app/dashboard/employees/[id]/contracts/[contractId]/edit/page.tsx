@@ -547,7 +547,7 @@ export default function EditContractPage() {
     }
 
     const contractNumber = sanitizeContractNumber(form.contract_number);
-    const jobTitle = strOrBlank(form.job_title);
+    const jobTitle = strOrBlank(form.job_title) || null;
     const department = strOrBlank(form.department) || null;
     const status = strOrBlank(form.status).toLowerCase();
     const startDate = strOrBlank(form.start_date);
@@ -568,10 +568,6 @@ export default function EditContractPage() {
       return;
     }
 
-    if (!jobTitle) {
-      setErr("Job title is required.");
-      return;
-    }
 
     if (!startDate || !isIsoDateOnly(startDate)) {
       setErr("Contract start date is required and must be YYYY-MM-DD.");
@@ -923,7 +919,7 @@ export default function EditContractPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm text-neutral-800">Job title</label>
+                    <label className="block text-sm text-neutral-800">Job title (optional)</label>
                     <input
                       value={form.job_title}
                       onChange={(e) => setField("job_title", e.target.value)}
