@@ -130,7 +130,7 @@ function isLeavingDateMoreThanThreeMonthsBeforeStart(leavingDateIso: string, sta
   return startValue > leavingPlusThreeMonthsValue;
 }
 
-function isReasonableP45DateForRule(dateOnlyIso: string) {
+function isReasonableP45DateForReview(dateOnlyIso: string) {
   const parts = parseIsoDateParts(dateOnlyIso);
   if (!parts) return false;
 
@@ -219,9 +219,11 @@ export default function P45Page() {
   const [toast, setToast] = useState<ToastState | null>(null);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const olderP45ToastKeyRef = useRef<string | null>(null);
 
   const [employeeStartDate, setEmployeeStartDate] = useState<string | null>(null);
-  const [taxRuleForced, setTaxRuleForced] = useState(false);
+  const [olderP45NeedsReview, setOlderP45NeedsReview] = useState(false);
+  const [olderP45ChecklistConfirmed, setOlderP45ChecklistConfirmed] = useState(false);
 
   const [form, setForm] = useState<P45Row>({
     employer_paye_ref: "",
@@ -362,30 +364,37 @@ export default function P45Page() {
     const start = String(employeeStartDate || "").trim();
 
     if (!isIsoDateOnly(leave) || !isIsoDateOnly(start)) {
-      setTaxRuleForced(false);
+      setOlderP45NeedsReview(false);
+      setOlderP45ChecklistConfirmed(false);
+      olderP45ToastKeyRef.current = null;
       return;
     }
 
-    if (!isReasonableP45DateForRule(leave) || !isReasonableP45DateForRule(start)) {
-      setTaxRuleForced(false);
+    if (!isReasonableP45DateForReview(leave) || !isReasonableP45DateForReview(start)) {
+      setOlderP45NeedsReview(false);
+      setOlderP45ChecklistConfirmed(false);
+      olderP45ToastKeyRef.current = null;
       return;
     }
-    const isMoreThan3Months = isLeavingDateMoreThanThreeMonthsBeforeStart(leave, start);
 
-    if (isMoreThan3Months) {
-      setTaxRuleForced(true);
-      setForm((prev) => ({
-        ...prev,
-        tax_code: "1257L",
-        tax_code_basis: "week1_month1",
-      }));
+    const needsReview = isLeavingDateMoreThanThreeMonthsBeforeStart(leave, start);
 
+    setOlderP45NeedsReview(needsReview);
+
+    if (!needsReview) {
+      setOlderP45ChecklistConfirmed(false);
+      olderP45ToastKeyRef.current = null;
+      return;
+    }
+
+    const toastKey = `${leave}|${start}`;
+    if (olderP45ToastKeyRef.current !== toastKey) {
+      olderP45ToastKeyRef.current = toastKey;
+      setOlderP45ChecklistConfirmed(false);
       showToast(
         "info",
-        "Leaving date is more than 3 months before the employee start date. HMRC rule: use tax code 1257L on Week 1 / Month 1 until a P6 notice arrives."
+        "This P45 leaving date is more than 3 months before the employee start date. Do not treat this as an automatic HMRC rule. Save the P45 details, then return to the starter checklist review before continuing."
       );
-    } else {
-      setTaxRuleForced(false);
     }
   }, [form.leaving_date, employeeStartDate]);
 
@@ -399,9 +408,10 @@ export default function P45Page() {
       !fieldErrors.tax_code &&
       !fieldErrors.tax_code_basis &&
       !fieldErrors.total_pay_to_date &&
-      !fieldErrors.total_tax_to_date
+      !fieldErrors.total_tax_to_date &&
+      (!olderP45NeedsReview || olderP45ChecklistConfirmed)
     );
-  }, [fieldErrors]);
+  }, [fieldErrors, olderP45NeedsReview, olderP45ChecklistConfirmed]);
 
   async function onSave() {
     setTouched({
@@ -413,6 +423,14 @@ export default function P45Page() {
       total_pay_to_date: true,
       total_tax_to_date: true,
     });
+
+    if (olderP45NeedsReview && !olderP45ChecklistConfirmed) {
+      showToast(
+        "error",
+        "Confirm the older P45 review before saving. After save, the starter checklist will reopen before the flow continues."
+      );
+      return;
+    }
 
     if (!canSave) {
       const message = [
@@ -451,11 +469,6 @@ export default function P45Page() {
             : null,
       };
 
-      if (taxRuleForced) {
-        payload.tax_code = "1257L";
-        payload.tax_code_basis = "week1_month1";
-      }
-
       const res = await fetch(`/api/employees/${id}/p45`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -470,8 +483,13 @@ export default function P45Page() {
         throw new Error(`save ${res.status}`);
       }
 
-
       showToast("success", "P45 details saved.");
+
+      if (olderP45NeedsReview) {
+        router.push(`/dashboard/employees/${id}/wizard/starter?fromOlderP45Review=1`);
+        return;
+      }
+
       router.push(`/dashboard/employees/${id}/wizard/tax`);
     } catch (e: any) {
       const msg = String(e?.message || e);
@@ -517,7 +535,7 @@ export default function P45Page() {
               {toast.kind === "success"
                 ? "Saved"
                 : toast.kind === "info"
-                  ? "HMRC rule"
+                  ? "Review needed"
                   : "Action needed"}
             </div>
             <div className="mt-1 text-sm">{toast.message}</div>
@@ -615,14 +633,39 @@ export default function P45Page() {
                   </div>
                 ) : employeeStartDate ? (
                   <div className="mt-1 text-xs text-neutral-700">
-                    Employee start date: {formatUkDate(employeeStartDate, "—")}
+                    Employee start date: {formatUkDate(employeeStartDate, "-")}
                   </div>
                 ) : (
                   <div className="mt-1 text-xs text-neutral-700">
-                    Employee start date: not available. 3-month tax rule cannot be checked reliably.
+                    Employee start date: not available. Older P45 review cannot be checked reliably.
                   </div>
                 )}
               </div>
+
+              {olderP45NeedsReview ? (
+                <div className="md:col-span-2">
+                  <div className="rounded-lg bg-amber-50 p-4 text-sm text-amber-950 ring-1 ring-amber-300">
+                    <div className="font-semibold">Older P45 review needed</div>
+                    <p className="mt-1">
+                      This P45 leaving date is more than 3 months before the employee start date.
+                      Do not treat this as an automatic HMRC rule. Save these P45 details, then
+                      return to the starter checklist review before continuing.
+                    </p>
+                    <label className="mt-3 flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={olderP45ChecklistConfirmed}
+                        onChange={(e) => setOlderP45ChecklistConfirmed(e.target.checked)}
+                        className="mt-1"
+                      />
+                      <span>
+                        I understand this older P45 scenario needs starter checklist review before
+                        the onboarding flow continues.
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              ) : null}
 
               <div>
                 <label className="block text-sm text-neutral-900">Tax code</label>
@@ -631,17 +674,11 @@ export default function P45Page() {
                   value={form.tax_code || ""}
                   onChange={onChange}
                   onBlur={() => onBlur("tax_code")}
-                  disabled={taxRuleForced}
-                  className={
-                    inputClass(!!(touched.tax_code && fieldErrors.tax_code)) +
-                    (taxRuleForced ? " cursor-not-allowed opacity-80" : "")
-                  }
+                  className={inputClass(!!(touched.tax_code && fieldErrors.tax_code))}
                   aria-invalid={touched.tax_code && !!fieldErrors.tax_code}
                 />
                 {touched.tax_code && fieldErrors.tax_code ? (
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.tax_code}</div>
-                ) : taxRuleForced ? (
-                  <div className="mt-1 text-xs text-blue-900">Forced by rule: 1257L.</div>
                 ) : null}
               </div>
 
@@ -652,11 +689,7 @@ export default function P45Page() {
                   value={form.tax_code_basis || ""}
                   onChange={onChange}
                   onBlur={() => onBlur("tax_code_basis")}
-                  disabled={taxRuleForced}
-                  className={
-                    inputClass(!!(touched.tax_code_basis && fieldErrors.tax_code_basis)) +
-                    (taxRuleForced ? " cursor-not-allowed opacity-80" : "")
-                  }
+                  className={inputClass(!!(touched.tax_code_basis && fieldErrors.tax_code_basis))}
                   aria-invalid={touched.tax_code_basis && !!fieldErrors.tax_code_basis}
                 >
                   <option value="cumulative">Cumulative</option>
@@ -664,10 +697,6 @@ export default function P45Page() {
                 </select>
                 {touched.tax_code_basis && fieldErrors.tax_code_basis ? (
                   <div className="mt-1 text-xs text-red-700">{fieldErrors.tax_code_basis}</div>
-                ) : taxRuleForced ? (
-                  <div className="mt-1 text-xs text-blue-900">
-                    Forced by rule: Week 1 / Month 1.
-                  </div>
                 ) : null}
               </div>
 
