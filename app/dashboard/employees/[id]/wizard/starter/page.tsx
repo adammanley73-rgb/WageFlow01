@@ -406,6 +406,7 @@ export default function StarterPage() {
   const [err, setErr] = useState<string | null>(null);
   const [employeeRow, setEmployeeRow] = useState<EmployeeRow | null>(null);
   const [lastEditedPayField, setLastEditedPayField] = useState<EditedPayField>(null);
+  const [fromOlderP45Review, setFromOlderP45Review] = useState(false);
 
   const [toast, setToast] = useState<ToastState>({
     open: false,
@@ -471,6 +472,13 @@ export default function StarterPage() {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    setFromOlderP45Review(params.get("fromOlderP45Review") === "1");
   }, []);
 
   useEffect(() => {
@@ -867,6 +875,11 @@ export default function StarterPage() {
       showToast("Starter details saved.", "success");
 
       if (form.p45_provided === true) {
+        if (fromOlderP45Review) {
+          router.push(`/dashboard/employees/${routeId}/wizard/tax`);
+          return;
+        }
+
         router.push(`/dashboard/employees/${routeId}/wizard/p45`);
         return;
       }
@@ -893,7 +906,11 @@ export default function StarterPage() {
       title="New Starter"
       currentSection="employees"
       headerMode="wizard"
-      backHref={`/dashboard/employees/${routeId}`}
+      backHref={
+        fromOlderP45Review
+          ? `/dashboard/employees/${routeId}/wizard/p45`
+          : `/dashboard/employees/${routeId}`
+      }
       backLabel="Back"
     >
       {toast.open ? (
@@ -921,6 +938,17 @@ export default function StarterPage() {
           <>
             {err ? (
               <div className="mb-4 rounded-md bg-red-100 px-3 py-2 text-sm text-red-800">{err}</div>
+            ) : null}
+
+            {fromOlderP45Review ? (
+              <div className="mb-4 rounded-lg bg-amber-50 p-4 text-sm text-amber-950 ring-1 ring-amber-300">
+                <div className="font-semibold">Older P45 starter checklist review</div>
+                <p className="mt-1">
+                  The saved P45 leaving date is more than 3 months before this employee start date.
+                  Review the starter details and keep P45 supplied as Yes unless you are correcting
+                  the record. Save and continue will take you to the Tax wizard.
+                </p>
+              </div>
             ) : null}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1252,7 +1280,11 @@ export default function StarterPage() {
 
             <div className="mt-6 flex justify-end gap-3">
               <Link
-                href={`/dashboard/employees/${routeId}`}
+                href={
+                  fromOlderP45Review
+                    ? `/dashboard/employees/${routeId}/wizard/p45`
+                    : `/dashboard/employees/${routeId}`
+                }
                 className="rounded-md bg-neutral-400 px-4 py-2 text-white"
               >
                 Back
