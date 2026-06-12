@@ -59,6 +59,7 @@ type NormalizedImportRow = {
   annual_salary: number | null;
   hourly_rate: number | null;
   hours_per_week: number | null;
+  pay_basis: ContractPayBasis;
   ni_number: string | null;
   pay_frequency: string | null;
   p45_provided: boolean | null;
@@ -185,8 +186,55 @@ function normalizePayFrequency(v: string | null | undefined): ContractPayFrequen
   return "monthly";
 }
 
-function derivePayBasis(row: Pick<NormalizedImportRow, "hourly_rate">): ContractPayBasis {
-  return row.hourly_rate !== null ? "hourly" : "salary";
+const WEEKS_PER_YEAR = 52.14285714;
+
+function roundMoneyValue(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function deriveInitialPayBasis(args: {
+  annual_salary: number | null;
+  hourly_rate: number | null;
+}): ContractPayBasis {
+  if (
+    args.hourly_rate !== null &&
+    args.hourly_rate > 0 &&
+    (args.annual_salary === null || args.annual_salary <= 0)
+  ) {
+    return "hourly";
+  }
+
+  return "salary";
+}
+
+function derivePayBasis(row: Pick<NormalizedImportRow, "pay_basis">): ContractPayBasis {
+  return row.pay_basis;
+}
+
+function deriveMissingPayValues(row: NormalizedImportRow): NormalizedImportRow {
+  const hours = row.hours_per_week;
+  const salary = row.annual_salary;
+  const hourly = row.hourly_rate;
+
+  if (hours === null || hours <= 0) {
+    return row;
+  }
+
+  if (salary !== null && salary > 0 && (hourly === null || hourly <= 0)) {
+    return {
+      ...row,
+      hourly_rate: roundMoneyValue(salary / (hours * WEEKS_PER_YEAR)),
+    };
+  }
+
+  if (hourly !== null && hourly > 0 && (salary === null || salary <= 0)) {
+    return {
+      ...row,
+      annual_salary: roundMoneyValue(hourly * hours * WEEKS_PER_YEAR),
+    };
+  }
+
+  return row;
 }
 
 function sanitizeIdentifierForContractNumber(v: string | null | undefined): string | null {
@@ -199,7 +247,7 @@ function sanitizeIdentifierForContractNumber(v: string | null | undefined): stri
 function normalizeNamePart(v: string | null | undefined): string {
   return String(v ?? "")
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
@@ -348,6 +396,7 @@ function validateRow(row: ImportRow, rowNumber: number) {
   const annual_salary = numOrNull(row.annual_salary);
   const hourly_rate = numOrNull(row.hourly_rate);
   const hours_per_week = numOrNull(row.hours_per_week);
+  const pay_basis = deriveInitialPayBasis({ annual_salary, hourly_rate });
 
   if (row.annual_salary !== undefined && String(row.annual_salary).trim() !== "" && annual_salary === null) {
     errors.push("annual_salary must be numeric when provided.");
@@ -387,6 +436,7 @@ function validateRow(row: ImportRow, rowNumber: number) {
     annual_salary,
     hourly_rate,
     hours_per_week,
+    pay_basis,
     ni_number,
     pay_frequency,
     p45_provided: p45Provided,
@@ -822,14 +872,15 @@ export async function POST(req: Request) {
           continue;
         }
 
+        const rowWithDerivedPay = deriveMissingPayValues(row);
         const employeeUuid = String(resolution.employee?.id || "").trim();
         const existingContract = employeeUuid
-          ? await findMatchingExistingContract(gate.supabase, companyId, employeeUuid, row)
+          ? await findMatchingExistingContract(gate.supabase, companyId, employeeUuid, rowWithDerivedPay)
           : null;
 
         preparedItems.push({
           item,
-          row,
+          row: rowWithDerivedPay,
           resolution,
           existingContract,
         });
