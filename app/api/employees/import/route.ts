@@ -331,7 +331,6 @@ function validateRow(row: ImportRow, rowNumber: number) {
 
   if (!first_name) errors.push("first_name is required.");
   if (!last_name) errors.push("last_name is required.");
-  if (!email) errors.push("email is required.");
   if (!start_date) errors.push("start_date is required.");
   if (start_date && !isIsoDateOnly(start_date)) errors.push("start_date must be YYYY-MM-DD.");
   if (hire_date && !isIsoDateOnly(hire_date)) errors.push("hire_date must be YYYY-MM-DD.");
@@ -689,6 +688,54 @@ function buildExactCsvDuplicateFingerprint(row: NormalizedImportRow): string {
   ].join("|");
 }
 
+
+type PreparedImportItem = {
+  item: ReturnType<typeof validateRow>;
+  row: NormalizedImportRow;
+  resolution: { employee: ExistingEmployee | null; errors: string[] };
+  existingContract: any | null;
+};
+
+function databaseErrorToUserMessage(error: any, fallback: string): string {
+  const msg = String(error?.message || error?.details || error?.hint || error || "").trim();
+
+  if (msg.includes("employees_student_loan_plan_check")) {
+    return "The employee student loan plan cannot be saved because the employee student loan database rule is out of date. Apply the latest student loan constraint migration, then retry the import.";
+  }
+
+  if (msg.includes("employee_starters_student_loan_plan_check")) {
+    return "student_loan_plan must be none, plan1, plan2, plan4, or plan5.";
+  }
+
+  return fallback;
+}
+
+function databaseRowError(error: any, fallback: string): string {
+  return databaseErrorToUserMessage(error, fallback);
+}
+
+function jsonDatabaseRowError(args: {
+  code: string;
+  rowNumber: number;
+  error: any;
+  fallback: string;
+}) {
+  const message = databaseRowError(args.error, args.fallback);
+
+  console.error(`[employees/import] ${args.code}`, {
+    rowNumber: args.rowNumber,
+    error: args.error,
+  });
+
+  return json(500, {
+    ok: false,
+    code: args.code,
+    error: message,
+    rowNumber: args.rowNumber,
+    validation: [{ rowNumber: args.rowNumber, errors: [message] }],
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const companyId = await getActiveCompanyId();
@@ -761,34 +808,72 @@ export async function POST(req: Request) {
       });
     }
 
+    const preparedItems: PreparedImportItem[] = [];
+    const preflightErrors: { rowNumber: number; errors: string[] }[] = [];
+
+    for (const item of validation) {
+      const row = item.normalized;
+
+      try {
+        const resolution = await resolveEmployeeForRow(gate.supabase, companyId, row);
+
+        if (resolution.errors.length > 0) {
+          preflightErrors.push({ rowNumber: item.rowNumber, errors: resolution.errors });
+          continue;
+        }
+
+        const employeeUuid = String(resolution.employee?.id || "").trim();
+        const existingContract = employeeUuid
+          ? await findMatchingExistingContract(gate.supabase, companyId, employeeUuid, row)
+          : null;
+
+        preparedItems.push({
+          item,
+          row,
+          resolution,
+          existingContract,
+        });
+      } catch (error: any) {
+        const message = databaseRowError(
+          error,
+          "This row could not be checked safely before import. No employees were imported."
+        );
+        preflightErrors.push({ rowNumber: item.rowNumber, errors: [message] });
+        console.error("[employees/import] PRECHECK_FAILED", { rowNumber: item.rowNumber, error });
+      }
+    }
+
+    if (preflightErrors.length > 0) {
+      return json(400, {
+        ok: false,
+        code: "PRECHECK_FAILED",
+        error: "One or more rows could not be imported safely. No employees were imported.",
+        validation: preflightErrors,
+      });
+    }
+
     const results: any[] = [];
     let createdPeopleCount = 0;
     let matchedExistingPeopleCount = 0;
     let createdContractsCount = 0;
     let skippedExistingContractCount = 0;
 
-    for (const item of validation) {
-      const row = item.normalized;
+    for (const prepared of preparedItems) {
+      const item = prepared.item;
+      const row = prepared.row;
       const payFrequency = normalizePayFrequency(row.pay_frequency);
       const payBasis = derivePayBasis(row);
       const contractStartDate = row.start_date ?? row.hire_date ?? todayISO();
 
-      const resolution = await resolveEmployeeForRow(gate.supabase, companyId, row);
-      if (resolution.errors.length > 0) {
-        return json(400, {
-          ok: false,
-          code: "PERSON_MATCH_FAILED",
-          error: `Row ${item.rowNumber} could not be matched safely to a person record.`,
-          validation: [{ rowNumber: item.rowNumber, errors: resolution.errors }],
-        });
-      }
-
-      let employeeUuid = String(resolution.employee?.id || "").trim();
-      let employeePublicId = strOrNull(resolution.employee?.employee_id);
-      let personEmployeeNumber = strOrNull(resolution.employee?.employee_number);
+      let employeeUuid = String(prepared.resolution.employee?.id || "").trim();
+      let employeePublicId = strOrNull(prepared.resolution.employee?.employee_id);
+      let personEmployeeNumber = strOrNull(prepared.resolution.employee?.employee_number);
       let personAction: "created" | "matched_existing" = "matched_existing";
-      let starterAction: "created_or_updated" | "created_missing_starter" | "kept_existing_starter" | "skipped_existing_person" = "skipped_existing_person";
+      let starterAction: "created_or_updated" | "created_missing_starter" | "updated_existing_starter" | "kept_existing_starter" | "skipped_existing_person" = "skipped_existing_person";
+      let contractAction: "created" | "skipped_existing" = "created";
       let createdNewPerson = false;
+      let contractId: string | null = null;
+      let contractNumber: string | null = null;
 
       if (!employeeUuid) {
         personAction = "created";
@@ -841,11 +926,11 @@ export async function POST(req: Request) {
           .single();
 
         if (employeeError) {
-          return json(500, {
-            ok: false,
+          return jsonDatabaseRowError({
             code: "EMPLOYEE_INSERT_FAILED",
-            error: employeeError.message,
             rowNumber: item.rowNumber,
+            error: employeeError,
+            fallback: "The employee could not be created. Check the row values and try again.",
           });
         }
 
@@ -859,6 +944,7 @@ export async function POST(req: Request) {
             code: "MISSING_EMPLOYEE_UUID",
             error: "Employee created but no employee UUID returned.",
             rowNumber: item.rowNumber,
+            validation: [{ rowNumber: item.rowNumber, errors: ["Employee created but no employee UUID returned."] }],
           });
         }
 
@@ -866,7 +952,7 @@ export async function POST(req: Request) {
       } else {
         matchedExistingPeopleCount += 1;
 
-        const employeePatch = buildExistingEmployeePatch(resolution.employee!, row);
+        const employeePatch = buildExistingEmployeePatch(prepared.resolution.employee!, row);
         if (Object.keys(employeePatch).length > 0) {
           const { error: patchError } = await gate.supabase
             .from("employees")
@@ -874,11 +960,11 @@ export async function POST(req: Request) {
             .eq("id", employeeUuid);
 
           if (patchError) {
-            return json(500, {
-              ok: false,
+            return jsonDatabaseRowError({
               code: "EMPLOYEE_PATCH_FAILED",
-              error: patchError.message,
               rowNumber: item.rowNumber,
+              error: patchError,
+              fallback: "The existing employee could not be updated. Check the row values and try again.",
             });
           }
 
@@ -886,141 +972,126 @@ export async function POST(req: Request) {
         }
       }
 
-      const existingContract = await findMatchingExistingContract(
-        gate.supabase,
-        companyId,
-        employeeUuid,
-        row
-      );
+      if (prepared.existingContract) {
+        contractAction = "skipped_existing";
+        skippedExistingContractCount += 1;
+        contractId = strOrNull(prepared.existingContract.id);
+        contractNumber = strOrNull(prepared.existingContract.contract_number);
+      } else {
+        contractNumber = await getNextContractNumber(
+          gate.supabase,
+          companyId,
+          employeeUuid,
+          personEmployeeNumber ?? row.employee_number
+        );
 
-      if (existingContract) {
-        return json(400, {
-          ok: false,
-          code: "CONTRACT_ALREADY_EXISTS",
-          error: `Row ${item.rowNumber} matches an existing contract for this person.`,
-          validation: [
-            {
-              rowNumber: item.rowNumber,
-              errors: [
-                `A matching contract already exists${existingContract.contract_number ? ` (${existingContract.contract_number})` : ""}.`,
-              ],
-            },
-          ],
-        });
+        const contractInsert = {
+          company_id: companyId,
+          employee_id: employeeUuid,
+          contract_number: contractNumber,
+          job_title: row.job_title,
+          department: null,
+          status: "active" as ContractStatus,
+          start_date: contractStartDate,
+          leave_date: null,
+          pay_frequency: payFrequency,
+          pay_basis: payBasis,
+          annual_salary: row.annual_salary,
+          hourly_rate: row.hourly_rate,
+          hours_per_week: row.hours_per_week,
+          pay_after_leaving: false,
+        };
+
+        const { data: contractData, error: contractError } = await gate.supabase
+          .from("employee_contracts")
+          .insert(contractInsert)
+          .select("id, contract_number")
+          .single();
+
+        if (contractError) {
+          return jsonDatabaseRowError({
+            code: "CONTRACT_INSERT_FAILED",
+            rowNumber: item.rowNumber,
+            error: contractError,
+            fallback: "The employee contract could not be created. Check the row values and try again.",
+          });
+        }
+
+        createdContractsCount += 1;
+        contractId = strOrNull((contractData as any)?.id);
+        contractNumber = strOrNull((contractData as any)?.contract_number) ?? contractNumber;
       }
-
-      const contractNumber = await getNextContractNumber(
-        gate.supabase,
-        companyId,
-        employeeUuid,
-        personEmployeeNumber ?? row.employee_number
-      );
-
-      const contractInsert = {
-        company_id: companyId,
-        employee_id: employeeUuid,
-        contract_number: contractNumber,
-        job_title: row.job_title,
-        department: null,
-        status: "active" as ContractStatus,
-        start_date: contractStartDate,
-        leave_date: null,
-        pay_frequency: payFrequency,
-        pay_basis: payBasis,
-        annual_salary: row.annual_salary,
-        hourly_rate: row.hourly_rate,
-        hours_per_week: row.hours_per_week,
-        pay_after_leaving: false,
-      };
-
-      const { data: contractData, error: contractError } = await gate.supabase
-        .from("employee_contracts")
-        .insert(contractInsert)
-        .select("id, contract_number")
-        .single();
-
-      if (contractError) {
-        return json(500, {
-          ok: false,
-          code: "CONTRACT_INSERT_FAILED",
-          error: contractError.message,
-          rowNumber: item.rowNumber,
-        });
-      }
-
-      createdContractsCount += 1;
 
       const starterExists = createdNewPerson
         ? false
         : await hasExistingStarterRecord(gate.supabase, employeeUuid);
-      const shouldWriteStarter = createdNewPerson || !starterExists;
 
-      if (shouldWriteStarter) {
-        const starterRow = {
-          employee_id: employeeUuid,
-          company_id: companyId,
-          p45_provided: row.p45_provided,
-          starter_declaration: row.starter_declaration,
-          student_loan_plan: row.student_loan_plan,
-          postgraduate_loan: row.postgraduate_loan,
-        };
+      const starterRow = {
+        employee_id: employeeUuid,
+        company_id: companyId,
+        p45_provided: row.p45_provided,
+        starter_declaration: row.starter_declaration,
+        student_loan_plan: row.student_loan_plan,
+        postgraduate_loan: row.postgraduate_loan,
+      };
 
-        const { error: starterError } = await gate.supabase
-          .from("employee_starters")
-          .upsert(starterRow, { onConflict: "employee_id" });
+      const { error: starterError } = await gate.supabase
+        .from("employee_starters")
+        .upsert(starterRow, { onConflict: "employee_id" });
 
-        if (starterError) {
-          return json(500, {
-            ok: false,
-            code: "STARTER_SAVE_FAILED",
-            error: starterError.message,
+      if (starterError) {
+        return jsonDatabaseRowError({
+          code: "STARTER_SAVE_FAILED",
+          rowNumber: item.rowNumber,
+          error: starterError,
+          fallback: "The starter declaration could not be saved. Check the starter fields and try again.",
+        });
+      }
+
+      starterAction = createdNewPerson
+        ? "created_or_updated"
+        : starterExists
+        ? "updated_existing_starter"
+        : "created_missing_starter";
+
+      const starterDrivenUpdate = buildStarterDrivenEmployeeUpdate({
+        p45Provided: Boolean(row.p45_provided),
+        declaration: row.starter_declaration,
+        studentLoanPlan: row.student_loan_plan,
+        postgraduateLoan: Boolean(row.postgraduate_loan),
+      });
+
+      if (starterDrivenUpdate) {
+        const { error: employeeSyncError } = await gate.supabase
+          .from("employees")
+          .update({
+            tax_code: starterDrivenUpdate.tax_code,
+            tax_code_basis: starterDrivenUpdate.tax_code_basis,
+            student_loan_plan: starterDrivenUpdate.student_loan_plan,
+            postgraduate_loan: starterDrivenUpdate.postgraduate_loan,
+          })
+          .eq("id", employeeUuid);
+
+        if (employeeSyncError) {
+          return jsonDatabaseRowError({
+            code: "EMPLOYEE_SYNC_FAILED",
             rowNumber: item.rowNumber,
+            error: employeeSyncError,
+            fallback: "The starter declaration was saved, but the employee tax and student loan fields could not be updated. Apply the latest database migration and retry.",
           });
         }
-
-        starterAction = createdNewPerson ? "created_or_updated" : "created_missing_starter";
-
-        const starterDrivenUpdate = buildStarterDrivenEmployeeUpdate({
-          p45Provided: Boolean(row.p45_provided),
-          declaration: row.starter_declaration,
-          studentLoanPlan: row.student_loan_plan,
-          postgraduateLoan: Boolean(row.postgraduate_loan),
-        });
-
-        if (starterDrivenUpdate) {
-          const { error: employeeSyncError } = await gate.supabase
-            .from("employees")
-            .update({
-              tax_code: starterDrivenUpdate.tax_code,
-              tax_code_basis: starterDrivenUpdate.tax_code_basis,
-              student_loan_plan: starterDrivenUpdate.student_loan_plan,
-              postgraduate_loan: starterDrivenUpdate.postgraduate_loan,
-            })
-            .eq("id", employeeUuid);
-
-          if (employeeSyncError) {
-            return json(500, {
-              ok: false,
-              code: "EMPLOYEE_SYNC_FAILED",
-              error: employeeSyncError.message,
-              rowNumber: item.rowNumber,
-            });
-          }
-        }
-      } else {
-        starterAction = "kept_existing_starter";
       }
 
       results.push({
         rowNumber: item.rowNumber,
         person_action: personAction,
         starter_action: starterAction,
-        contract_action: "created",
+        contract_action: contractAction,
         employee_id: employeePublicId,
         id: employeeUuid,
         employee_number: personEmployeeNumber ?? row.employee_number,
-        contract_id: (contractData as any)?.id ?? null,
-        contract_number: (contractData as any)?.contract_number ?? contractNumber,
+        contract_id: contractId,
+        contract_number: contractNumber,
         first_name: row.first_name,
         last_name: row.last_name,
         email: row.email,

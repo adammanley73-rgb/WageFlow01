@@ -17,6 +17,11 @@ type ImportResultRow = {
   rowNumber: number;
   employee_id?: string | null;
   id?: string | null;
+  employee_number?: string | null;
+  contract_number?: string | null;
+  person_action?: string | null;
+  starter_action?: string | null;
+  contract_action?: string | null;
   first_name?: string | null;
   last_name?: string | null;
   email?: string | null;
@@ -53,7 +58,6 @@ const TEMPLATE_COLUMNS = [
 const REQUIRED_COLUMNS = [
   "first_name",
   "last_name",
-  "email",
   "start_date",
   "p45_provided",
 ] as const;
@@ -559,9 +563,15 @@ export default function EmployeesImportPage() {
 
       const results = Array.isArray(payload?.results) ? payload.results : [];
       const importedCount = Number(payload?.importedCount ?? results.length ?? 0);
+      const createdPeopleCount = Number(payload?.createdPeopleCount ?? 0);
+      const matchedExistingPeopleCount = Number(payload?.matchedExistingPeopleCount ?? 0);
+      const createdContractsCount = Number(payload?.createdContractsCount ?? 0);
+      const skippedExistingContractCount = Number(payload?.skippedExistingContractCount ?? 0);
 
       setImportResults(results);
-      setImportSuccess(`${importedCount} employee row(s) imported successfully.`);
+      setImportSuccess(
+        `${importedCount} row(s) processed. ${createdPeopleCount} new employee(s), ${matchedExistingPeopleCount} matched existing employee(s), ${createdContractsCount} contract(s) created, ${skippedExistingContractCount} existing contract(s) skipped.`
+      );
     } catch (error: any) {
       setImportError(error?.message || "Import failed.");
     } finally {
@@ -632,7 +642,7 @@ export default function EmployeesImportPage() {
               <div className="rounded-lg border border-neutral-200 p-4">
                 <h2 className="text-sm font-semibold text-neutral-900">Rules</h2>
                 <div className="mt-2 space-y-2 text-sm text-neutral-700">
-                  <p>Required: first_name, last_name, email, start_date, p45_provided.</p>
+                  <p>Required: first_name, last_name, start_date, p45_provided. Email is optional.</p>
                   <p>Dates in the CSV should be DD-MM-YYYY. DD/MM/YYYY is also accepted.</p>
                   <p>pay_frequency must be weekly, fortnightly, four_weekly, or monthly.</p>
                   <p>NI is checked when provided.</p>
@@ -646,7 +656,7 @@ export default function EmployeesImportPage() {
                 <div>
                   <h2 className="text-sm font-semibold text-neutral-900">Upload CSV</h2>
                   <p className="mt-1 text-sm text-neutral-700">
-                    Upload your file, review the validation results, then import the valid rows.
+                    Upload your file, review the validation results, then import the rows. The import will stop before creating anything if validation fails.
                   </p>
                 </div>
 
@@ -800,8 +810,11 @@ export default function EmployeesImportPage() {
                       <tr className="bg-neutral-100">
                         <th className="border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">CSV Row</th>
                         <th className="border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">Employee ID</th>
+                        <th className="border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">Employee No.</th>
                         <th className="border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">Name</th>
                         <th className="border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">Email</th>
+                        <th className="border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">Person</th>
+                        <th className="border border-neutral-200 px-3 py-2 text-left text-xs font-semibold text-neutral-700">Contract</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -809,10 +822,13 @@ export default function EmployeesImportPage() {
                         <tr key={`${row.rowNumber}-${row.employee_id}-${row.id}`} className="bg-white">
                           <td className="border border-neutral-200 px-3 py-2 text-sm text-neutral-800">{row.rowNumber}</td>
                           <td className="border border-neutral-200 px-3 py-2 text-sm text-neutral-800">{row.employee_id || "—"}</td>
+                          <td className="border border-neutral-200 px-3 py-2 text-sm text-neutral-800">{row.employee_number || "—"}</td>
                           <td className="border border-neutral-200 px-3 py-2 text-sm text-neutral-800">
                             {`${row.first_name || ""} ${row.last_name || ""}`.trim() || "—"}
                           </td>
                           <td className="border border-neutral-200 px-3 py-2 text-sm text-neutral-800">{row.email || "—"}</td>
+                          <td className="border border-neutral-200 px-3 py-2 text-sm text-neutral-800">{row.person_action || "—"}</td>
+                          <td className="border border-neutral-200 px-3 py-2 text-sm text-neutral-800">{row.contract_action || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
